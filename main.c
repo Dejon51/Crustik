@@ -15,7 +15,7 @@ char board1[8][8] = {
 };
 char board[8][8] = {
     {'r','n','.','q','.','Q','n','r'},  // Black back rank
-    {'pcoul','p','p','p','p','p','p','p'},  // Black pawns
+    {'p','p','p','p','p','p','p','p'},  // Black pawns
     {'.','.','.','.','R','.','R','.'},  // Empty row
     {'.','.','.','.','.','.','.','.'},  // Empty row
     {'.','.','.','r','r','.','.','.'},  // Empty row
