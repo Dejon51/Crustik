@@ -4,7 +4,13 @@
 #include <stdio.h>
 #include "lmath.h"
 
-// Out bounds
+#define OUTBOUNDVAL 11
+#define KINGVAL 12
+#define FRIENDLYPEICEVAL 10
+#define BISHOPANDKNIGHTVAL 3
+#define QUEENVAL 9
+#define ROOKVAL 5
+#define PAWNVAL 1
 
 
 int assessSquare(char color1,char x, char y, char board[8][8]) {
@@ -22,99 +28,99 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
     }
     // 11 means out of bounds 10 means friendly 12 means king rest are other peices
     if (x < 0 || x >= 8 || y < 0 || y >= 8) {
-        return 11;
+        return OUTBOUNDVAL;
     }
     if (board[x][y]=='K')
     {
         if (color == 1)
         {
-        return 12;
+        return KINGVAL;
         }
         else{
-            return 11;
+            return OUTBOUNDVAL;
         }
     }
     if (board[x][y]=='k')
     {
         if (color == 0)
         {
-        return 12;
+        return KINGVAL;
         }
         else{
-            return 11;
+            return OUTBOUNDVAL;
         }
     }
     
     if (board[x][y] == 'Q') {
         if (color == 1)
         {
-            return 9;
+            return QUEENVAL;
         }
         else{
-            return 10;
+            return FRIENDLYPEICEVAL;
         }
         
 
     } else if (board[x][y] == 'R') {
         if (color == 1)
         {
-        return 5;
+        return ROOKVAL;
         }
         else{
-            return 10;
+            return FRIENDLYPEICEVAL;
         }
     } else if (board[x][y] == 'N' || 
                board[x][y] == 'B') {
         if (color == 1)
         {
-        return 3;
+        return BISHOPANDKNIGHTVAL;
         }
         else{
-            return 10;
+            return FRIENDLYPEICEVAL;
         }
     } else if (board[x][y] == 'P') {
         if (color == 1)
         {
-        return 1;
+        return PAWNVAL;
         }
         else{
-            return 10;
+            return FRIENDLYPEICEVAL;
         }
     }
         if (board[x][y] == 'q') {
         if (color == 0)
         {
-            return 9;
+            return QUEENVAL;
         }
         else{
-            return 10;
+            return FRIENDLYPEICEVAL;
         }
         
 
     } else if (board[x][y] == 'r') {
         if (color == 0)
         {
-        return 5;
+        return ROOKVAL;
         }
         else{
-            return 10;
+            return FRIENDLYPEICEVAL;
         }
     } else if (board[x][y] == 'n' || 
                board[x][y] == 'b') {
         if (color == 0)
         {
-        return 3;
+        return BISHOPANDKNIGHTVAL;
         }
         else{
-            return 10;
+            return FRIENDLYPEICEVAL;
         }
     } else if (board[x][y] == 'p') {
         if (color == 0)
         {
-        return 1;
+        return PAWNVAL;
         }
         else{
-            return 10;
+            return FRIENDLYPEICEVAL;
         }
     } else {
         return 0;
