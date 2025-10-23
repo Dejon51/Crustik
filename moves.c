@@ -11,7 +11,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
     // Prevent out-of-bounds access
     char color;
     // printf("%i",color1);
-
+    // Flips Color
     if (color1 == 0)
     {
         color = 1;
@@ -20,7 +20,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
     {
         color = 0;
     }
-    
+    // 11 means out of bounds 10 means friendly 12 means king rest are other peices
     if (x < 0 || x >= 8 || y < 0 || y >= 8) {
         return 11;
     }
