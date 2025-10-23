@@ -12,5 +12,5 @@ typedef struct {
 PieceLocation locatePiece(char piece, char id, char board[8][8]);
 void makeMove(char board[8][8]);
 
-/
+
 #endif
