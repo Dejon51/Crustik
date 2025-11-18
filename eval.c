@@ -1,6 +1,15 @@
 #include "eval.h"
 
-short eval(char oldboard[8][8]) {
+short threatAccess(char board[8][8]){
+        for (char x = 0; x < 8; x++) {
+        for (char y = 0; y < 8; y++) {
+            
+        }
+    }
+}
+
+
+short eval(char board[8][8]) {
     short points = 0;
     
     char whitePieces[6] = {0,0,0,0,0,0};
@@ -10,7 +19,7 @@ short eval(char oldboard[8][8]) {
 
     for (char x = 0; x < 8; x++) {
         for (char y = 0; y < 8; y++) {
-            switch (oldboard[y][x]) {
+            switch (board[y][x]) {
                 case 'P': whitePieces[0]++; break;
                 case 'R': whitePieces[1]++; break;
                 case 'N': whitePieces[2]++; break;

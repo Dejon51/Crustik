@@ -9,8 +9,12 @@ typedef struct {
 } PawnMoves;
 
 typedef struct {    // for (char i = 0; i < result; i++)
-    char data[64];   // [0] = left, [1] = forward, [2] = right, [3] = total, [4] = Pawn Status
+    char data[64];
 } PieceArray;
+
+typedef struct { 
+    char data[27];
+} MoveArray;
 
 
 #include <stdio.h>

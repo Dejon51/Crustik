@@ -4,13 +4,15 @@
 #include <stdio.h>
 #include "lmath.h"
 
-#define OUTBOUNDVAL 11
-#define KINGVAL 12
-#define FRIENDLYPEICEVAL 10
-#define BISHOPANDKNIGHTVAL 3
-#define QUEENVAL 9
-#define ROOKVAL 5
-#define PAWNVAL 1
+enum PieceValue {
+    PAWNVAL = 1,
+    BISHOPANDKNIGHTVAL = 3,
+    ROOKVAL = 5,
+    QUEENVAL = 9,
+    FRIENDLYPIECEVAL = 10,
+    OUTBOUNDVAL = 11,
+    KINGVAL = 12
+};
 
 
 int assessSquare(char color1,char x, char y, char board[8][8]) {
@@ -26,7 +28,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
     {
         color = 0;
     }
-    // 11 means out of bounds 10 means friendly 12 means king rest are other peices
+    // 11 means out of bounds 10 means friendly 12 means king rest are other piEces
     if (x < 0 || x >= 8 || y < 0 || y >= 8) {
         return OUTBOUNDVAL;
     }
@@ -57,7 +59,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
             return QUEENVAL;
         }
         else{
-            return FRIENDLYPEICEVAL;
+            return FRIENDLYPIECEVAL;
         }
         
 
@@ -67,7 +69,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
         return ROOKVAL;
         }
         else{
-            return FRIENDLYPEICEVAL;
+            return FRIENDLYPIECEVAL;
         }
     } else if (board[x][y] == 'N' || 
                board[x][y] == 'B') {
@@ -76,7 +78,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
         return BISHOPANDKNIGHTVAL;
         }
         else{
-            return FRIENDLYPEICEVAL;
+            return FRIENDLYPIECEVAL;
         }
     } else if (board[x][y] == 'P') {
         if (color == 1)
@@ -84,7 +86,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
         return PAWNVAL;
         }
         else{
-            return FRIENDLYPEICEVAL;
+            return FRIENDLYPIECEVAL;
         }
     }
         if (board[x][y] == 'q') {
@@ -93,7 +95,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
             return QUEENVAL;
         }
         else{
-            return FRIENDLYPEICEVAL;
+            return FRIENDLYPIECEVAL;
         }
         
 
@@ -103,7 +105,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
         return ROOKVAL;
         }
         else{
-            return FRIENDLYPEICEVAL;
+            return FRIENDLYPIECEVAL;
         }
     } else if (board[x][y] == 'n' || 
                board[x][y] == 'b') {
@@ -112,7 +114,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
         return BISHOPANDKNIGHTVAL;
         }
         else{
-            return FRIENDLYPEICEVAL;
+            return FRIENDLYPIECEVAL;
         }
     } else if (board[x][y] == 'p') {
         if (color == 0)
@@ -120,7 +122,7 @@ int assessSquare(char color1,char x, char y, char board[8][8]) {
         return PAWNVAL;
         }
         else{
-            return FRIENDLYPEICEVAL;
+            return FRIENDLYPIECEVAL;
         }
     } else {
         return 0;
@@ -213,6 +215,15 @@ if (x + direction >= 0 && x + direction < 8 && y + 1 < 8) {
 }
 
 
+// pi#define OUTBOUNDVAL 11
+#define KINGVAL 12
+#define FRIENDLYPIECEVAL 10
+#define BISHOPANDKNIGHTVAL 3
+#define QUEENVAL 9
+#define ROOKVAL 5
+#define PAWNVAL 1
+
+
 PieceArray avalibleMoves(char piece,char board[8][8]){
     PieceArray pawnsarray = {0};
     for (int i = 0; i < 64; i++) {
@@ -225,7 +236,7 @@ PieceArray avalibleMoves(char piece,char board[8][8]){
                 if (piece == 'P') // Do not remove Important for some reason
                 {
                     PawnMoves moves = pawn(1,0,y,x,board);
-                    printf("%ia ",moves.data[4]);
+                    // printf("%ia ",moves.data[4]);
                     append64char(pawnsarray.data,moves.data[4]+penaltymap[y+8*x]);
                     // printf("%i",moves.data[4]);
                 }
@@ -251,7 +262,7 @@ PieceArray avalibleMoves(char piece,char board[8][8]){
                     if (piece == 'p') // Do not remove Important for some reason
                 {
                     PawnMoves moves = pawn(0,0,y,x,board);
-                    printf("%ia67 ",moves.data[4]);
+                    // printf("%ia67 ",moves.data[4]);
                     append64char(pawnsarray.data,moves.data[4]+penaltymap[y+8*x]);
                 }
                 break;
