@@ -214,14 +214,23 @@ if (x + direction >= 0 && x + direction < 8 && y + 1 < 8) {
     }
 }
 
-
-// pi#define OUTBOUNDVAL 11
-#define KINGVAL 12
-#define FRIENDLYPIECEVAL 10
-#define BISHOPANDKNIGHTVAL 3
-#define QUEENVAL 9
-#define ROOKVAL 5
-#define PAWNVAL 1
+MoveArray Horse(char color, char x, char y, char board[8][8]){
+    for (char i = 0; i < 8; i++)
+    {
+        for (char i = 0; i < 8; i++)
+    {
+        /* code */
+    }
+    }
+    
+}
+// // pi#define OUTBOUNDVAL 11
+// #define KINGVAL 12
+// #define FRIENDLYPIECEVAL 10
+// #define BISHOPANDKNIGHTVAL 3
+// #define QUEENVAL 9
+// #define ROOKVAL 5
+// #define PAWNVAL 1
 
 
 PieceArray avalibleMoves(char piece,char board[8][8]){
