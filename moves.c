@@ -14,143 +14,41 @@ enum PieceValue
     KINGVAL = 12
 };
 
-int assessSquare(char color1, char x, char y, char board[8][8])
-{
-    // Prevent out-of-bounds access
-    char color;
-    // printf("%i",color1);
-    // Flips Color
-    if (color1 == 0)
-    {
-        color = 1;
-    }
-    if (color1 == 1)
-    {
-        color = 0;
-    }
-    // 11 means out of bounds 10 means friendly 12 means king rest are other piEces
-    if (x < 0 || x >= 8 || y < 0 || y >= 8)
-    {
+int assessSquare(char color1, char x, char y, char board[8][8]) {
+    if (x < 0 || x >= 8 || y < 0 || y >= 8) {
         return OUTBOUNDVAL;
     }
-    if (board[x][y] == 'K')
-    {
-        if (color == 1)
-        {
-            return KINGVAL;
-        }
-        else
-        {
-            return OUTBOUNDVAL;
-        }
+
+    char piece = board[x][y];
+    char color = (color1 == 0) ? 1 : 0;  // flip color
+
+    // Check for kings
+    if ((piece == 'K' && color == 1) || (piece == 'k' && color == 0)) {
+        return KINGVAL;
     }
-    if (board[x][y] == 'k')
-    {
-        if (color == 0)
-        {
-            return KINGVAL;
-        }
-        else
-        {
-            return OUTBOUNDVAL;
-        }
+    if (piece == 'K' || piece == 'k') {
+        return OUTBOUNDVAL;
     }
 
-    if (board[x][y] == 'Q')
-    {
-        if (color == 1)
-        {
-            return QUEENVAL;
-        }
-        else
-        {
-            return FRIENDLYPIECEVAL;
-        }
+    int val = 0;
+    switch (piece) {
+        case 'Q': if (color == 1) val = QUEENVAL; else val = FRIENDLYPIECEVAL; break;
+        case 'R': if (color == 1) val = ROOKVAL; else val = FRIENDLYPIECEVAL; break;
+        case 'B':
+        case 'N': if (color == 1) val = BISHOPANDKNIGHTVAL; else val = FRIENDLYPIECEVAL; break;
+        case 'P': if (color == 1) val = PAWNVAL; else val = FRIENDLYPIECEVAL; break;
+
+        case 'q': if (color == 0) val = QUEENVAL; else val = FRIENDLYPIECEVAL; break;
+        case 'r': if (color == 0) val = ROOKVAL; else val = FRIENDLYPIECEVAL; break;
+        case 'b':
+        case 'n': if (color == 0) val = BISHOPANDKNIGHTVAL; else val = FRIENDLYPIECEVAL; break;
+        case 'p': if (color == 0) val = PAWNVAL; else val = FRIENDLYPIECEVAL; break;
+        default: val = 0; break;
     }
-    else if (board[x][y] == 'R')
-    {
-        if (color == 1)
-        {
-            return ROOKVAL;
-        }
-        else
-        {
-            return FRIENDLYPIECEVAL;
-        }
-    }
-    else if (board[x][y] == 'N' ||
-             board[x][y] == 'B')
-    {
-        if (color == 1)
-        {
-            return BISHOPANDKNIGHTVAL;
-        }
-        else
-        {
-            return FRIENDLYPIECEVAL;
-        }
-    }
-    else if (board[x][y] == 'P')
-    {
-        if (color == 1)
-        {
-            return PAWNVAL;
-        }
-        else
-        {
-            return FRIENDLYPIECEVAL;
-        }
-    }
-    if (board[x][y] == 'q')
-    {
-        if (color == 0)
-        {
-            return QUEENVAL;
-        }
-        else
-        {
-            return FRIENDLYPIECEVAL;
-        }
-    }
-    else if (board[x][y] == 'r')
-    {
-        if (color == 0)
-        {
-            return ROOKVAL;
-        }
-        else
-        {
-            return FRIENDLYPIECEVAL;
-        }
-    }
-    else if (board[x][y] == 'n' ||
-             board[x][y] == 'b')
-    {
-        if (color == 0)
-        {
-            return BISHOPANDKNIGHTVAL;
-        }
-        else
-        {
-            return FRIENDLYPIECEVAL;
-        }
-    }
-    else if (board[x][y] == 'p')
-    {
-        if (color == 0)
-        {
-            return PAWNVAL;
-        }
-        else
-        {
-            return FRIENDLYPIECEVAL;
-        }
-    }
-    else
-    {
-        return 0;
-    }
+
+    return val;
 }
+
 
 PawnMoves pawn(char color, char detail, char x, char y, char board[8][8])
 {
