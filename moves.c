@@ -276,8 +276,6 @@ MoveArray Horse(char color, char x, char y, char board[8][8])
 
 PieceArray avalibleMoves(char piece, char board[8][8])
 {
-
-    // Pawns array conversion
     PieceArray pawnsarray = {0};
     for (int i = 0; i < 64; i++)
     {
