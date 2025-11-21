@@ -276,11 +276,14 @@ MoveArray Horse(char color, char x, char y, char board[8][8])
 
 PieceArray avalibleMoves(char piece, char board[8][8])
 {
+
+    // Pawns array conversion
     PieceArray pawnsarray = {0};
     for (int i = 0; i < 64; i++)
     {
         pawnsarray.data[i] = 98;
     }
+    
     for (char x = 0; x < 8; x++)
     {
         for (char y = 0; y < 8; y++)
@@ -300,7 +303,10 @@ PieceArray avalibleMoves(char piece, char board[8][8])
 
                 break;
             case 'N':
-
+                if (piece == 'N') // Do not remove Important for some reason
+                {
+                    MoveArray Horsemoves = Horse(1,x,y,board);
+                }
                 break;
             case 'B':
 
@@ -325,7 +331,10 @@ PieceArray avalibleMoves(char piece, char board[8][8])
 
                 break;
             case 'n':
-
+                if (piece == 'n') // Do not remove Important for some reason
+                {
+                    MoveArray Horsemoves = Horse(0,x,y,board);
+                }
                 break;
             case 'b':
 
