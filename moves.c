@@ -283,7 +283,7 @@ PieceArray avalibleMoves(char piece, char board[8][8])
     {
         pawnsarray.data[i] = 98;
     }
-    
+
     for (char x = 0; x < 8; x++)
     {
         for (char y = 0; y < 8; y++)
@@ -305,7 +305,7 @@ PieceArray avalibleMoves(char piece, char board[8][8])
             case 'N':
                 if (piece == 'N') // Do not remove Important for some reason
                 {
-                    MoveArray Horsemoves = Horse(1,x,y,board);
+                    MoveArray Horsemoves = Horse(1, x, y, board);
                 }
                 break;
             case 'B':
@@ -333,7 +333,7 @@ PieceArray avalibleMoves(char piece, char board[8][8])
             case 'n':
                 if (piece == 'n') // Do not remove Important for some reason
                 {
-                    MoveArray Horsemoves = Horse(0,x,y,board);
+                    MoveArray Horsemoves = Horse(0, x, y, board);
                 }
                 break;
             case 'b':
