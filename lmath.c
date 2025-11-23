@@ -2,6 +2,17 @@
 #include "play.h"
 #include "lmath.h"
 
+
+typedef unsigned long long u64;
+typedef u64 Bitboard;
+
+struct BitboardSet {
+    Bitboard color[2];
+    Bitboard pieces[6];
+};
+
+
+
 unsigned long simple_rand(void)
 {
     static unsigned long state = 0;

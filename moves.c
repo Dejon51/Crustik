@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include "lmath.h"
 
+
+
 enum PieceValue
 {
     PAWNVAL = 1,
