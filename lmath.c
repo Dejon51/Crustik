@@ -11,6 +11,22 @@ struct BitboardSet {
     Bitboard pieces[6];
 };
 
+char isDigit(char c) {
+    if (c >= '0' && c <= '9') {
+        return 1; // It is a digit
+    } else {
+        return 0; // It is not a digit
+    }
+}
+
+char charToInt(char digit_char) {
+    if (digit_char >= '0' && digit_char <= '9') {
+        return digit_char - '0';
+    } else {
+        // Handle non-digit characters, e.g., return an error code
+        return -1; // Or throw an error, depending on desired error handling
+    }
+}
 
 
 unsigned long simple_rand(void)

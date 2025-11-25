@@ -1,6 +1,10 @@
 #ifndef LMATH_H
 #define LMATH_H
 
+char isDigit(char c);
+
+char charToInt(char digit_char);
+
 unsigned long simple_rand(void);
 
 unsigned char rand_between(unsigned char min, unsigned char max);

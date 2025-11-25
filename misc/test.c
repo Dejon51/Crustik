@@ -25,7 +25,7 @@ char is_set(Bitboard bb, int sq)
 }
 
 // Convert 2D board to BitboardSet
-void board_to_bitboards(char board[8][8], BitboardSet *bits)
+void boardToBitboards(char board[8][8], BitboardSet *bits)
 {
     for (int row = 0; row < 8; row++)
     {
@@ -89,7 +89,7 @@ void board_to_bitboards(char board[8][8], BitboardSet *bits)
 }
 
 // Convert BitboardSet back to 2D board
-void bitboards_to_board(BitboardSet *bits, char board[8][8])
+void bitboardsToBoard(BitboardSet *bits, char board[8][8])
 {
     for (int row = 0; row < 8; row++)
     {
