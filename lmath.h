@@ -1,6 +1,26 @@
 #ifndef LMATH_H
 #define LMATH_H
 
+typedef unsigned long long u64;
+typedef u64 Bitboard;
+
+typedef struct {
+    Bitboard color[2];
+    Bitboard pieces[6];
+    // color 0 is white
+    // color 1 is black
+
+    // pawn
+    // bishop
+    // horse
+    // rook
+    // queen
+    // king
+} BitboardSet;
+
+
+char is_set(Bitboard bb, int sq);
+
 char isDigit(char c);
 
 char charToInt(char digit_char);

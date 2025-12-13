@@ -1,6 +1,79 @@
 #include "eval.h"
+#include "lmath.h"
+#include "stdio.h"
 
-short threatAccess(char board[8][8])
+char assessSquare(char ind, BitboardSet board)
+{
+    char peiceVal[8] = {
+        1,  // PAWNVAL
+        3,  // BISHOPVAL
+        3,  // KNIGHTVAL
+        5,  // ROOKVAL
+        9,  // QUEENVAL
+        10, // FRIENDLYPIECEVAL
+        11, // OUTBOUNDVAL
+        12  // KINGVAL
+    };
+
+    int val = 0;
+    if (is_set(board.color[0], ind))
+    {
+        if (is_set(board.pieces[0], ind))
+        {
+            return peiceVal[0];
+        }
+        if (is_set(board.pieces[1], ind))
+        {
+            return peiceVal[1];
+        }
+        if (is_set(board.pieces[2], ind))
+        {
+            return peiceVal[2];
+        }
+        if (is_set(board.pieces[3], ind))
+        {
+            return peiceVal[3];
+        }
+        if (is_set(board.pieces[4], ind))
+        {
+            return peiceVal[4];
+        }
+        if (is_set(board.pieces[5], ind))
+        {
+            return peiceVal[5];
+        }
+    }
+    else
+    {
+        if (is_set(board.pieces[0], ind))
+        {
+            return -peiceVal[0];
+        }
+        if (is_set(board.pieces[1], ind))
+        {
+            return -peiceVal[1];
+        }
+        if (is_set(board.pieces[2], ind))
+        {
+            return -peiceVal[2];
+        }
+        if (is_set(board.pieces[3], ind))
+        {
+            return -peiceVal[3];
+        }
+        if (is_set(board.pieces[4], ind))
+        {
+            return -peiceVal[4];
+        }
+        if (is_set(board.pieces[5], ind))
+        {
+            return -peiceVal[5];
+        }
+    }
+    return val;
+}
+
+short threatAccess()
 {
     for (char x = 0; x < 8; x++)
     {
@@ -10,62 +83,15 @@ short threatAccess(char board[8][8])
     }
 }
 
-short eval(char board[8][8])
+short eval(BitboardSet board)
 {
-    short points = 0;
-
-    char whitePieces[6] = {0, 0, 0, 0, 0, 0};
-    char blackPieces[6] = {0, 0, 0, 0, 0, 0};
-    // Order Is Pawn, Rook, Knight, Bishop, Queen, King
-
-    for (char x = 0; x < 8; x++)
+    short bitVal[6] = {1,3,3,5,9,0};
+    short total = 0;
+    for (int piece = 0; piece < 6; piece++)
     {
-        for (char y = 0; y < 8; y++)
-        {
-            switch (board[y][x])
-            {
-            case 'P':
-                whitePieces[0]++;
-                break;
-            case 'R':
-                whitePieces[1]++;
-                break;
-            case 'N':
-                whitePieces[2]++;
-                break;
-            case 'B':
-                whitePieces[3]++;
-                break;
-            case 'Q':
-                whitePieces[4]++;
-                break;
-            case 'K':
-                whitePieces[5]++;
-                break;
-
-            case 'p':
-                blackPieces[0]++;
-                break;
-            case 'r':
-                blackPieces[1]++;
-                break;
-            case 'n':
-                blackPieces[2]++;
-                break;
-            case 'b':
-                blackPieces[3]++;
-                break;
-            case 'q':
-                blackPieces[4]++;
-                break;
-            case 'k':
-                blackPieces[5]++;
-                break;
-            }
-        }
+        short v = bitVal[piece];
+        total += v * __builtin_popcount(board.color[0] & board.pieces[piece]);
+        total -= v * __builtin_popcount(board.color[1] & board.pieces[piece]);
     }
-
-    points = (whitePieces[0] + whitePieces[1] * 5 + whitePieces[2] * 3 + whitePieces[3] * 3 + whitePieces[4] * 9) - (blackPieces[0] + blackPieces[1] * 5 + blackPieces[2] * 3 + blackPieces[3] * 3 + blackPieces[4] * 9);
-
-    return points;
+    return total;
 }

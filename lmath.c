@@ -3,13 +3,10 @@
 #include "lmath.h"
 
 
-typedef unsigned long long u64;
-typedef u64 Bitboard;
-
-struct BitboardSet {
-    Bitboard color[2];
-    Bitboard pieces[6];
-};
+char is_set(Bitboard bb, int sq)
+{
+    return (bb & (1ULL << sq)) != 0;
+}
 
 char isDigit(char c) {
     if (c >= '0' && c <= '9') {

@@ -1,7 +1,12 @@
 #ifndef EVAL_H
 #define EVAL_H
 
+#include "lmath.h"
 
-short eval(char oldboard[8][8]);
+char assessSquare(char ind, BitboardSet board);
+
+short threatAccess();
+
+short eval(BitboardSet board);
 
 #endif
