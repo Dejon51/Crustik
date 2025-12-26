@@ -1,6 +1,8 @@
 #ifndef LMATH_H
 #define LMATH_H
 
+
+
 typedef unsigned long long u64;
 typedef u64 Bitboard;
 
@@ -19,9 +21,11 @@ typedef struct {
 } BitboardSet;
 
 
-char is_set(Bitboard bb, int sq);
+char is_set(u64 value, int sq);
 
 char isDigit(char c);
+
+char mstrcmp(const char *s1, const char *s2);
 
 char charToInt(char digit_char);
 

@@ -2,18 +2,30 @@
 #include "play.h"
 #include "lmath.h"
 
-
-char is_set(Bitboard bb, int sq)
+char is_set(u64 value, int sq)
 {
-    return (bb & (1ULL << sq)) != 0;
-}
+    if ((unsigned)sq >= 64) // ensure index is within bounds
+        return 0;
 
+    return (value >> sq) & 1;
+}
 char isDigit(char c) {
     if (c >= '0' && c <= '9') {
         return 1; // It is a digit
     } else {
         return 0; // It is not a digit
     }
+}
+
+char mstrcmp(const char *s1, const char *s2) {
+    while (*s1 && *s2) { 
+        if (*s1 != *s2) {
+            return *s1 - *s2;    
+        }
+        s1++;
+        s2++;
+    }
+    return *s1 - *s2;        
 }
 
 char charToInt(char digit_char) {
@@ -148,4 +160,27 @@ char findMinValue(int arr[], int size)
         }
     }
     return min_value;
+}
+
+void itoa(int value, char *buf) {
+    char tmp[20];
+    int i = 0, j, neg = 0;
+
+    if (value < 0) {
+        neg = 1;
+        value = -value;
+    }
+
+    do {
+        tmp[i++] = '0' + (value % 10);
+        value /= 10;
+    } while (value > 0);
+
+    if (neg) tmp[i++] = '-';
+
+    // reverse string
+    for (j = 0; j < i; j++) {
+        buf[j] = tmp[i - j - 1];
+    }
+    buf[i] = '\0';
 }

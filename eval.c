@@ -2,72 +2,80 @@
 #include "lmath.h"
 #include "stdio.h"
 
+#define ILLEGALMOVE 42 // Answer to the universe
+
+typedef enum {
+    PAWNVAL = 1,  
+    BISHOPVAL = 3, 
+    KNIGHTVAL = 3, 
+    ROOKVAL = 5, 
+    QUEENVAL = 9,
+    KINGVAL = 11, 
+} pieceVal;
+
+
 char assessSquare(char ind, BitboardSet board)
 {
-    char peiceVal[8] = {
-        1,  // PAWNVAL
-        3,  // BISHOPVAL
-        3,  // KNIGHTVAL
-        5,  // ROOKVAL
-        9,  // QUEENVAL
-        10, // FRIENDLYPIECEVAL
-        11, // OUTBOUNDVAL
-        12  // KINGVAL
-    };
 
+
+    if (ind > 63 || ind < 0)
+    {
+        return ILLEGALMOVE; // Random Value for invalid move
+    }
+    
     int val = 0;
     if (is_set(board.color[0], ind))
     {
         if (is_set(board.pieces[0], ind))
         {
-            return peiceVal[0];
+            return PAWNVAL;
         }
         if (is_set(board.pieces[1], ind))
         {
-            return peiceVal[1];
+            return BISHOPVAL;
         }
         if (is_set(board.pieces[2], ind))
         {
-            return peiceVal[2];
+            return KNIGHTVAL;
         }
         if (is_set(board.pieces[3], ind))
         {
-            return peiceVal[3];
+            return ROOKVAL;
         }
         if (is_set(board.pieces[4], ind))
         {
-            return peiceVal[4];
+            return QUEENVAL;
         }
         if (is_set(board.pieces[5], ind))
         {
-            return peiceVal[5];
+            return KINGVAL;
         }
     }
     else
     {
         if (is_set(board.pieces[0], ind))
         {
-            return -peiceVal[0];
+            return -PAWNVAL;
         }
         if (is_set(board.pieces[1], ind))
         {
-            return -peiceVal[1];
+            return -BISHOPVAL;
         }
         if (is_set(board.pieces[2], ind))
         {
-            return -peiceVal[2];
+            return -KNIGHTVAL;
         }
         if (is_set(board.pieces[3], ind))
         {
-            return -peiceVal[3];
+            return -ROOKVAL;
         }
         if (is_set(board.pieces[4], ind))
         {
-            return -peiceVal[4];
+            return -QUEENVAL;
         }
         if (is_set(board.pieces[5], ind))
         {
-            return -peiceVal[5];
+            return -KINGVAL;
         }
     }
     return val;
@@ -91,7 +99,6 @@ short eval(BitboardSet board)
     {
         short v = bitVal[piece];
         total += v * __builtin_popcount(board.color[0] & board.pieces[piece]);
-        total -= v * __builtin_popcount(board.color[1] & board.pieces[piece]);
     }
     return total;
 }
