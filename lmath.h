@@ -1,9 +1,11 @@
 #ifndef LMATH_H
 #define LMATH_H
 
+#include <stdint.h>
+#include <stdbool.h>
 
 
-typedef unsigned long long u64;
+typedef uint64_t u64;
 typedef u64 Bitboard;
 
 typedef struct {
@@ -21,21 +23,21 @@ typedef struct {
 } BitboardSet;
 
 
-char is_set(u64 value, int sq);
+bool is_set(u64 value, int sq);
 
-char isDigit(char c);
+u64 set_bit(u64 value, int sq, int on);
+
+bool isDigit(char c);
 
 char mstrcmp(const char *s1, const char *s2);
 
-char charToInt(char digit_char);
+int charToInt(char digit_char);
 
-unsigned long simple_rand(void);
+uint64_t simple_rand(void);
 
-unsigned char rand_between(unsigned char min, unsigned char max);
+unsigned int rand_between(unsigned int min, unsigned int max);
 
-char normalize_sign(char num);
-
-char absChar(int x);
+int normalize_sign(int num);
 
 char isUppercase(char c);
 
@@ -43,7 +45,8 @@ void append64char(char arr[], int value);
 
 char abs1(int num);
 
-char findMaxValue(char arr[], char size);
-char findMinValue(int arr[], int size);
+int findMaxValue(int arr[], int size);
+int findMinValue(int arr[], int size);
 
+char tolower1(char character);
 #endif

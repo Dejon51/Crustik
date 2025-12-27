@@ -2,14 +2,24 @@
 #include "play.h"
 #include "lmath.h"
 
-char is_set(u64 value, int sq)
+bool is_set(u64 value, int sq)
 {
     if ((unsigned)sq >= 64) // ensure index is within bounds
         return 0;
 
     return (value >> sq) & 1;
 }
-char isDigit(char c) {
+
+u64 set_bit(u64 value, int sq, int on)
+{
+    if ((unsigned)sq >= 64)
+        return value;
+
+    u64 mask = 1ULL << sq;
+    return (value & ~mask) | (-((u64)on) & mask);
+}
+
+bool isDigit(char c) {
     if (c >= '0' && c <= '9') {
         return 1; // It is a digit
     } else {
@@ -28,7 +38,7 @@ char mstrcmp(const char *s1, const char *s2) {
     return *s1 - *s2;        
 }
 
-char charToInt(char digit_char) {
+int charToInt(char digit_char) {
     if (digit_char >= '0' && digit_char <= '9') {
         return digit_char - '0';
     } else {
@@ -38,7 +48,7 @@ char charToInt(char digit_char) {
 }
 
 
-unsigned long simple_rand(void)
+uint64_t simple_rand(void)
 {
     static unsigned long state = 0;
 
@@ -60,7 +70,7 @@ unsigned long simple_rand(void)
     return state;
 }
 
-unsigned char rand_between(unsigned char min, unsigned char max)
+unsigned int rand_between(unsigned int min, unsigned int max)
 {
     if (max < min)
     { // swap if reversed
@@ -72,7 +82,7 @@ unsigned char rand_between(unsigned char min, unsigned char max)
     return (simple_rand() % range) + min;
 }
 
-char normalize_sign(char num)
+int normalize_sign(int num)
 {
     if (num >= 0)
     {
@@ -84,10 +94,6 @@ char normalize_sign(char num)
     }
 }
 
-char absChar(int x)
-{
-    return (x < 0) ? -x : x;
-}
 
 char isUppercase(char c)
 {
@@ -118,7 +124,7 @@ char abs1(int num)
     return num;
 }
 
-char findMaxValue(char arr[], char size)
+int findMaxValue(int arr[], int size)
 {
     if (size <= 0)
     {
@@ -140,7 +146,7 @@ char findMaxValue(char arr[], char size)
 
     return max_value;
 }
-char findMinValue(int arr[], int size)
+int findMinValue(int arr[], int size)
 {
     if (size <= 0)
     {
@@ -183,4 +189,11 @@ void itoa(int value, char *buf) {
         buf[j] = tmp[i - j - 1];
     }
     buf[i] = '\0';
+}
+
+char tolower1(char character) {
+    if (character >= 'A' && character <= 'Z') {
+        character = character + 32;
+    }
+    return character;
 }
