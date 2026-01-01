@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include "lmath.h"
+#include "play.h"
+#include "eval.h"
 
 char uciStart(void)
 {
@@ -10,12 +12,13 @@ char uciStart(void)
     {
         char line[250] = {0};
         char command[15] = {0};
-        char secondcommand[200] = {0};
+        char secondarugment[200] = {0};
+        char thirdarugment[200] = {0};
 
         if (!fgets(line, sizeof(line), stdin))
             continue;
 
-        int n = sscanf(line, "%14s %199s", command,secondcommand);
+        int n = sscanf(line, "%14s %199s", command,secondarugment);
         if (n <= 0)
             continue;
 
@@ -46,6 +49,10 @@ char uciStart(void)
             if (mstrcmp(command, "isready") == 0)
             {
                 printf("readyok\n");
+            }else if (mstrcmp(command, "perft") == 0)
+            {
+                // printf("");
+                uciok = 1;
             }
             else
             {

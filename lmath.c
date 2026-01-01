@@ -19,6 +19,19 @@ u64 set_bit(u64 value, int sq, int on)
     return (value & ~mask) | (-((u64)on) & mask);
 }
 
+uint16_t pack6(uint8_t a, uint8_t b)
+{
+    // a and b must be 0–63
+    return (a & 63) | ((b & 63) << 6);
+}
+
+uint8_t unpack6(uint16_t v, uint8_t which)
+{
+    return (which == 0)
+        ? (v & 63)          // bits 0–5
+        : ((v >> 6) & 63);  // bits 6–11
+}
+
 bool isDigit(char c) {
     if (c >= '0' && c <= '9') {
         return 1; // It is a digit

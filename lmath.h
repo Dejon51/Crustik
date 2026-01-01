@@ -14,18 +14,23 @@ typedef struct {
     // color 0 is white
     // color 1 is black
 
-    // pawn
-    // bishop
-    // horse
-    // rook
-    // queen
-    // king
+    // pawn 0
+    // bishop 1
+    // horse 2
+    // rook 3
+    // queen 4
+    // king 5
 } BitboardSet;
 
 
 bool is_set(u64 value, int sq);
 
 u64 set_bit(u64 value, int sq, int on);
+
+uint16_t pack6(uint8_t a, uint8_t b);
+
+uint8_t unpack6(uint16_t v, uint8_t which);
+
 
 bool isDigit(char c);
 
