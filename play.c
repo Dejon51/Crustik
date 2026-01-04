@@ -3,7 +3,6 @@
 #include "eval.h"
 #include <stdbool.h>
 
-
 /*public PackedMoveList getLegalMoves() {
     PackedMoveList moveList = MoveGenerator.generatePseudoLegalMoves(this);
 
@@ -21,93 +20,75 @@
     return moveList;
 }*/
 
-bool iskingcheck(BitboardSet *board,int ind){
-    bool diagonal = 0;
-    bool kingischecked =0;
-
-    int x = ind % 8;
-    int y = (ind - x) / 8;
-
-    int dx[] = {0,1, 0,-1,1,1, -1,-1};
-    int dy[] = {1,0,-1, 0,1,-1,-1, 1};
-
-    
-    for (int j = 0; j < 8; j++)
-    {
-
-    for (int i = 0; i < 8; i++)
-    {
-
-        if (is_set(board->pieces[3],i)||is_set(board->pieces[4],i))
-        {
-            kingischecked = 0;
-            j=8;
-        }
-        
-        }
-    }
-    
-    
-
-    return
+bool iskingcheck(BitboardSet *board, int ind)
+{
 }
 
-
-PawnMoves pawn(BitboardSet *board, char color, int ind)
+Bitboard pawnMask(BitboardSet board, Bitboard *colorbitboard, bool color)
 {
-    int x = ind % 8;
-    int y = (ind - x) / 8;
-    PawnMoves output = {0};
-    int dir = (color == WHITE) ? 1 : -1;
-    output.data[0] = assessSquare(x - 1 + (y + color) * 8, board); //    C
-    output.move[0] = pack6(ind, x - 1 + (y + color) * 8);
-    output.data[1] = assessSquare(x + (y + color) * 8, board); //    B
-    output.move[1] = pack6(ind, x + (y + color) * 8);
-    output.data[2] = assessSquare(x + (y + color * 2) * 8, board); // A  P  D
-    output.move[2] = pack6(ind, x + (y + color * 2) * 8);
-    output.data[3] = assessSquare(x + 1 + (y + color) * 8, board);
-    output.move[3] = pack6(ind, x + 1 + (y + color) * 8);
-
-    return output;
-}
-
-HorseMoves horse(BitboardSet *board, int ind)
-{
-    const int x = ind % 8;
-    const int y = (ind - x) / 8;
-
-    static const struct
+    Bitboard pawnmask = 0;
+    for (int ind = 0; ind < 64; ind++)
     {
-        int dx;
-        int dy;
-    } offsets[] = {
-        {2, 1}, {1, 2}, {-1, 2}, {-2, 1}, {-2, -1}, {-1, -2}, {1, -2}, {2, -1}};
-
-    HorseMoves output = {0};
-
-    for (int i = 0; i < 8; i++)
-    {
-        int target = (x + offsets[i].dx) + (y + offsets[i].dy) * 8;
-        int nx = x + offsets[i].dx;
-        int ny = y + offsets[i].dy;
-        if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+        if (color == is_set(colorbitboard, ind))
         {
-            output.data[i] = ILLEGALMOVE;
-        }
-        else
-        {
-            output.data[i] = assessSquare(target, board);
-            output.move[i] = pack6(ind, target);
+            int x = ind % 8;
+            int y = (ind - x) / 8;
+            PawnMoves output = {0};
+            int dir = (color == WHITE) ? 1 : -1;
+            pawnmask = set_bit(pawnmask, x - 1 + (y + color) * 8, 1); //    C
+            pawnmask = set_bit(pawnmask, x + (y + color) * 8, 1);     //    B
+            pawnmask = set_bit(pawnmask, x + (y + color * 2) * 8, 1); // A  P  D
+            pawnmask = set_bit(pawnmask, x + 1 + (y + color) * 8, 1);
         }
     }
 
-    return output;
+    return pawnmask;
 }
 
-BishopMoves bishop(BitboardSet *board, int ind)
+Bitboard horseMask(BitboardSet *board,, bool color)
 {
-    BishopMoves output = {0};
+    Bitboard horsemask = 0;
+    for (int ind = 0; ind < 64; ind++)
+    {
+        if (color == is_set(whitebitboard, ind) && !is_set(blackbitboard, ind))
+        {
 
+            const int x = ind % 8;
+            const int y = (ind - x) / 8;
+
+            static const struct
+            {
+                int dx;
+                int dy;
+            } offsets[] = {{2, 1}, {1, 2}, {-1, 2}, {-2, 1}, {-2, -1}, {-1, -2}, {1, -2}, {2, -1}};
+
+            for (int i = 0; i < 8; i++)
+            {
+                int target = (x + offsets[i].dx) + (y + offsets[i].dy) * 8;
+                int nx = x + offsets[i].dx;
+                int ny = y + offsets[i].dy;
+                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                {
+                    continue;
+                }
+                else
+                {
+                    horsemask = set_bit(board, target, 1);
+                }
+            }
+        }
+    }
+    return horsemask;
+}
+
+Bitboard bishopMask(BitboardSet *board,Bitboard *whitebitboard,Bitboard *blackbitboard, bool color)
+{
+    Bitboard bishopmask = {0};
+
+    for (int ind = 0; ind < 64; ind++)
+    {
+        if (color == is_set(whitebitboard, ind) && !is_set(blackbitboard, ind))
+        {
     int x = ind % 8;
     int y = ind / 8;
 
@@ -128,8 +109,7 @@ BishopMoves bishop(BitboardSet *board, int ind)
             // Check bounds first
             if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
             {
-                output.data[offset[dir] + i] = ILLEGALMOVE;
-                continue;
+                break;
             }
             else
             {
@@ -141,16 +121,17 @@ BishopMoves bishop(BitboardSet *board, int ind)
                     movego = 1;
                 }
 
-                output.data[offset[dir] + i] = movego ? ILLEGALMOVE : squareval;
-                output.move[i] = pack6(ind, nx + ny * 8);
+                int index = offset[dir] + i;
+
+                if (movego) break;
             }
         }
     }
-
-    return output;
+        }}
+    return bishopmask;
 }
 
-RookMoves rook(BitboardSet *board, int ind)
+Bitboard rookMask(BitboardSet *board, int ind)
 {
     RookMoves output = {0};
 
@@ -193,7 +174,7 @@ RookMoves rook(BitboardSet *board, int ind)
     return output;
 }
 
-QueenMoves queen(BitboardSet *board, int ind)
+Bitboard queenMask(BitboardSet *board, int ind)
 {
     QueenMoves output = {0};
 
@@ -238,7 +219,7 @@ QueenMoves queen(BitboardSet *board, int ind)
     return output;
 }
 
-KingMoves king(BitboardSet *board, int ind)
+Bitboard kingMask(BitboardSet *board, int ind)
 {
     KingMoves output = {0};
 
