@@ -24,7 +24,7 @@ bool iskingcheck(BitboardSet *board, int ind)
 {
 }
 
-Bitboard pawnMask(BitboardSet board, Bitboard *colorbitboard, bool color)
+Bitboard pawnMask(BitboardSet board,Bitboard *whitebitboard,Bitboard *blackbitboard, bool color)
 {
     Bitboard pawnmask = 0;
     for (int ind = 0; ind < 64; ind++)
@@ -45,7 +45,7 @@ Bitboard pawnMask(BitboardSet board, Bitboard *colorbitboard, bool color)
     return pawnmask;
 }
 
-Bitboard horseMask(BitboardSet *board,, bool color)
+Bitboard horseMask(BitboardSet *board,Bitboard *whitebitboard,Bitboard *blackbitboard, bool color)
 {
     Bitboard horsemask = 0;
     for (int ind = 0; ind < 64; ind++)
