@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "lmath.h"
 #include "play.h"
 #include "eval.h"
@@ -23,21 +24,21 @@ char uciStart(void)
         if (n <= 0)
             continue;
 
-        if (mstrcmp(command, "quit") == 0)
+        if (strcmp(command, "quit") == 0)
         {
             printf("bye\n");
             break;
         }
-        else if (mstrcmp(command, "uci") == 0)
+        else if (strcmp(command, "uci") == 0)
         {
             printf("uciok\n");
             uciok = 1;
         }
-        else if (mstrcmp(command, "isready") == 0)
+        else if (strcmp(command, "isready") == 0)
         {
             printf("readyok\n");
         }
-        else if (mstrcmp(command, "pos") == 0)
+        else if (strcmp(command, "pos") == 0)
         {
             fenRead(secondarugment);
             uciok = 1;

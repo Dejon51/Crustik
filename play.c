@@ -1,7 +1,9 @@
+#include <stdbool.h>
 #include "play.h"
 #include "lmath.h"
 #include "eval.h"
-#include <stdbool.h>
+
+
 
 /*public PackedMoveList getLegalMoves() {
     PackedMoveList moveList = MoveGenerator.generatePseudoLegalMoves(this);
