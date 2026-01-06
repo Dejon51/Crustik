@@ -2,6 +2,7 @@
 #include "lmath.h"
 #include "play.h"
 #include "eval.h"
+#include "fen.h"
 
 char uciStart(void)
 {
@@ -18,48 +19,34 @@ char uciStart(void)
         if (!fgets(line, sizeof(line), stdin))
             continue;
 
-        int n = sscanf(line, "%14s %199s", command,secondarugment);
+        int n = sscanf(line, "%14s %199s %199s", command, secondarugment, thirdarugment);
         if (n <= 0)
             continue;
 
         if (mstrcmp(command, "quit") == 0)
         {
             printf("bye\n");
-            fflush(stdout);
             break;
         }
-
-        if (uciok == 0)
+        else if (mstrcmp(command, "uci") == 0)
         {
-            if (mstrcmp(command, "uci") == 0)
-            {
-                printf("uciok\n");
-                uciok = 1;
-            }
-            else
-            {
-                printf("Invalid Command: %s\n", command);
-            }
-            fflush(stdout);
-            continue;
+            printf("uciok\n");
+            uciok = 1;
         }
-
-        if (uciok == 1)
+        else if (mstrcmp(command, "isready") == 0)
         {
-            if (mstrcmp(command, "isready") == 0)
-            {
-                printf("readyok\n");
-            }else if (mstrcmp(command, "perft") == 0)
-            {
-                // printf("");
-                uciok = 1;
-            }
-            else
-            {
-                printf("Invalid Command: %s\n", command);
-            }
-            fflush(stdout);
+            printf("readyok\n");
         }
+        else if (mstrcmp(command, "pos") == 0)
+        {
+            fenRead(secondarugment);
+            uciok = 1;
+        }
+        else
+        {
+            printf("Invalid Command: %s\n", command);
+        }
+        fflush(stdout);
     }
 
     return 0;

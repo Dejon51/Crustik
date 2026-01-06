@@ -204,9 +204,3 @@ void itoa(int value, char *buf) {
     buf[i] = '\0';
 }
 
-char tolower1(char character) {
-    if (character >= 'A' && character <= 'Z') {
-        character = character + 32;
-    }
-    return character;
-}
