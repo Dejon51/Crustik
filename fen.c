@@ -76,6 +76,10 @@ BitboardSet fenRead(char *inputfen)
                 i=20;
                 printf("Error: Invalid Fen\n");
             }
+            if ((inputfen[i] >= '0' && inputfen[i] <= '9'))
+            {
+                
+            }
             
             break;
         }
