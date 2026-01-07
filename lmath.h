@@ -21,6 +21,7 @@ typedef struct {
     // king 5
     Bitboard color[2];
     Bitboard pieces[6];
+    bool turn;
 } Position;
 
 
