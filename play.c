@@ -22,11 +22,11 @@
     return moveList;
 }*/
 
-bool iskingcheck(BitboardSet *board, int ind)
+bool iskingcheck(Position *board, int ind)
 {
 }
 
-Bitboard pawnMask(BitboardSet *board, Bitboard *whitebitboard, Bitboard *blackbitboard, bool color)
+Bitboard pawnMask(Position *board, Bitboard *whitebitboard, Bitboard *blackbitboard, bool color)
 {
     Bitboard pawnmask = 0ULL;
     for (int ind = 0; ind < 64; ind++)
@@ -45,7 +45,7 @@ Bitboard pawnMask(BitboardSet *board, Bitboard *whitebitboard, Bitboard *blackbi
     return pawnmask;
 }
 
-Bitboard horseMask(BitboardSet *board, Bitboard *whitebitboard, Bitboard *blackbitboard, bool color)
+Bitboard horseMask(Position *board, Bitboard *whitebitboard, Bitboard *blackbitboard, bool color)
 {
     Bitboard horsemask = 0ULL;
     for (int ind = 0; ind < 64; ind++)
@@ -81,7 +81,7 @@ Bitboard horseMask(BitboardSet *board, Bitboard *whitebitboard, Bitboard *blackb
     return horsemask;
 }
 
-Bitboard bishopMask(BitboardSet *board, Bitboard *whitebitboard, Bitboard *blackbitboard, bool color)
+Bitboard bishopMask(Position *board, Bitboard *whitebitboard, Bitboard *blackbitboard, bool color)
 {
     Bitboard bishopmask = 0ULL;
 
@@ -252,7 +252,7 @@ Bitboard kingMask(Bitboard *board, Bitboard *whitebitboard, Bitboard *blackbitbo
 
 /*
 // x+y*8
-PawnMoves pawnEval(BitboardSet *board, char color, int ind)
+PawnMoves pawnEval(Position *board, char color, int ind)
 {
     int x = ind % 8;
     int y = (ind - x) / 8;
@@ -270,7 +270,7 @@ PawnMoves pawnEval(BitboardSet *board, char color, int ind)
     return output;
 }
 
-HorseMoves horseEval(BitboardSet *board, int ind)
+HorseMoves horseEval(Position *board, int ind)
 {
     const int x = ind % 8;
     const int y = (ind - x) / 8;
@@ -303,7 +303,7 @@ HorseMoves horseEval(BitboardSet *board, int ind)
     return output;
 }
 
-BishopMoves bishopEval(BitboardSet *board, int ind)
+BishopMoves bishopEval(Position *board, int ind)
 {
     BishopMoves output = {0};
 
@@ -346,7 +346,7 @@ BishopMoves bishopEval(BitboardSet *board, int ind)
     return output;
 }
 
-RookMoves rookEval(BitboardSet *board, int ind)
+RookMoves rookEval(Position *board, int ind)
 {
     RookMoves output = {0};
 
@@ -389,7 +389,7 @@ RookMoves rookEval(BitboardSet *board, int ind)
     return output;
 }
 
-QueenMoves queenEval(BitboardSet *board, int ind)
+QueenMoves queenEval(Position *board, int ind)
 {
     QueenMoves output = {0};
 
@@ -433,7 +433,7 @@ QueenMoves queenEval(BitboardSet *board, int ind)
     return output;
 }
 
-KingMoves kingEval(BitboardSet *board, int ind)
+KingMoves kingEval(Position *board, int ind)
 {
     KingMoves output = {0};
 
@@ -461,7 +461,7 @@ KingMoves kingEval(BitboardSet *board, int ind)
     return output;
 }*/
 
-void legalMoveGen(BitboardSet *board, int move, bool turn)
+void legalMoveGen(Position *board, int move, bool turn)
 {
     for (int i = 0; i < 63; i++)
     {
@@ -473,7 +473,7 @@ void legalMoveGen(BitboardSet *board, int move, bool turn)
         // KingMoves kingmoves = king(board, i);
     }
 }
-void makeMove(BitboardSet *board, int move, bool turn)
+void makeMove(Position *board, int move, bool turn)
 {
 }
 

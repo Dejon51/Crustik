@@ -14,7 +14,7 @@ typedef enum {
 } pieceVal;
 
 
-int assessSquare(int ind, BitboardSet *board)
+int assessSquare(int ind, Position *board)
 {
 
 
@@ -83,7 +83,7 @@ int assessSquare(int ind, BitboardSet *board)
 
 
 
-short eval(BitboardSet board)
+short eval(Position board)
 {
     short totalw = 0;
     short totalb = 0;

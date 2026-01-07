@@ -9,8 +9,6 @@ typedef uint64_t u64;
 typedef u64 Bitboard;
 
 typedef struct {
-    Bitboard color[2];
-    Bitboard pieces[6];
     // color 0 is white
     // color 1 is black
 
@@ -20,7 +18,11 @@ typedef struct {
     // rook 3
     // queen 4
     // king 5
-} BitboardSet;
+    Bitboard color[2];
+    Bitboard pieces[6];
+
+    
+} Position;
 
 
 bool is_set(u64 value, int sq);

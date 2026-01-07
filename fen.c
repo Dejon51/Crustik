@@ -16,10 +16,10 @@ void print_binary(uint64_t bb)
     printf("\n");
 }
 
-BitboardSet fenRead(char *fen)
+Position fenRead(char *fen)
 {
     bool invalidfen = 0;
-    BitboardSet board = {0};
+    Position board = {0};
     int square = 0;
     // char fen[200] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     for (int i = 0; fen[i] != ' '; i++)
@@ -96,7 +96,7 @@ BitboardSet fenRead(char *fen)
             if (fen[i] >= '1' && fen[i] <= '8')
                 square += fen[i] - '0';
             else{
-                memset(&board, 0, sizeof(BitboardSet));
+                memset(&board, 0, sizeof(Position));
                 return board;
                 break;
             }

@@ -11,8 +11,8 @@ typedef struct
 } ThreatBoard;
 
 
-int assessSquare(int ind, BitboardSet *board);
+int assessSquare(int ind, Position *board);
 
-short eval(BitboardSet board);
+short eval(Position board);
 
 #endif
