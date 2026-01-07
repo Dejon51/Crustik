@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 
 typedef uint64_t u64;
@@ -20,8 +21,6 @@ typedef struct {
     // king 5
     Bitboard color[2];
     Bitboard pieces[6];
-
-    
 } Position;
 
 
