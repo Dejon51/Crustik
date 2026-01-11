@@ -7,6 +7,8 @@
 
 int main()
 {
+    // MoveList* list = {0};
+    // legalMoveGen(list);
     uciStart();
     // makeMove(board,0);// 0 white black 1
     printf("\n");

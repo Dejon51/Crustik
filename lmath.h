@@ -1,7 +1,6 @@
 #ifndef LMATH_H
 #define LMATH_H
 
-#include <stdint.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -21,8 +20,14 @@ typedef struct {
     // king 5
     Bitboard color[2];
     Bitboard pieces[6];
+    uint16_t flags;
     bool turn;
 } Position;
+
+typedef struct {
+    uint16_t movelist[218];
+    int offset;
+} MoveList;
 
 
 bool is_set(u64 value, int sq);
@@ -32,7 +37,6 @@ u64 set_bit(u64 value, int sq, int on);
 uint16_t pack6(uint8_t a, uint8_t b);
 
 uint8_t unpack6(uint16_t v, uint8_t which);
-
 
 bool isDigit(char c);
 

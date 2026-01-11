@@ -16,14 +16,16 @@ void print_binary(uint64_t bb)
     printf("\n");
 }
 
-Position fenRead(char *fen)
+Position fenRead(char *fen,char *arg1,char *arg2,char *arg3,char *arg4,char *arg5)
 {
+    
     bool invalidfen = 0;
     Position board = {0};
     int square = 0;
     // char fen[200] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    for (int i = 0; fen[i] != ' '; i++)
+    for (int i = 0; fen[i] != '\0'; i++)
     {
+
         if (i > MAX_FEN_LEN)
             break;
 
@@ -93,9 +95,11 @@ Position fenRead(char *fen)
 
             break;
         default:
-            if (fen[i] >= '1' && fen[i] <= '8')
+            if (fen[i] >= '1' && fen[i] <= '8'|| fen[i] == '\0'){
                 square += fen[i] - '0';
+            }
             else{
+                printf("hewokadas: %c",fen[i]);
                 memset(&board, 0, sizeof(Position));
                 return board;
                 break;
@@ -103,7 +107,30 @@ Position fenRead(char *fen)
             break;
         }
     }
+    
+    if (arg1[0] == 'w')
+    {
+        board.turn = 0;
+    }
+    else if(arg1[0] == 'b'){
+        board.turn = 1;
+    }
+    else
+    {
+        printf("hewokadas: %c",arg1[0]);
+        memset(&board, 0, sizeof(Position));
+        return board;
+    }
+    
+    
+    
     print_binary(board.pieces[0]);
+    print_binary(board.pieces[1]);
+    print_binary(board.pieces[2]);
+    print_binary(board.pieces[3]);
+    print_binary(board.pieces[4]);
+    print_binary(board.pieces[5]);
+    printf("%i",board.turn);
 
     return board;
 }
