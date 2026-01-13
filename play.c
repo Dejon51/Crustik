@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdio.h>
 #include "play.h"
 #include "lmath.h"
 #include "eval.h"
@@ -20,7 +21,7 @@
     return moveList;
 }*/
 
-Bitboard pawnMask(const Position *board, bool color)
+Bitboard pawnMask(Position *board, bool color)
 {
     Bitboard pawnmask = 0ULL;
     for (int ind = 0; ind < 64; ind++)
@@ -37,7 +38,7 @@ Bitboard pawnMask(const Position *board, bool color)
     return pawnmask;
 }
 
-Bitboard horseMask(const Position *board, bool color)
+Bitboard horseMask(Position *board, bool color)
 {
     Bitboard horsemask = 0ULL;
     for (int ind = 0; ind < 64; ind++)
@@ -74,7 +75,7 @@ Bitboard horseMask(const Position *board, bool color)
     return horsemask;
 }
 
-Bitboard bishopMask(const Position *board, bool color)
+Bitboard bishopMask(Position *board, bool color)
 {
     Bitboard bishopmask = 0ULL;
 
@@ -120,50 +121,51 @@ Bitboard bishopMask(const Position *board, bool color)
     return bishopmask;
 }
 
-Bitboard rookMask(const Position *board, bool color)
+Bitboard rookMask(Position *board, bool color)
 {
     Bitboard rookmask = 0ULL;
 
     for (int ind = 0; ind < 64; ind++)
         if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[3], ind))
-    {        {
-            int x = ind % 8;
-            int y = ind / 8;
-
-            // Direction vectors: NE, SE, SW, NW
-            int dx[] = {0, 1, 0, -1};
-            int dy[] = {1, 0, -1, 0};
-            int offset[] = {0, 7, 14, 21};
-
-            for (int dir = 0; dir < 4; dir++)
+        {
             {
-                for (int i = 1; i < 8; i++)
-                {
-                    int nx = x + dx[dir] * i;
-                    int ny = y + dy[dir] * i;
+                int x = ind % 8;
+                int y = ind / 8;
 
-                    // Check bounds first
-                    if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                // Direction vectors: NE, SE, SW, NW
+                int dx[] = {0, 1, 0, -1};
+                int dy[] = {1, 0, -1, 0};
+                int offset[] = {0, 7, 14, 21};
+
+                for (int dir = 0; dir < 4; dir++)
+                {
+                    for (int i = 1; i < 8; i++)
                     {
-                        break;
-                    }
-                    else
-                    {
-                        if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
+                        int nx = x + dx[dir] * i;
+                        int ny = y + dy[dir] * i;
+
+                        // Check bounds first
+                        if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
                         {
                             break;
                         }
+                        else
+                        {
+                            if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
+                            {
+                                break;
+                            }
 
-                        rookmask |= (1ULL << (nx + ny * 8));
+                            rookmask |= (1ULL << (nx + ny * 8));
+                        }
                     }
                 }
             }
         }
-    }
     return rookmask;
 }
 
-Bitboard queenMask(const Position *board, bool color)
+Bitboard queenMask(Position *board, bool color)
 {
     Bitboard queenmask = 0ULL;
 
@@ -211,8 +213,9 @@ Bitboard queenMask(const Position *board, bool color)
     return queenmask;
 }
 
-Bitboard kingMask(const Position *board, bool color)
+Bitboard kingMask(Position *board, bool color)
 {
+
     Bitboard kingmask = 0ULL;
     for (int ind = 0; ind < 64; ind++)
     {
@@ -243,61 +246,108 @@ Bitboard kingMask(const Position *board, bool color)
     return kingmask;
 }
 
-void pawnMoves(const Position *board, MoveList *list, bool color)
+void pawnMoves(Position *board, MoveList *list, bool color)
 {
-    for (int ind = 0; ind < 64; ind++)
+    int direction = (color == 0) ? -1 : 1;
+    uint64_t pawns = board->pieces[0] & board->color[color];
+
+    while (pawns)
     {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[0], ind))
+        int ind = pop_lsb(&pawns);
+        int y = ind % 8;
+        int x = ind / 8;
+        int pos[4] = {x - 1 + (y - color) * 8,
+              x + (y - direction) * 8,
+              x + (y - direction*2) * 8,
+              x + 1 + (y - direction) * 8};
+        for (int i = 0; i < 4; i++)
         {
-            int x = ind % 8;
-            int y = (ind - x) / 8;
-            int pos[4] = {x - 1 + (y + color) * 8,
-                          x + (y + color) * 8,
-                          x + (y + color * 2) * 8,
-                          x + 1 + (y + color) * 8};
-            for (int i = 0; i < 4; i++)
+            if (!is_set(board->color[color], pos[i]))
             {
-                if (!is_set(board->color[color], pos[i]))
+                printf("from:%i to:%i\n", ind, pos[i]);
+                list->movelist[list->offset] = ((ind & 63) << 6) | (pos[i] & 63);
+                list->offset++;
+            }
+        }
+    }
+}
+
+void horseMoves(Position *board, MoveList *list, bool color)
+{
+    uint64_t knights = board->pieces[2] & board->color[color];
+    while (knights)
+    {
+        int ind = pop_lsb(&knights);
+
+        int y = ind % 8;
+        int x = ind / 8;
+
+        static const struct
+        {
+            int dx;
+            int dy;
+        } offsets[] = {{2, 1}, {1, 2}, {-1, 2}, {-2, 1}, {-2, -1}, {-1, -2}, {1, -2}, {2, -1}};
+
+        for (int i = 0; i < 8; i++)
+        {
+            int target = (x + offsets[i].dx) + (y + offsets[i].dy) * 8;
+            int nx = x + offsets[i].dx;
+            int ny = y + offsets[i].dy;
+            if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+            {
+                continue;
+            }
+            else
+            {
+                if (!is_set(board->color[color], target))
                 {
-                    list->movelist[list->offset] = ((ind & 63) << 6) | (pos[0] & 63);
+                    list->movelist[list->offset] = ((ind & 63) << 6) | (target & 63);
                     list->offset++;
                 }
             }
         }
     }
-
 }
 
-void horseMoves(const Position *board,MoveList *list, bool color)
+void bishopMoves(Position *board, MoveList *list, bool color)
 {
-    for (int ind = 0; ind < 64; ind++)
+    uint64_t bishop = board->pieces[1] & board->color[color];
+    while (bishop)
     {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[2], ind))
+        int ind = pop_lsb(&bishop);
+
+        int x = ind % 8;
+        int y = ind / 8;
+
+        // Direction vectors: NE, SE, SW, NW
+        int dx[] = {1, 1, -1, -1};
+        int dy[] = {1, -1, -1, 1};
+        int offset[] = {0, 7, 14, 21};
+
+        for (int dir = 0; dir < 4; dir++)
         {
-
-            const int x = ind % 8;
-            const int y = (ind - x) / 8;
-
-            static const struct
+            for (int i = 1; i < 8; i++)
             {
-                int dx;
-                int dy;
-            } offsets[] = {{2, 1}, {1, 2}, {-1, 2}, {-2, 1}, {-2, -1}, {-1, -2}, {1, -2}, {2, -1}};
+                int nx = x + dx[dir] * i;
+                int ny = y + dy[dir] * i;
 
-            for (int i = 0; i < 8; i++)
-            {
-                int target = (x + offsets[i].dx) + (y + offsets[i].dy) * 8;
-                int nx = x + offsets[i].dx;
-                int ny = y + offsets[i].dy;
+                // Check bounds first
                 if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
                 {
-                    continue;
+                    break;
                 }
                 else
                 {
-                    if (!is_set(board->color[color], target))
+
+                    // Occupied
+                    if ((board->color[1] >> nx + ny * 8) & 1ULL || (board->color[0] >> nx + ny * 8) & 1ULL)
                     {
-                        list->movelist[list->offset] = ((ind & 63) << 6) | (target & 63);
+                        break;
+                    }
+
+                    if (!is_set(board->color[color], nx + ny * 8))
+                    {
+                        list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
                         list->offset++;
                     }
                 }
@@ -306,48 +356,44 @@ void horseMoves(const Position *board,MoveList *list, bool color)
     }
 }
 
-void bishopMoves(const Position *board,MoveList *list, bool color)
+void rookMoves(Position *board, MoveList *list, bool color)
 {
-    Bitboard bishopmask = 0ULL;
-
-    for (int ind = 0; ind < 64; ind++)
+    uint64_t rook = board->pieces[3] & board->color[color];
+    while (rook)
     {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[1], ind))
+        int ind = pop_lsb(&rook);
+
+        int x = ind % 8;
+        int y = ind / 8;
+
+        // Direction vectors: NE, SE, SW, NW
+        int dx[] = {0, 1, 0, -1};
+        int dy[] = {1, 0, -1, 0};
+        int offset[] = {0, 7, 14, 21};
+
+        for (int dir = 0; dir < 4; dir++)
         {
-            int x = ind % 8;
-            int y = ind / 8;
-
-            // Direction vectors: NE, SE, SW, NW
-            int dx[] = {1, 1, -1, -1};
-            int dy[] = {1, -1, -1, 1};
-            int offset[] = {0, 7, 14, 21};
-
-            for (int dir = 0; dir < 4; dir++)
+            for (int i = 1; i < 8; i++)
             {
-                for (int i = 1; i < 8; i++)
-                {
-                    int nx = x + dx[dir] * i;
-                    int ny = y + dy[dir] * i;
+                int nx = x + dx[dir] * i;
+                int ny = y + dy[dir] * i;
 
-                    // Check bounds first
-                    if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                // Check bounds first
+                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                {
+                    break;
+                }
+                else
+                {
+                    if ((board->color[1] >> nx + ny * 8) & 1ULL || (board->color[0] >> nx + ny * 8) & 1ULL)
                     {
                         break;
                     }
-                    else
+
+                    if (!is_set(board->color[color], nx + ny * 8))
                     {
-
-                        // Occupied
-                        if ((board->color[1] >> nx + ny * 8) & 1ULL || (board->color[0] >> nx + ny * 8) & 1ULL)
-                        {
-                            break;
-                        }
-
-                        if (!is_set(board->color[color], nx + ny * 8))
-                        {
-                            list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
-                            list->offset++;
-                        }
+                        list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
+                        list->offset++;
                     }
                 }
             }
@@ -355,52 +401,8 @@ void bishopMoves(const Position *board,MoveList *list, bool color)
     }
 }
 
-void rookMoves(const Position *board,MoveList *list, bool color)
-{
-    for (int ind = 0; ind < 64; ind++)
-    {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[3], ind))
-        {
-            int x = ind % 8;
-            int y = ind / 8;
 
-            // Direction vectors: NE, SE, SW, NW
-            int dx[] = {0, 1, 0, -1};
-            int dy[] = {1, 0, -1, 0};
-            int offset[] = {0, 7, 14, 21};
-
-            for (int dir = 0; dir < 4; dir++)
-            {
-                for (int i = 1; i < 8; i++)
-                {
-                    int nx = x + dx[dir] * i;
-                    int ny = y + dy[dir] * i;
-
-                    // Check bounds first
-                    if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                    {
-                        break;
-                    }
-                    else
-                    {
-                        if ((board->color[1] >> nx + ny * 8) & 1ULL || (board->color[0] >> nx + ny * 8) & 1ULL)
-                        {
-                            break;
-                        }
-
-                        if (!is_set(board->color[color], nx + ny * 8))
-                        {
-                            list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
-                            list->offset++;
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-void queenMoves(const Position *board,MoveList *list, bool color)
+void queenMoves(Position *board, MoveList *list, bool color)
 {
     for (int ind = 0; ind < 64; ind++)
     {
@@ -450,7 +452,7 @@ void queenMoves(const Position *board,MoveList *list, bool color)
     }
 }
 
-void kingMoves(const Position *board,MoveList *list, bool color)
+void kingMoves(Position *board, MoveList *list, bool color)
 {
     Bitboard kingmask = 0ULL;
     for (int ind = 0; ind < 64; ind++)
@@ -485,7 +487,7 @@ void kingMoves(const Position *board,MoveList *list, bool color)
     }
 }
 
-bool iskingcheck(const Position *board, int ind, bool color)
+bool iskingcheck(Position *board, int ind, bool color)
 {
     Bitboard danger = pawnMask(board, color) |
                       bishopMask(board, color) |
@@ -498,24 +500,29 @@ bool iskingcheck(const Position *board, int ind, bool color)
 
 // x+y*8
 
-MoveList* legalMoveGen(const Position *board,MoveList *list, bool turn)
+void legalMoveGen(Position *board, MoveList *list, bool turn)
 {
-    pawnMoves(board,list,turn);
-    bishopMoves(board,list,turn);
-    horseMoves(board,list,turn);
-    rookMoves(board,list,turn);
-    queenMoves(board,list,turn);
-    kingMoves(board,list,turn);
-    return list;
+    pawnMoves(board, list, turn);
+    bishopMoves(board, list, turn);
+    horseMoves(board, list, turn);
+    rookMoves(board, list, turn);
+    queenMoves(board, list, turn);
+    kingMoves(board, list, turn);
 }
-void makeMove(Position *board,MoveList *list, int move, bool turn){
+void makeMove(Position *board, MoveList *list, int move)
+{
     int from = (list->movelist[move] & 0x3F);
     int to = ((list->movelist[move] >> 6) & 0x3F);
+    printf("%i,%i",from,to);
     for (int i = 0; i < 6; i++)
     {
-        if (board->pieces[i] & (1ULL << from)){
+        if (board->pieces[i] & (1ULL << from))
+        {
             board->pieces[i] &= ~(1ULL << from);
+            board->color[board->turn] &= ~(1ULL << from);
             board->pieces[i] |= (1ULL << to);
+            board->color[board->turn] |= (1ULL << to);
+
             break;
         }
     }

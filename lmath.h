@@ -29,6 +29,7 @@ typedef struct {
     int offset;
 } MoveList;
 
+int pop_lsb(Bitboard* bb);
 
 bool is_set(u64 value, int sq);
 

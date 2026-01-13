@@ -2,6 +2,12 @@
 #include "play.h"
 #include "lmath.h"
 
+int pop_lsb(Bitboard* bb) {
+  const int sq = __builtin_ctzll(*bb);
+  *bb &= *bb - 1;
+  return sq;
+}
+
 bool is_set(u64 value, int sq)
 {
     if ((unsigned)sq >= 64) // ensure index is within bounds
