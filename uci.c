@@ -92,18 +92,23 @@ char uciStart(void)
         {
             printf("readyok\n");
         }
-        else if (strcmp(arg, "pos") == 0)
+        else if (strcmp(arg, "position") == 0)
         {
             MoveList list = {0};
 
+            if (strcmp(arg1, "startpos") == 0)
+            {
+                fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
+            }
+            else{
             fenRead(&board, arg1, arg2, arg3, arg4, arg5, arg6);
+            }
             legalMoveGen(&board, &list, board.turn);
-            // for (int i = 0; i < 20; i++)
-            // {
-                makeMove(&board,&list,0);
-            // }
+            d(&board);
+            printf("\n%lumoves\n",sizeof(list)/2 );
+            makeMove(&board,&list,31);
             
-            printf("\n%lu\n", board.pieces[0]);
+            
         }
         else if (strcmp(arg, "d") == 0)
         {

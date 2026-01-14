@@ -5,16 +5,7 @@
 
 #define MAX_FEN_LEN 200
 
-void print_binary(uint64_t bb)
-{
-    for (int i = 63; i >= 0; i--)
-    {
-        printf("%c", (bb & (1ULL << i)) ? '1' : '0');
-        if (i % 8 == 0)
-            printf(" ");
-    }
-    printf("\n");
-}
+
 
 void fenRead(Position * board,char *fen,char *arg1,char *arg2,char *arg3,char *arg4,char *arg5)
 {
@@ -98,7 +89,7 @@ void fenRead(Position * board,char *fen,char *arg1,char *arg2,char *arg3,char *a
                 square += fen[i] - '0';
             }
             else{
-                printf("Error: Invalid fen problem: %c",fen[i]);
+                printf("Error: Invalid fen problem: %c\n",fen[i]);
                 memset(board, 0, sizeof(Position));
                 break;
             }
@@ -115,7 +106,7 @@ void fenRead(Position * board,char *fen,char *arg1,char *arg2,char *arg3,char *a
     }
     else
     {
-        printf("Error: Invalid fen problem: %c",arg1[0]);
+        printf("Error: Invalid fen problem: %c\n",arg1[0]);
         memset(board, 0, sizeof(Position));
     }
 }

@@ -20,6 +20,41 @@
 
     return moveList;
 }*/
+void print_bytes(long value)
+{
+    // Determine the number of bits in a long without limits.h
+    // The C standard guarantees that a byte has at least 8 bits,
+    // so we can use a constant 8 for common systems.
+    // A more robust way to find CHAR_BIT without limits.h is complex,
+    // but for the sake of simplicity and common environments, we assume 8.
+    const int bits_in_byte = 8;
+    int total_bits = sizeof(long) * bits_in_byte;
+
+    // Use an unsigned long to avoid issues with right-shifting signed numbers.
+    unsigned long mask = 1UL << (total_bits - 1);
+
+    for (int i = 0; i < total_bits; i++)
+    {
+        // Use bitwise AND to check the current bit
+        if (value & mask)
+        {
+            printf("1");
+        }
+        else
+        {
+            printf("0");
+        }
+        // Right shift the mask to check the next bit
+        mask >>= 1;
+
+        // Optional: Add a space every 8 bits for readability (byte separation)
+        if ((i + 1) % bits_in_byte == 0 && (i + 1) != total_bits)
+        {
+            printf(" ");
+        }
+    }
+    printf("\n");
+}
 
 Bitboard pawnMask(Position *board, bool color)
 {
@@ -254,19 +289,29 @@ void pawnMoves(Position *board, MoveList *list, bool color)
     while (pawns)
     {
         int ind = pop_lsb(&pawns);
-        int y = ind % 8;
-        int x = ind / 8;
-        int pos[4] = {x - 1 + (y - color) * 8,
-              x + (y - direction) * 8,
-              x + (y - direction*2) * 8,
-              x + 1 + (y - direction) * 8};
+        int x = ind % 8;
+        int y = ind / 8;
+        int offsetx[4] = {-1,0,0,1};
+        int offsety[4] = {1,1,2,1};
         for (int i = 0; i < 4; i++)
         {
-            if (!is_set(board->color[color], pos[i]))
+            if (x+offsetx[i] < 0 || x+offsetx[i] >= 8 || y+direction*offsety[i] < 0 || y+direction*offsety[i] >= 8)
             {
-                printf("from:%i to:%i\n", ind, pos[i]);
-                list->movelist[list->offset] = ((ind & 63) << 6) | (pos[i] & 63);
-                list->offset++;
+                continue;
+            }
+            else
+            {
+                printf("from:%i to:%i\n", ind, x + offsetx[i] + (y + direction *offsety[i])*8);
+
+                if ((board->color[1] >> x + offsetx[i] + (y + direction *offsety[i])*8) & 1ULL || (board->color[0] >> x + offsetx[i] + (y + direction *offsety[i])*8) & 1ULL)
+                {
+                    break;
+                }
+                if (!is_set(board->color[!color], x + offsetx[i] + (y + direction *offsety[i])*8))
+                {
+                    list->movelist[list->offset] = ((ind & 63) << 6) | (x + offsetx[i] + (y + direction *offsety[i]) * 8 & 63);
+                    list->offset++;
+                }
             }
         }
     }
@@ -279,8 +324,8 @@ void horseMoves(Position *board, MoveList *list, bool color)
     {
         int ind = pop_lsb(&knights);
 
-        int y = ind % 8;
-        int x = ind / 8;
+        int x = ind % 8;
+        int y = ind / 8;
 
         static const struct
         {
@@ -401,7 +446,6 @@ void rookMoves(Position *board, MoveList *list, bool color)
     }
 }
 
-
 void queenMoves(Position *board, MoveList *list, bool color)
 {
     for (int ind = 0; ind < 64; ind++)
@@ -509,22 +553,91 @@ void legalMoveGen(Position *board, MoveList *list, bool turn)
     queenMoves(board, list, turn);
     kingMoves(board, list, turn);
 }
+
 void makeMove(Position *board, MoveList *list, int move)
 {
-    int from = (list->movelist[move] & 0x3F);
-    int to = ((list->movelist[move] >> 6) & 0x3F);
-    printf("%i,%i",from,to);
-    for (int i = 0; i < 6; i++)
+    int to = (list->movelist[move] & 0x3F);
+    int from = ((list->movelist[move] >> 6) & 0x3F);
+    if (board->pieces[0] & (1ULL << from))
     {
-        if (board->pieces[i] & (1ULL << from))
-        {
-            board->pieces[i] &= ~(1ULL << from);
-            board->color[board->turn] &= ~(1ULL << from);
-            board->pieces[i] |= (1ULL << to);
-            board->color[board->turn] |= (1ULL << to);
 
-            break;
-        }
+        printf("Makemove PAWN: %i,%i\n", from, to);
+        board->pieces[0] &= ~(1ULL << from);
+        board->color[board->turn] &= ~(1ULL << from);
+        board->pieces[0] |= (1ULL << to);
+        board->pieces[1] &= ~(1ULL << to);
+        board->pieces[2] &= ~(1ULL << to);
+        board->pieces[3] &= ~(1ULL << to);
+        board->pieces[4] &= ~(1ULL << to);
+        board->pieces[5] &= ~(1ULL << to);
+        board->color[board->turn] |= (1ULL << to);
+        print_bytes(board->pieces[0]);
+    }
+    else if (board->pieces[1] & (1ULL << from))
+    {
+        printf("Makemove: %i,%i\n", from, to);
+        board->pieces[1] &= ~(1ULL << from);
+        board->color[board->turn] &= ~(1ULL << from);
+        board->pieces[0] &= ~(1ULL << to);
+        board->pieces[1] |= (1ULL << to);
+        board->pieces[2] &= ~(1ULL << to);
+        board->pieces[3] &= ~(1ULL << to);
+        board->pieces[4] &= ~(1ULL << to);
+        board->pieces[5] &= ~(1ULL << to);
+        board->color[board->turn] |= (1ULL << to);
+    }
+    else if (board->pieces[2] & (1ULL << from))
+    {
+        printf("Makemove: %i,%i\n", from, to);
+        board->pieces[2] &= ~(1ULL << from);
+        board->color[board->turn] &= ~(1ULL << from);
+        board->pieces[0] &= ~(1ULL << to);
+        board->pieces[1] &= ~(1ULL << to);
+        board->pieces[2] |= (1ULL << to);
+        board->pieces[3] &= ~(1ULL << to);
+        board->pieces[4] &= ~(1ULL << to);
+        board->pieces[5] &= ~(1ULL << to);
+        
+        board->color[board->turn] |= (1ULL << to);
+    }
+    else if (board->pieces[3] & (1ULL << from))
+    {
+        printf("Makemove: %i,%i\n", from, to);
+        board->pieces[3] &= ~(1ULL << from);
+        board->color[board->turn] &= ~(1ULL << from);
+        board->pieces[0] &= ~(1ULL << to);
+        board->pieces[1] &= ~(1ULL << to);
+        board->pieces[2] &= ~(1ULL << to);
+        board->pieces[3] |= (1ULL << to);
+        board->pieces[4] &= ~(1ULL << to);
+        board->pieces[5] &= ~(1ULL << to);
+        board->color[board->turn] |= (1ULL << to);
+    }
+    else if (board->pieces[4] & (1ULL << from))
+    {
+        printf("Makemove: %i,%i\n", from, to);
+        board->pieces[4] &= ~(1ULL << from);
+        board->color[board->turn] &= ~(1ULL << from);
+        board->pieces[0] &= ~(1ULL << to);
+        board->pieces[1] &= ~(1ULL << to);
+        board->pieces[2] &= ~(1ULL << to);
+        board->pieces[3] &= ~(1ULL << to);
+        board->pieces[4] |= (1ULL << to);
+        board->pieces[5] &= ~(1ULL << to);
+        board->color[board->turn] |= (1ULL << to);
+    }
+    else if (board->pieces[5] & (1ULL << from))
+    {
+        printf("Makemove: %i,%i\n", from, to);
+        board->pieces[5] &= ~(1ULL << from);
+        board->color[board->turn] &= ~(1ULL << from);
+        board->pieces[0] &= ~(1ULL << to);
+        board->pieces[1] &= ~(1ULL << to);
+        board->pieces[2] &= ~(1ULL << to);
+        board->pieces[3] &= ~(1ULL << to);
+        board->pieces[4] &= ~(1ULL << to);
+        board->pieces[5] |= (1ULL << to);
+        board->color[board->turn] |= (1ULL << to);
     }
 }
 
