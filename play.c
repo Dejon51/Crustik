@@ -59,12 +59,15 @@ void print_bytes(long value)
 Bitboard pawnMask(Position *board, bool color)
 {
     Bitboard pawnmask = 0ULL;
-    for (int ind = 0; ind < 64; ind++)
+    int direction = (color == 0) ? -1 : 1;
+    uint64_t pawns = board->pieces[0] & board->color[color];
+    while (pawns)
     {
+        int ind = pop_lsb(&pawns);
         if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[0], ind))
         {
             int x = ind % 8;
-            int y = (ind - x) / 8;
+            int y = ind / 8;
             pawnmask |= (1ULL << (x - 1 + (y + color) * 8));
             pawnmask |= (1ULL << (x + 1 + (y + color) * 8));
         }
@@ -82,8 +85,8 @@ Bitboard horseMask(Position *board, bool color)
 
         {
 
-            const int x = ind % 8;
-            const int y = (ind - x) / 8;
+            int x = ind % 8;
+            int y = ind / 8;
 
             static const struct
             {
@@ -291,26 +294,56 @@ void pawnMoves(Position *board, MoveList *list, bool color)
         int ind = pop_lsb(&pawns);
         int x = ind % 8;
         int y = ind / 8;
-        int offsetx[4] = {-1,0,0,1};
-        int offsety[4] = {1,1,2,1};
+        int offsetx[4] = {-1, 0, 0, 1};
+        int offsety[4] = {1, 1, 2, 1};
         for (int i = 0; i < 4; i++)
         {
-            if (x+offsetx[i] < 0 || x+offsetx[i] >= 8 || y+direction*offsety[i] < 0 || y+direction*offsety[i] >= 8)
+            if (x + offsetx[i] < 0 || x + offsetx[i] >= 8 ||
+                y + direction * offsety[i] < 0 || y + direction * offsety[i] >= 8)
             {
                 continue;
             }
             else
             {
-                printf("from:%i to:%i\n", ind, x + offsetx[i] + (y + direction *offsety[i])*8);
+                int to = x + offsetx[i] + (y + direction * offsety[i]) * 8;
 
-                if ((board->color[1] >> x + offsetx[i] + (y + direction *offsety[i])*8) & 1ULL || (board->color[0] >> x + offsetx[i] + (y + direction *offsety[i])*8) & 1ULL)
+                printf("from:%i to:%i\n", ind, to);
+
+                if ((((board->color[1] >> to) & 1ULL) ||
+                     ((board->color[0] >> to) & 1ULL)) &&
+                    (i == 2 || i == 1))
                 {
-                    break;
+                    printf("Im not taking this");
+                    continue;
                 }
-                if (!is_set(board->color[!color], x + offsetx[i] + (y + direction *offsety[i])*8))
+                else if (i == 1)
                 {
-                    list->movelist[list->offset] = ((ind & 63) << 6) | (x + offsetx[i] + (y + direction *offsety[i]) * 8 & 63);
+                    list->movelist[list->offset] = ((ind & 63) << 6) | (to & 63);
                     list->offset++;
+                }
+                else if (i == 2 && (y == 1 || y == 6))
+                {
+                    if (!is_set(board->color[color], offsetx[i] + (y + direction * offsety[i - 1]) * 8) &&
+                        !is_set(board->color[!color], offsetx[i] + (y + direction * offsety[i - 1]) * 8))
+                    {
+                        list->movelist[list->offset] = ((ind & 63) << 6) | (to & 63);
+                        list->offset++;
+                    }
+                }
+                else if (is_set(board->color[color], to))
+                {
+                    continue;
+                }
+                else if (!is_set(board->color[color], to) &&
+                         !is_set(board->color[!color], to))
+                {
+                    continue;
+                }
+                else
+                {
+                    list->movelist[list->offset] = ((ind & 63) << 6) | (to & 63);
+                    list->offset++;
+                    continue;
                 }
             }
         }
@@ -392,6 +425,7 @@ void bishopMoves(Position *board, MoveList *list, bool color)
 
                     if (!is_set(board->color[color], nx + ny * 8))
                     {
+                        printf("pawne");
                         list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
                         list->offset++;
                     }
@@ -560,7 +594,6 @@ void makeMove(Position *board, MoveList *list, int move)
     int from = ((list->movelist[move] >> 6) & 0x3F);
     if (board->pieces[0] & (1ULL << from))
     {
-
         printf("Makemove PAWN: %i,%i\n", from, to);
         board->pieces[0] &= ~(1ULL << from);
         board->color[board->turn] &= ~(1ULL << from);
@@ -571,6 +604,8 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[4] &= ~(1ULL << to);
         board->pieces[5] &= ~(1ULL << to);
         board->color[board->turn] |= (1ULL << to);
+        board->color[!board->turn] &= ~(1ULL << to);
+
         print_bytes(board->pieces[0]);
     }
     else if (board->pieces[1] & (1ULL << from))
@@ -585,6 +620,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[4] &= ~(1ULL << to);
         board->pieces[5] &= ~(1ULL << to);
         board->color[board->turn] |= (1ULL << to);
+        board->color[!board->turn] &= ~(1ULL << to);
     }
     else if (board->pieces[2] & (1ULL << from))
     {
@@ -597,8 +633,9 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[3] &= ~(1ULL << to);
         board->pieces[4] &= ~(1ULL << to);
         board->pieces[5] &= ~(1ULL << to);
-        
+
         board->color[board->turn] |= (1ULL << to);
+        board->color[!board->turn] &= ~(1ULL << to);
     }
     else if (board->pieces[3] & (1ULL << from))
     {
@@ -612,6 +649,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[4] &= ~(1ULL << to);
         board->pieces[5] &= ~(1ULL << to);
         board->color[board->turn] |= (1ULL << to);
+        board->color[!board->turn] &= ~(1ULL << to);
     }
     else if (board->pieces[4] & (1ULL << from))
     {
@@ -625,6 +663,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[4] |= (1ULL << to);
         board->pieces[5] &= ~(1ULL << to);
         board->color[board->turn] |= (1ULL << to);
+        board->color[!board->turn] &= ~(1ULL << to);
     }
     else if (board->pieces[5] & (1ULL << from))
     {
@@ -638,6 +677,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[4] &= ~(1ULL << to);
         board->pieces[5] |= (1ULL << to);
         board->color[board->turn] |= (1ULL << to);
+        board->color[!board->turn] &= ~(1ULL << to);
     }
 }
 

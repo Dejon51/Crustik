@@ -98,7 +98,7 @@ char uciStart(void)
 
             if (strcmp(arg1, "startpos") == 0)
             {
-                fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
+                fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/1PP2pp1/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
             }
             else{
             fenRead(&board, arg1, arg2, arg3, arg4, arg5, arg6);
@@ -106,7 +106,9 @@ char uciStart(void)
             legalMoveGen(&board, &list, board.turn);
             d(&board);
             printf("\n%lumoves\n",sizeof(list)/2 );
-            makeMove(&board,&list,31);
+            makeMove(&board,&list,1);
+            d(&board);
+
             
             
         }
