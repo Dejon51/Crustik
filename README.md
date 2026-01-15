@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Crustik.png" alt="Crustik Logo" width="200"/>
+</p>
+
 ### Crustik Chess Engine
 
 #### Plays like a human
