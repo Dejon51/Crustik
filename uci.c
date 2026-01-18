@@ -108,9 +108,19 @@ char uciStart(void)
             printf("\n%lumoves\n",sizeof(list)/2 );
             makeMove(&board,&list,1);
             d(&board);
+        }
+        else if (strcmp(arg, "perft") == 0)
+        {
+            MoveList list = {0};
 
-            
-            
+            if (strcmp(arg1, "startpos") == 0)
+            {
+                fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
+            }
+            else{
+                fenRead(&board, arg1, arg2, arg3, arg4, arg5, arg6);
+            }
+            printf("%li\n",perft(&board,3));
         }
         else if (strcmp(arg, "d") == 0)
         {

@@ -20,7 +20,7 @@ typedef struct {
     // king 5
     Bitboard color[2];
     Bitboard pieces[6];
-    uint16_t flags;
+    uint16_t epsquare;
     bool turn;
 } Position;
 

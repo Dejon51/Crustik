@@ -284,8 +284,9 @@ Bitboard kingMask(Position *board, bool color)
     return kingmask;
 }
 
-void pawnMoves(Position *board, MoveList *list, bool color)
+int pawnMoves(Position *board, MoveList *list, bool color)
 {
+    int n_moves = 0;
     int direction = (color == 0) ? -1 : 1;
     uint64_t pawns = board->pieces[0] & board->color[color];
 
@@ -307,17 +308,17 @@ void pawnMoves(Position *board, MoveList *list, bool color)
             {
                 int to = x + offsetx[i] + (y + direction * offsety[i]) * 8;
 
-                printf("from:%i to:%i\n", ind, to);
 
                 if ((((board->color[1] >> to) & 1ULL) ||
                      ((board->color[0] >> to) & 1ULL)) &&
                     (i == 2 || i == 1))
                 {
-                    printf("Im not taking this");
                     continue;
                 }
                 else if (i == 1)
                 {
+                    n_moves++;
+
                     list->movelist[list->offset] = ((ind & 63) << 6) | (to & 63);
                     list->offset++;
                 }
@@ -326,9 +327,22 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                     if (!is_set(board->color[color], offsetx[i] + (y + direction * offsety[i - 1]) * 8) &&
                         !is_set(board->color[!color], offsetx[i] + (y + direction * offsety[i - 1]) * 8))
                     {
+                        if (is_set(board->color[!color], x + 1 + y * 8) || is_set(board->color[!color], x - 1 + y * 8))
+                        {
+                            board->epsquare = (((x + offsetx[i] + (y + direction * (offsety[i] - 1)) * 8) & 63) << 6);
+                        }
+                        n_moves++;
+
                         list->movelist[list->offset] = ((ind & 63) << 6) | (to & 63);
                         list->offset++;
                     }
+                }
+                else if (board->epsquare == to)
+                {
+                    n_moves++;
+
+                    list->movelist[list->offset] = ((ind & 63) << 6) | (to & 63);
+                    list->offset++;
                 }
                 else if (is_set(board->color[color], to))
                 {
@@ -341,6 +355,8 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 }
                 else
                 {
+                    n_moves++;
+
                     list->movelist[list->offset] = ((ind & 63) << 6) | (to & 63);
                     list->offset++;
                     continue;
@@ -348,10 +364,13 @@ void pawnMoves(Position *board, MoveList *list, bool color)
             }
         }
     }
+    return n_moves;
 }
 
-void horseMoves(Position *board, MoveList *list, bool color)
+int horseMoves(Position *board, MoveList *list, bool color)
 {
+    int n_moves = 0;
+
     uint64_t knights = board->pieces[2] & board->color[color];
     while (knights)
     {
@@ -379,16 +398,21 @@ void horseMoves(Position *board, MoveList *list, bool color)
             {
                 if (!is_set(board->color[color], target))
                 {
+                    n_moves++;
+
                     list->movelist[list->offset] = ((ind & 63) << 6) | (target & 63);
                     list->offset++;
                 }
             }
         }
     }
+    return n_moves;
 }
 
-void bishopMoves(Position *board, MoveList *list, bool color)
+int bishopMoves(Position *board, MoveList *list, bool color)
 {
+    int n_moves = 0;
+
     uint64_t bishop = board->pieces[1] & board->color[color];
     while (bishop)
     {
@@ -425,7 +449,8 @@ void bishopMoves(Position *board, MoveList *list, bool color)
 
                     if (!is_set(board->color[color], nx + ny * 8))
                     {
-                        printf("pawne");
+                        n_moves++;
+
                         list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
                         list->offset++;
                     }
@@ -433,10 +458,13 @@ void bishopMoves(Position *board, MoveList *list, bool color)
             }
         }
     }
+    return n_moves;
 }
 
-void rookMoves(Position *board, MoveList *list, bool color)
+int rookMoves(Position *board, MoveList *list, bool color)
 {
+    int n_moves = 0;
+
     uint64_t rook = board->pieces[3] & board->color[color];
     while (rook)
     {
@@ -471,6 +499,8 @@ void rookMoves(Position *board, MoveList *list, bool color)
 
                     if (!is_set(board->color[color], nx + ny * 8))
                     {
+                        n_moves++;
+
                         list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
                         list->offset++;
                     }
@@ -478,10 +508,13 @@ void rookMoves(Position *board, MoveList *list, bool color)
             }
         }
     }
+    return n_moves;
 }
 
-void queenMoves(Position *board, MoveList *list, bool color)
+int queenMoves(Position *board, MoveList *list, bool color)
 {
+    int n_moves = 0;
+
     for (int ind = 0; ind < 64; ind++)
     {
         if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[4], ind))
@@ -520,6 +553,8 @@ void queenMoves(Position *board, MoveList *list, bool color)
 
                         if (!is_set(board->color[color], nx + ny * 8))
                         {
+                            n_moves++;
+
                             list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
                             list->offset++;
                         }
@@ -528,10 +563,13 @@ void queenMoves(Position *board, MoveList *list, bool color)
             }
         }
     }
+    return n_moves;
 }
 
-void kingMoves(Position *board, MoveList *list, bool color)
+int kingMoves(Position *board, MoveList *list, bool color)
 {
+    int n_moves = 0;
+
     Bitboard kingmask = 0ULL;
     for (int ind = 0; ind < 64; ind++)
     {
@@ -556,6 +594,7 @@ void kingMoves(Position *board, MoveList *list, bool color)
                 {
                     if (!is_set(board->color[color], nx + ny * 8))
                     {
+                        n_moves++;
                         list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
                         list->offset++;
                     }
@@ -563,6 +602,7 @@ void kingMoves(Position *board, MoveList *list, bool color)
             }
         }
     }
+    return n_moves;
 }
 
 bool iskingcheck(Position *board, int ind, bool color)
@@ -578,23 +618,31 @@ bool iskingcheck(Position *board, int ind, bool color)
 
 // x+y*8
 
-void legalMoveGen(Position *board, MoveList *list, bool turn)
+int legalMoveGen(Position *board, MoveList *list, bool turn)
 {
-    pawnMoves(board, list, turn);
-    bishopMoves(board, list, turn);
-    horseMoves(board, list, turn);
-    rookMoves(board, list, turn);
-    queenMoves(board, list, turn);
-    kingMoves(board, list, turn);
+    int n_moves = 0;
+    n_moves += pawnMoves(board, list, turn);
+    n_moves += bishopMoves(board, list, turn);
+    n_moves += horseMoves(board, list, turn);
+    n_moves += rookMoves(board, list, turn);
+    n_moves += queenMoves(board, list, turn);
+    n_moves += kingMoves(board, list, turn);
+    return n_moves;
 }
 
 void makeMove(Position *board, MoveList *list, int move)
 {
+    int direction = (board->turn == 0) ? -1 : 1;
     int to = (list->movelist[move] & 0x3F);
     int from = ((list->movelist[move] >> 6) & 0x3F);
     if (board->pieces[0] & (1ULL << from))
     {
-        printf("Makemove PAWN: %i,%i\n", from, to);
+        if (to == board->epsquare)
+        {
+            board->color[board->turn] &= ~(1ULL << to + 8 * direction);
+            board->color[!board->turn] &= ~(1ULL << to + 8 * direction);
+            board->pieces[0] &= ~(1ULL << to + 8 * direction);
+        }
         board->pieces[0] &= ~(1ULL << from);
         board->color[board->turn] &= ~(1ULL << from);
         board->pieces[0] |= (1ULL << to);
@@ -606,11 +654,9 @@ void makeMove(Position *board, MoveList *list, int move)
         board->color[board->turn] |= (1ULL << to);
         board->color[!board->turn] &= ~(1ULL << to);
 
-        print_bytes(board->pieces[0]);
     }
     else if (board->pieces[1] & (1ULL << from))
     {
-        printf("Makemove: %i,%i\n", from, to);
         board->pieces[1] &= ~(1ULL << from);
         board->color[board->turn] &= ~(1ULL << from);
         board->pieces[0] &= ~(1ULL << to);
@@ -624,7 +670,6 @@ void makeMove(Position *board, MoveList *list, int move)
     }
     else if (board->pieces[2] & (1ULL << from))
     {
-        printf("Makemove: %i,%i\n", from, to);
         board->pieces[2] &= ~(1ULL << from);
         board->color[board->turn] &= ~(1ULL << from);
         board->pieces[0] &= ~(1ULL << to);
@@ -639,7 +684,6 @@ void makeMove(Position *board, MoveList *list, int move)
     }
     else if (board->pieces[3] & (1ULL << from))
     {
-        printf("Makemove: %i,%i\n", from, to);
         board->pieces[3] &= ~(1ULL << from);
         board->color[board->turn] &= ~(1ULL << from);
         board->pieces[0] &= ~(1ULL << to);
@@ -653,7 +697,6 @@ void makeMove(Position *board, MoveList *list, int move)
     }
     else if (board->pieces[4] & (1ULL << from))
     {
-        printf("Makemove: %i,%i\n", from, to);
         board->pieces[4] &= ~(1ULL << from);
         board->color[board->turn] &= ~(1ULL << from);
         board->pieces[0] &= ~(1ULL << to);
@@ -667,7 +710,6 @@ void makeMove(Position *board, MoveList *list, int move)
     }
     else if (board->pieces[5] & (1ULL << from))
     {
-        printf("Makemove: %i,%i\n", from, to);
         board->pieces[5] &= ~(1ULL << from);
         board->color[board->turn] &= ~(1ULL << from);
         board->pieces[0] &= ~(1ULL << to);
@@ -679,6 +721,27 @@ void makeMove(Position *board, MoveList *list, int move)
         board->color[board->turn] |= (1ULL << to);
         board->color[!board->turn] &= ~(1ULL << to);
     }
+    board->epsquare = 0;
+    board->turn = !board->turn;
+}
+
+uint64_t perft(Position *board, int depth)
+{
+    if (depth == 0)
+        return 1;
+
+    MoveList move_list;
+    int n_moves = legalMoveGen(board, &move_list, board->turn);
+    uint64_t nodes = 0;
+
+    for (int i = 0; i < n_moves; i++)
+    {
+
+        Position copy = *board;
+        makeMove(&copy, &move_list, i);
+        nodes += perft(&copy, depth - 1);
+    }
+    return nodes;
 }
 
 // u64 Perft(int depth)
