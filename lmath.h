@@ -25,8 +25,8 @@ typedef struct {
 } Position;
 
 typedef struct {
-    uint16_t movelist[218];
-    int offset;
+    uint16_t movelist[256];
+    unsigned offset;
 } MoveList;
 
 int pop_lsb(Bitboard* bb);

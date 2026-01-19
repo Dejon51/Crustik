@@ -4,22 +4,6 @@
 #include "lmath.h"
 #include "eval.h"
 
-/*public PackedMoveList getLegalMoves() {
-    PackedMoveList moveList = MoveGenerator.generatePseudoLegalMoves(this);
-
-    for (int i = 0; i < moveList->size(); i++) {
-        long move = moveList->get(i);
-        makeMove(move);
-        if (isKingInCheck(!whiteTurn)) {
-            moveList->remove(i);
-            i--;
-        }
-        undoMove();
-
-    }
-
-    return moveList;
-}*/
 void print_bytes(long value)
 {
     // Determine the number of bits in a long without limits.h
@@ -79,34 +63,31 @@ Bitboard pawnMask(Position *board, bool color)
 Bitboard horseMask(Position *board, bool color)
 {
     Bitboard horsemask = 0ULL;
-    for (int ind = 0; ind < 64; ind++)
+    uint64_t knights = board->pieces[2] & board->color[color];
+    while (knights)
     {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[2], ind))
+        int ind = pop_lsb(&knights);
+        int x = ind % 8;
+        int y = ind / 8;
 
+        static const struct
         {
+            int dx;
+            int dy;
+        } offsets[] = {{2, 1}, {1, 2}, {-1, 2}, {-2, 1}, {-2, -1}, {-1, -2}, {1, -2}, {2, -1}};
 
-            int x = ind % 8;
-            int y = ind / 8;
-
-            static const struct
+        for (int i = 0; i < 8; i++)
+        {
+            int target = (x + offsets[i].dx) + (y + offsets[i].dy) * 8;
+            int nx = x + offsets[i].dx;
+            int ny = y + offsets[i].dy;
+            if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
             {
-                int dx;
-                int dy;
-            } offsets[] = {{2, 1}, {1, 2}, {-1, 2}, {-2, 1}, {-2, -1}, {-1, -2}, {1, -2}, {2, -1}};
-
-            for (int i = 0; i < 8; i++)
+                continue;
+            }
+            else
             {
-                int target = (x + offsets[i].dx) + (y + offsets[i].dy) * 8;
-                int nx = x + offsets[i].dx;
-                int ny = y + offsets[i].dy;
-                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                {
-                    continue;
-                }
-                else
-                {
-                    horsemask |= (1ULL << target);
-                }
+                horsemask |= (1ULL << target);
             }
         }
     }
@@ -117,41 +98,41 @@ Bitboard bishopMask(Position *board, bool color)
 {
     Bitboard bishopmask = 0ULL;
 
-    for (int ind = 0; ind < 64; ind++)
+    uint64_t bishop = (board->pieces[1] & board->pieces[4]) & board->color[color];
+    while (bishop)
     {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[1], ind))
+        int ind = pop_lsb(&bishop);
+
+        int x = ind % 8;
+        int y = ind / 8;
+
+        // Direction vectors: NE, SE, SW, NW
+        int dx[] = {1, 1, -1, -1};
+        int dy[] = {1, -1, -1, 1};
+        int offset[] = {0, 7, 14, 21};
+
+        for (int dir = 0; dir < 4; dir++)
         {
-            int x = ind % 8;
-            int y = ind / 8;
-
-            // Direction vectors: NE, SE, SW, NW
-            int dx[] = {1, 1, -1, -1};
-            int dy[] = {1, -1, -1, 1};
-            int offset[] = {0, 7, 14, 21};
-
-            for (int dir = 0; dir < 4; dir++)
+            for (int i = 1; i < 8; i++)
             {
-                for (int i = 1; i < 8; i++)
-                {
-                    int nx = x + dx[dir] * i;
-                    int ny = y + dy[dir] * i;
+                int nx = x + dx[dir] * i;
+                int ny = y + dy[dir] * i;
 
-                    // Check bounds first
-                    if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                // Check bounds first
+                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                {
+                    break;
+                }
+                else
+                {
+
+                    // Occupied
+                    if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
                     {
                         break;
                     }
-                    else
-                    {
 
-                        // Occupied
-                        if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
-                        {
-                            break;
-                        }
-
-                        bishopmask |= (1ULL << (nx + ny * 8));
-                    }
+                    bishopmask |= (1ULL << (nx + ny * 8));
                 }
             }
         }
@@ -162,93 +143,44 @@ Bitboard bishopMask(Position *board, bool color)
 Bitboard rookMask(Position *board, bool color)
 {
     Bitboard rookmask = 0ULL;
-
-    for (int ind = 0; ind < 64; ind++)
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[3], ind))
-        {
-            {
-                int x = ind % 8;
-                int y = ind / 8;
-
-                // Direction vectors: NE, SE, SW, NW
-                int dx[] = {0, 1, 0, -1};
-                int dy[] = {1, 0, -1, 0};
-                int offset[] = {0, 7, 14, 21};
-
-                for (int dir = 0; dir < 4; dir++)
-                {
-                    for (int i = 1; i < 8; i++)
-                    {
-                        int nx = x + dx[dir] * i;
-                        int ny = y + dy[dir] * i;
-
-                        // Check bounds first
-                        if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                        {
-                            break;
-                        }
-                        else
-                        {
-                            if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
-                            {
-                                break;
-                            }
-
-                            rookmask |= (1ULL << (nx + ny * 8));
-                        }
-                    }
-                }
-            }
-        }
-    return rookmask;
-}
-
-Bitboard queenMask(Position *board, bool color)
-{
-    Bitboard queenmask = 0ULL;
-
-    for (int ind = 0; ind < 64; ind++)
+    uint64_t rook = (board->pieces[3] & board->pieces[4]) & board->color[color];
+    while (rook)
     {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[4], ind))
+        int ind = pop_lsb(&rook);
+
+        int x = ind % 8;
+        int y = ind / 8;
+
+        // Direction vectors: NE, SE, SW, NW
+        int dx[] = {0, 1, 0, -1};
+        int dy[] = {1, 0, -1, 0};
+        int offset[] = {0, 7, 14, 21};
+
+        for (int dir = 0; dir < 4; dir++)
         {
-
-            int x = ind % 8;
-            int y = ind / 8;
-
-            // Directions:
-            // N, E, S, W, NE, SE, SW, NW
-            int dx[] = {0, 1, 0, -1, 1, 1, -1, -1};
-            int dy[] = {1, 0, -1, 0, 1, -1, -1, 1};
-
-            for (int dir = 0; dir < 8; dir++)
+            for (int i = 1; i < 8; i++)
             {
-                bool movego = 0;
+                int nx = x + dx[dir] * i;
+                int ny = y + dy[dir] * i;
 
-                for (int i = 1; i < 8; i++)
+                // Check bounds first
+                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
                 {
-                    int nx = x + dx[dir] * i;
-                    int ny = y + dy[dir] * i;
-
-                    int index = dir * 7 + i;
-
-                    if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                    break;
+                }
+                else
+                {
+                    if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
                     {
                         break;
                     }
-                    else
-                    {
-                        if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
-                        {
-                            break;
-                        }
 
-                        queenmask |= (1ULL << (nx + ny * 8));
-                    }
+                    rookmask |= (1ULL << (nx + ny * 8));
                 }
             }
         }
     }
-    return queenmask;
+    return rookmask;
 }
 
 Bitboard kingMask(Position *board, bool color)
@@ -307,7 +239,6 @@ int pawnMoves(Position *board, MoveList *list, bool color)
             else
             {
                 int to = x + offsetx[i] + (y + direction * offsety[i]) * 8;
-
 
                 if ((((board->color[1] >> to) & 1ULL) ||
                      ((board->color[0] >> to) & 1ULL)) &&
@@ -413,7 +344,7 @@ int bishopMoves(Position *board, MoveList *list, bool color)
 {
     int n_moves = 0;
 
-    uint64_t bishop = board->pieces[1] & board->color[color];
+    uint64_t bishop = (board->pieces[1] & board->pieces[4]) & board->color[color];
     while (bishop)
     {
         int ind = pop_lsb(&bishop);
@@ -465,7 +396,7 @@ int rookMoves(Position *board, MoveList *list, bool color)
 {
     int n_moves = 0;
 
-    uint64_t rook = board->pieces[3] & board->color[color];
+    uint64_t rook = (board->pieces[3] & board->pieces[4]) & board->color[color];
     while (rook)
     {
         int ind = pop_lsb(&rook);
@@ -511,93 +442,36 @@ int rookMoves(Position *board, MoveList *list, bool color)
     return n_moves;
 }
 
-int queenMoves(Position *board, MoveList *list, bool color)
-{
-    int n_moves = 0;
-
-    for (int ind = 0; ind < 64; ind++)
-    {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[4], ind))
-        {
-            Bitboard queenmask = 0ULL;
-
-            int x = ind % 8;
-            int y = ind / 8;
-
-            // Directions:
-            // N, E, S, W, NE, SE, SW, NW
-            int dx[] = {0, 1, 0, -1, 1, 1, -1, -1};
-            int dy[] = {1, 0, -1, 0, 1, -1, -1, 1};
-
-            for (int dir = 0; dir < 8; dir++)
-            {
-                bool movego = 0;
-
-                for (int i = 1; i < 8; i++)
-                {
-                    int nx = x + dx[dir] * i;
-                    int ny = y + dy[dir] * i;
-
-                    int index = dir * 7 + i;
-
-                    if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                    {
-                        break;
-                    }
-                    else
-                    {
-                        if ((board->color[1] >> nx + ny * 8) & 1ULL || (board->color[0] >> nx + ny * 8) & 1ULL)
-                        {
-                            break;
-                        }
-
-                        if (!is_set(board->color[color], nx + ny * 8))
-                        {
-                            n_moves++;
-
-                            list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
-                            list->offset++;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return n_moves;
-}
-
 int kingMoves(Position *board, MoveList *list, bool color)
 {
     int n_moves = 0;
 
-    Bitboard kingmask = 0ULL;
-    for (int ind = 0; ind < 64; ind++)
+    uint64_t king = board->pieces[5] & board->color[color];
+    while (king)
     {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[5], ind))
+        int ind = pop_lsb(&king);
+        int x = ind % 8;
+        int y = ind / 8;
+
+        int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+        int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+
+        for (int i = 0; i < 8; i++)
         {
-            int x = ind % 8;
-            int y = ind / 8;
+            int nx = x + dx[i];
+            int ny = y + dy[i];
 
-            int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-            int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-
-            for (int i = 0; i < 8; i++)
+            if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
             {
-                int nx = x + dx[i];
-                int ny = y + dy[i];
-
-                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                continue;
+            }
+            else
+            {
+                if (!is_set(board->color[color], nx + ny * 8))
                 {
-                    continue;
-                }
-                else
-                {
-                    if (!is_set(board->color[color], nx + ny * 8))
-                    {
-                        n_moves++;
-                        list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
-                        list->offset++;
-                    }
+                    n_moves++;
+                    list->movelist[list->offset] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
+                    list->offset++;
                 }
             }
         }
@@ -611,7 +485,6 @@ bool iskingcheck(Position *board, int ind, bool color)
                       bishopMask(board, color) |
                       horseMask(board, color) |
                       rookMask(board, color) |
-                      queenMask(board, color) |
                       kingMask(board, color);
     return (danger & (1ULL << ind)) != 0;
 }
@@ -625,7 +498,6 @@ int legalMoveGen(Position *board, MoveList *list, bool turn)
     n_moves += bishopMoves(board, list, turn);
     n_moves += horseMoves(board, list, turn);
     n_moves += rookMoves(board, list, turn);
-    n_moves += queenMoves(board, list, turn);
     n_moves += kingMoves(board, list, turn);
     return n_moves;
 }
@@ -653,7 +525,6 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[5] &= ~(1ULL << to);
         board->color[board->turn] |= (1ULL << to);
         board->color[!board->turn] &= ~(1ULL << to);
-
     }
     else if (board->pieces[1] & (1ULL << from))
     {
@@ -731,33 +602,15 @@ uint64_t perft(Position *board, int depth)
         return 1;
 
     MoveList move_list;
+    move_list.offset = 0;
     int n_moves = legalMoveGen(board, &move_list, board->turn);
     uint64_t nodes = 0;
 
-    for (int i = 0; i < n_moves; i++)
+    for (int i = 0; i < move_list.offset; i++)
     {
-
         Position copy = *board;
         makeMove(&copy, &move_list, i);
         nodes += perft(&copy, depth - 1);
     }
     return nodes;
 }
-
-// u64 Perft(int depth)
-// {
-//   MOVE move_list[256];
-//   int n_moves, i;
-//   u64 nodes = 0;
-
-//   if (depth == 0)
-//     return 1ULL;
-
-//   n_moves = GenerateLegalMoves(move_list);
-//   for (i = 0; i < n_moves; i++) {
-//     MakeMove(move_list[i]);
-//     nodes += Perft(depth - 1);
-//     UndoMove(move_list[i]);
-//   }
-//   return nodes;
-// }
