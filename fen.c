@@ -8,7 +8,6 @@
 void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, char *arg4, char *arg5)
 {
 
-    bool invalidfen = 0;
     int square = 0;
 
     // char fen[200] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";

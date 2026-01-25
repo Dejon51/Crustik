@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "lmath.h"
 #include "play.h"
 #include "eval.h"
@@ -48,10 +49,10 @@ void d(Position *board) // Displays board or something
         {
 
             printf("%c ", board8x8[y][x]);
-
         }
         printf("\n");
     }
+    printf("\n"); 
 }
 
 char uciStart(void)
@@ -70,11 +71,12 @@ char uciStart(void)
         char arg4[10] = {0};
         char arg5[10] = {0};
         char arg6[10] = {0};
+        char arg7[10] = {0};
 
         if (!fgets(line, sizeof(line), stdin))
             continue;
 
-        int n = sscanf(line, "%14s %199s %9s %9s %9s %9s %9s", arg, arg1, arg2, arg3, arg4, arg5, arg6);
+        int n = sscanf(line, "%14s %199s %9s %9s %9s %9s %9s %9s", arg, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
         if (n <= 0)
             continue;
 
@@ -98,29 +100,46 @@ char uciStart(void)
 
             if (strcmp(arg1, "startpos") == 0)
             {
-                fenRead(&board, "rnbqkbnr/pppppppp/8/8/3pP3/8/PPPP1PPP/RNBQKBNR", "b", "KQkq", "e3", "0", "1");
+                fenRead(&board, "8/8/8/3pP3/8/8/8/8", "w", "-", "d6", " 0", " 1");
             }
-            else{
-            fenRead(&board, arg1, arg2, arg3, arg4, arg5, arg6);
+            else
+            {
+                fenRead(&board, arg1, arg2, arg3, arg4, arg5, arg6);
             }
             legalMoveGen(&board, &list, board.turn);
             d(&board);
-            printf("\n%lumoves\n",sizeof(list)/2 );
-            makeMove(&board,&list,24);
+            makeMove(&board, &list, 0);
             d(&board);
         }
-        else if (strcmp(arg, "perft") == 0)
+        else if (strcmp(arg, "go") == 0)
         {
-            MoveList list;
-
-            if (strcmp(arg1, "startpos") == 0)
+            if (strcmp(arg1, "perft") == 0)
             {
                 fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
+                struct timespec start, stop;
+                
+                clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+
+                uint64_t total_nodes = perft(&board, arg2[0] - '0');
+
+                clock_gettime(CLOCK_MONOTONIC_RAW, &stop);
+
+                long sec = stop.tv_sec - start.tv_sec;
+                long nsec = stop.tv_nsec - start.tv_nsec;
+                if (nsec < 0)
+                {
+                    sec -= 1;
+                    nsec += 1000000000L;
+                }
+
+                long elapsed_ms = sec * 1000 + nsec / 1000000;
+
+                double nps = total_nodes / (elapsed_ms / 1000.0);
+
+                printf("Total Nodes: %llu\n", (unsigned long long)total_nodes);
+                printf("Elapsed time: %ld ms\n", elapsed_ms);
+                printf("N/S: %.0f\n", nps);
             }
-            else{
-                fenRead(&board, arg1, arg2, arg3, arg4, arg5, arg6);
-            }
-            printf("%li\n",perft(&board,2));
         }
         else if (strcmp(arg, "d") == 0)
         {

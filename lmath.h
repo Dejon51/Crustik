@@ -20,7 +20,7 @@ typedef struct {
     // king 5
     Bitboard color[2];
     Bitboard pieces[6];
-    uint16_t epsquare;
+    int16_t epsquare;
     bool turn;
 } Position;
 
@@ -28,6 +28,10 @@ typedef struct {
     uint16_t movelist[256];
     unsigned offset;
 } MoveList;
+typedef struct {
+    uint16_t movelist[9];
+    unsigned offset;
+} KList;
 
 int pop_lsb(Bitboard* bb);
 
