@@ -144,39 +144,7 @@ Bitboard rookMask(Position *board, bool color)
     uint64_t rook = (board->pieces[3] & board->pieces[4]) & board->color[color];
     while (rook)
     {
-        int ind = pop_lsb(&rook);
-
-        int x = ind % 8;
-        int y = ind / 8;
-
-        // Direction vectors: NE, SE, SW, NW
-        int dx[] = {0, 1, 0, -1};
-        int dy[] = {1, 0, -1, 0};
-        int offset[] = {0, 7, 14, 21};
-
-        for (int dir = 0; dir < 4; dir++)
-        {
-            for (int i = 1; i < 8; i++)
-            {
-                int nx = x + dx[dir] * i;
-                int ny = y + dy[dir] * i;
-
-                // Check bounds first
-                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                {
-                    break;
-                }
-                else
-                {
-                    rookmask |= (1ULL << (nx + ny * 8));
-
-                    if ((board->color[0] >> (nx + ny * 8)) & 1ULL || (board->color[1] >> (nx + ny * 8)) & 1ULL)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
+        
     }
     return rookmask;
 }
