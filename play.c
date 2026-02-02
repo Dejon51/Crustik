@@ -607,6 +607,10 @@ void makeMove(Position *board, MoveList *list, int move)
 
     board->turn = !board->turn;
 }
+void unMakeMove(Position *board, MoveList *move_list, int ind) {
+
+}
+
 uint64_t perft(Position *board, int depth)
 {
     if (depth == 0)
