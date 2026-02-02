@@ -48,15 +48,12 @@ Bitboard pawnMask(Position *board, bool color)
     while (pawns)
     {
         int ind = pop_lsb(&pawns);
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[0], ind))
-        {
-            int x = ind % 8;
-            int y = ind / 8;
-            if (x - 1 >= 0 && y + direction >= 0 && y + direction < 8)
-                pawnmask |= (1ULL << (x - 1 + (y + direction) * 8));
-            if (x + 1 < 8 && y + direction >= 0 && y + direction < 8)
-                pawnmask |= (1ULL << (x + 1 + (y + direction) * 8));
-        }
+        int x = ind % 8;
+        int y = ind / 8;
+        if (x - 1 >= 0 && y + direction >= 0 && y + direction < 8)
+            pawnmask |= (1ULL << (x - 1 + (y + direction) * 8));
+        if (x + 1 < 8 && y + direction >= 0 && y + direction < 8)
+            pawnmask |= (1ULL << (x + 1 + (y + direction) * 8));
     }
 
     return pawnmask;
@@ -173,7 +170,7 @@ Bitboard rookMask(Position *board, bool color)
                 {
                     rookmask |= (1ULL << (nx + ny * 8));
 
-                    if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
+                    if ((board->color[0] >> (nx + ny * 8)) & 1ULL || (board->color[1] >> (nx + ny * 8)) & 1ULL)
                     {
                         break;
                     }
@@ -515,6 +512,7 @@ void makeMove(Position *board, MoveList *list, int move)
 
     if (board->pieces[0] & (1ULL << from))
     {
+        int from = ((list->movelist[move] >> 6) & 0x3F);
         if (to == old_epsquare)
         {
             int captured_sq = to - 8 * direction;
