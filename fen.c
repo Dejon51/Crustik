@@ -135,7 +135,7 @@ void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, cha
             break;
         }
     }
-    
+    printf("\n%b\n",board->castling);
     
     if (arg3[0] != '-' && arg3[1] != '-')
     {

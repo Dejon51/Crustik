@@ -137,14 +137,45 @@ Bitboard bishopMask(Position *board, bool color)
     }
     return bishopmask;
 }
-
 Bitboard rookMask(Position *board, bool color)
 {
     Bitboard rookmask = 0ULL;
     uint64_t rook = (board->pieces[3] & board->pieces[4]) & board->color[color];
     while (rook)
     {
-        
+        int ind = pop_lsb(&rook);
+
+        int x = ind % 8;
+        int y = ind / 8;
+
+        // Direction vectors: NE, SE, SW, NW
+        int dx[] = {0, 1, 0, -1};
+        int dy[] = {1, 0, -1, 0};
+        int offset[] = {0, 7, 14, 21};
+
+        for (int dir = 0; dir < 4; dir++)
+        {
+            for (int i = 1; i < 8; i++)
+            {
+                int nx = x + dx[dir] * i;
+                int ny = y + dy[dir] * i;
+
+                // Check bounds first
+                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+                {
+                    break;
+                }
+                else
+                {
+                    rookmask |= (1ULL << (nx + ny * 8));
+
+                    if ((board->color[0] >> (nx + ny * 8)) & 1ULL || (board->color[1] >> (nx + ny * 8)) & 1ULL)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
     }
     return rookmask;
 }
@@ -381,7 +412,7 @@ void rookMoves(Position *board, MoveList *list, bool color)
     }
 }
 
-void kingMoves(Position *board, KList *list, bool color)
+void kingMoves(Position *board, MoveList *list, bool color)
 {
 
     uint64_t king = board->pieces[5] & board->color[color];
@@ -432,7 +463,7 @@ bool iskingcheck(Position *board, int ind, bool color)
 void legalMoveGen(Position *board, MoveList *list, bool turn)
 {
     MoveList pseudo = {0};
-    KList klist = {0};
+    MoveList klist = {0};
 
     // Generate all pseudo-legal moves
     pawnMoves(board, &pseudo, turn);
@@ -492,7 +523,7 @@ void makeMove(Position *board, MoveList *list, int move)
 
         int from_y = from / 8;
         int to_y = to / 8;
-        if (abs(to_y - from_y) == 2)
+        if (abs1(to_y - from_y) == 2)
         {
             board->epsquare = from + 8 * direction;
         }

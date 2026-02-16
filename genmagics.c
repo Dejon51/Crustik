@@ -105,8 +105,7 @@ uint64_t bishopMoves(int ind)
   return output;
 }
 
-uint64_t rookMoves(int ind)
-{
+uint64_t rookMoves(int ind){
   uint64_t output = 0ULL;
   int x = ind % 8;
   int y = ind / 8;
