@@ -21,6 +21,7 @@ typedef struct {
     Bitboard color[2];
     Bitboard pieces[6];
     int16_t epsquare;
+    int8_t castling;
     bool turn;
 } Position;
 

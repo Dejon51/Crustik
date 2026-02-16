@@ -45,8 +45,9 @@ uint64_t rookGenerateBlockers(int ind, int blocker)
   int y = ind / 8;
 
   // Direction vectors: NE, SE, SW, NW
-  int dx[] = {1, 1, -1, -1};
-  int dy[] = {1, -1, -1, 1};
+  
+      int dx[] = {0, 1, 0, -1};
+      int dy[] = {1, 0, -1, 0};
   int offset[] = {0, 7, 14, 21};
 
   for (int dir = 0; dir < 4; dir++)
@@ -72,7 +73,6 @@ uint64_t rookGenerateBlockers(int ind, int blocker)
   printf("\n");
   return output;
 }
-
 
 uint64_t bishopMoves(int ind)
 {
@@ -160,22 +160,30 @@ int genmagiccs()
 
 int genblockers()
 {
-    FILE *fptr;
-  fptr = fopen("magics.h", "w");
-  fprintf(fptr, "uint64_t rookmagic[] = {\n");
+  FILE *fptr;
+  fptr = fopen("blockers.h", "w");
+  fprintf(fptr, "uint64_t rookblockers[] = {\n");
 
   for (int i = 0; i < 64; i++)
   {
-    uint64_t moves = rookMoves(i);
-    fprintf(fptr, "0x%llxULL,\n", moves);
+    for (int j = 1; j < 7; j++)
+    {
+
+      uint64_t moves = rookGenerateBlockers(i, j);
+      fprintf(fptr, "0x%llxULL,\n", moves);
+    }
   }
   fprintf(fptr, "};\n");
 
-  fprintf(fptr, "uint64_t bishopmagic[] = {\n");
+  fprintf(fptr, "uint64_t bishopblockers[] = {\n");
   for (int i = 0; i < 64; i++)
   {
-    uint64_t moves = bishopMoves(i);
-    fprintf(fptr, "0x%llxULL,\n", moves);
+    for (int j = 1; j < 7; j++)
+    {
+
+      uint64_t moves = bishopGenerateBlockers(i, j);
+      fprintf(fptr, "0x%llxULL,\n", moves);
+    }
   }
   fprintf(fptr, "};\n");
 
@@ -184,11 +192,5 @@ int genblockers()
 
 int main()
 {
-  for (int o = 0; o < 64; o++)
-  {
-    for (int i = 1; i < 7; i++)
-    {
-      bishopGenersteBlockers(o,i);
-    }
-  }
+  genblockers();
 }

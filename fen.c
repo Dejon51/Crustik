@@ -110,6 +110,33 @@ void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, cha
         printf("Error: Invalid fen problem: %c\n", arg1[0]);
         memset(board, 0, sizeof(Position));
     }
+    int lengthcastling = strlen(arg2);
+    for (int d = 0; d < lengthcastling; d++)
+    {
+        switch (arg2[d])
+        {
+        case 'K':
+            board->castling |= (1ULL<<0);
+            break;
+        case 'k':
+            board->castling |= (1ULL<<1);
+            break;
+        case 'Q':
+            board->castling |= (1ULL<<2);
+            break;
+        case 'q':
+            board->castling |= (1ULL<<3);
+            break;
+        case '-':
+            d = lengthcastling;
+            break;
+        default:
+            printf("Error: Invalid fen problem: %c\n", arg2[d]);
+            break;
+        }
+    }
+    
+    
     if (arg3[0] != '-' && arg3[1] != '-')
     {
         int file = arg3[0] - 'a';

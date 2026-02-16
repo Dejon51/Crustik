@@ -415,6 +415,8 @@ void kingMoves(Position *board, KList *list, bool color)
     }
 }
 
+
+
 bool iskingcheck(Position *board, int ind, bool color)
 {
     Bitboard danger = pawnMask(board, color) |
