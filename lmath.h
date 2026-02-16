@@ -30,6 +30,11 @@ typedef struct {
     unsigned offset;
 } MoveList;
 
+typedef struct {
+    uint16_t movelist[256];
+    unsigned offset;
+} Mailbox;
+
 int pop_lsb(Bitboard* bb);
 
 bool is_set(u64 value, int sq);
