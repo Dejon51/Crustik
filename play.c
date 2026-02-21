@@ -3,6 +3,7 @@
 #include "play.h"
 #include "lmath.h"
 #include "eval.h"
+#include "magics.h"
 
 void print_bytes(long value)
 {
@@ -66,29 +67,7 @@ Bitboard horseMask(Position *board, bool color)
     while (knights)
     {
         int ind = pop_lsb(&knights);
-        int x = ind % 8;
-        int y = ind / 8;
-
-        static const struct
-        {
-            int dx;
-            int dy;
-        } offsets[] = {{2, 1}, {1, 2}, {-1, 2}, {-2, 1}, {-2, -1}, {-1, -2}, {1, -2}, {2, -1}};
-
-        for (int i = 0; i < 8; i++)
-        {
-            int target = (x + offsets[i].dx) + (y + offsets[i].dy) * 8;
-            int nx = x + offsets[i].dx;
-            int ny = y + offsets[i].dy;
-            if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-            {
-                continue;
-            }
-            else
-            {
-                horsemask |= (1ULL << target);
-            }
-        }
+        horsemask |= knighttable[ind];
     }
     return horsemask;
 }
@@ -245,14 +224,14 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 }
                 else if (i == 1)
                 {
-                    list->movelist[list->offset++] = ((0 & 7) << 12) | ((ind & 63) << 6) | (to & 63);
+                    list->movelist[list->offset++] = ((ind & 63) << 6) | (to & 63);
                 }
                 else if (i == 2 && (y == 1 || y == 6))
                 {
                     if (!is_set(board->color[color], x + (y + direction * offsety[i - 1]) * 8) &&
                         !is_set(board->color[!color], x + (y + direction * offsety[i - 1]) * 8))
                     {
-                        list->movelist[list->offset++] = ((0 & 7) << 12) | ((ind & 63) << 6) | (to & 63);
+                        list->movelist[list->offset++] = ((ind & 63) << 6) | (to & 63);
                     }
                 }
                 else if (board->epsquare == to && board->epsquare != -1)
@@ -262,7 +241,7 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                     int captured_sq = to_file + from_rank * 8;
                     if (is_set(board->pieces[0], captured_sq) && is_set(board->color[!color], captured_sq))
                     {
-                        list->movelist[list->offset++] = ((0 & 7) << 12) | ((ind & 63) << 6) | (to & 63);
+                        list->movelist[list->offset++] = ((ind & 63) << 6) | (to & 63);
                     }
                 }
                 else if (is_set(board->color[color], to))
@@ -276,7 +255,7 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 }
                 else
                 {
-                    list->movelist[list->offset++] = ((0 & 7) << 12) | ((ind & 63) << 6) | (to & 63);
+                    list->movelist[list->offset++] = ((ind & 63) << 6) | (to & 63);
                     continue;
                 }
             }
@@ -314,7 +293,7 @@ void horseMoves(Position *board, MoveList *list, bool color)
                 if (!is_set(board->color[color], target))
                 {
 
-                    list->movelist[list->offset++] = ((2 & 7) << 12) | ((ind & 63) << 6) | (target & 63);
+                    list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
                 }
             }
         }
@@ -356,7 +335,7 @@ void bishopMoves(Position *board, MoveList *list, bool color)
                 }
 
                 // Add the move
-                list->movelist[list->offset++] = ((1 & 7) << 12) | ((ind & 63) << 6) | (target & 63);
+                list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
 
                 if (is_set(board->color[!color], target))
                 {
@@ -401,7 +380,7 @@ void rookMoves(Position *board, MoveList *list, bool color)
                 }
 
                 // Add the move
-                list->movelist[list->offset++] =  ((3 & 7) << 12)|((ind & 63) << 6) | (target & 63);
+                list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
 
                 if (is_set(board->color[!color], target))
                 {
@@ -439,7 +418,7 @@ void kingMoves(Position *board, MoveList *list, bool color)
                 if (!is_set(board->color[color], nx + ny * 8))
                 {
 
-                    list->movelist[list->offset++] = ((5 & 7) << 12) | ((ind & 63) << 6) | (nx + ny * 8 & 63);
+                    list->movelist[list->offset++] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
                 }
             }
         }
@@ -455,20 +434,17 @@ bool iskingcheck(Position *board, int ind, bool color)
                       kingMask(board, color);
     return (danger & (1ULL << ind)) != 0;
 }
-
 // x+y*8
 
 void legalMoveGen(Position *board, MoveList *list, bool turn)
 {
     MoveList pseudo = {0};
-    MoveList klist = {0};
 
-    // Generate all pseudo-legal moves
     pawnMoves(board, &pseudo, turn);
     bishopMoves(board, &pseudo, turn);
     horseMoves(board, &pseudo, turn);
     rookMoves(board, &pseudo, turn);
-    kingMoves(board, &klist, turn);
+    kingMoves(board, &pseudo, turn);
 
     for (int i = 0; i < pseudo.offset; i++)
     {
@@ -483,64 +459,68 @@ void legalMoveGen(Position *board, MoveList *list, bool turn)
             list->movelist[list->offset++] = pseudo.movelist[i];
         }
     }
-
-    // Filter king moves
-    for (int i = 0; i < klist.offset; i++)
-    {
-        Position copy = *board;
-        makeMove(&copy, &klist, i);
-
-        int to = klist.movelist[i] & 0x3F;
-
-        if (!iskingcheck(&copy, to, !turn))
-        {
-            list->movelist[list->offset++] = klist.movelist[i];
-        }
-    }
 }
 
 void makeMove(Position *board, MoveList *list, int move)
 {
     int direction = (board->turn == 0) ? -1 : 1;
-    int to = (list->movelist[move] & 0x3F);
-    int from = (list->movelist[move] >> 6) & 0x3F;
-    int piecetype = (list->movelist[move] >> 12) & 0x3F;
+
+    int to   =  list->movelist[move]        & 0x3F;
+    int from = (list->movelist[move] >> 6)  & 0x3F;
+
+    uint64_t frombb = 1ULL << from;
+    uint64_t tobb   = 1ULL << to;
 
     int old_epsquare = board->epsquare;
     board->epsquare = -1;
 
-    // pawn logic
-    if (piecetype == 0)
-    {
-        if (to == old_epsquare)
-        {
-            int captured_sq = to - 8 * direction;
-            board->color[!board->turn] &= ~(1ULL << captured_sq);
-            board->pieces[0] &= ~(1ULL << captured_sq);
-        }
+    // get moving piece
+    int piece = 6;
+    board->mailbox[to] = 6;
+    for (int i = 0; i < 6; i++)
+    piece = board->mailbox[from];
+    
+    if (piece == 6)
+        return; // return nothing if piecetype is empty
 
+    // remove piece from from
+    board->pieces[piece] &= ~frombb;
+    board->color[board->turn] &= ~frombb;
+    board->mailbox[from] = 6;
+
+    // en passant stuff i dont wanna touch again
+    if (piece == 0 && to == old_epsquare)
+    {
+        int captured_sq = to - 8 * direction;
+        uint64_t capBB = 1ULL << captured_sq;
+
+        board->pieces[0] &= ~capBB;
+        board->color[!board->turn] &= ~capBB;
+        board->mailbox[captured_sq] = 6; 
+    }
+
+    // clear destination piece
+    for (int i = 0; i < 6; i++)
+        board->pieces[i] &= ~tobb;
+
+    board->color[!board->turn] &= ~tobb;
+
+    // replace destination piece with other piece causing capture
+    board->pieces[piece] |= tobb;
+    board->color[board->turn] |= tobb;
+    board->mailbox[to] = piece;
+
+    // handle double pawn pushes
+    if (piece == 0)
+    {
         int from_y = from / 8;
-        int to_y = to / 8;
+        int to_y   = to   / 8;
 
         if (abs1(to_y - from_y) == 2)
             board->epsquare = from + 8 * direction;
     }
 
-    // remove moving piece from origin
-    board->color[board->turn] &= ~(1ULL << from);
-    board->pieces[piecetype] &= ~(1ULL << from);
-
-    // clear captured piece from destination
-    for (int i = 0; i < 6; i++)
-        board->pieces[i] &= ~(1ULL << to);
-
-    board->color[!board->turn] &= ~(1ULL << to);
-
-    // place moving piece
-    board->pieces[piecetype] |= (1ULL << to);
-    board->color[board->turn] |= (1ULL << to);
-
-    board->turn = !board->turn;
+    board->turn ^= 1;
 }
 void unMakeMove(Position *board, MoveList *move_list, int ind)
 {

@@ -16,67 +16,79 @@ void fenRead(Position *board,char *fen, char *arg1, char *arg2, char *arg3, char
 
         if (i > MAX_FEN_LEN)
             break;
-
+        board->mailbox[square] = 6;
         switch (fen[i])
         {
         case 'p':
             board->pieces[0] = set_bit(board->pieces[0], square, 1);
             board->color[1] = set_bit(board->color[1], square, 1);
+            board->mailbox[square] = 0;
             square++;
             break;
         case 'n':
             board->pieces[2] = set_bit(board->pieces[2], square, 1);
             board->color[1] = set_bit(board->color[1], square, 1);
+            board->mailbox[square] = 2;
             square++;
             break;
         case 'b':
             board->pieces[1] = set_bit(board->pieces[1], square, 1);
             board->color[1] = set_bit(board->color[1], square, 1);
+            board->mailbox[square] = 1;
             square++;
             break;
         case 'r':
             board->pieces[3] = set_bit(board->pieces[3], square, 1);
             board->color[1] = set_bit(board->color[1], square, 1);
+            board->mailbox[square] = 3;
             square++;
             break;
         case 'q':
             board->pieces[4] = set_bit(board->pieces[4], square, 1);
             board->color[1] = set_bit(board->color[1], square, 1);
+            board->mailbox[square] = 4;
             square++;
             break;
         case 'k':
             board->pieces[5] = set_bit(board->pieces[5], square, 1);
             board->color[1] = set_bit(board->color[1], square, 1);
+            board->mailbox[square] = 5;
             square++;
             break;
         case 'P':
             board->pieces[0] = set_bit(board->pieces[0], square, 1);
             board->color[0] = set_bit(board->color[0], square, 1);
+            board->mailbox[square] = 0;
             square++;
             break;
         case 'N':
             board->pieces[2] = set_bit(board->pieces[2], square, 1);
             board->color[0] = set_bit(board->color[0], square, 1);
+            board->mailbox[square] = 2;
             square++;
             break;
         case 'B':
             board->pieces[1] = set_bit(board->pieces[1], square, 1);
             board->color[0] = set_bit(board->color[0], square, 1);
+            board->mailbox[square] = 1;
             square++;
             break;
         case 'R':
             board->pieces[3] = set_bit(board->pieces[3], square, 1);
             board->color[0] = set_bit(board->color[0], square, 1);
+            board->mailbox[square] = 3;
             square++;
             break;
         case 'Q':
             board->pieces[4] = set_bit(board->pieces[4], square, 1);
             board->color[0] = set_bit(board->color[0], square, 1);
+            board->mailbox[square] = 4;
             square++;
             break;
         case 'K':
             board->pieces[5] = set_bit(board->pieces[5], square, 1);
             board->color[0] = set_bit(board->color[0], square, 1);
+            board->mailbox[square] = 5;
             square++;
             break;
         case '/':
