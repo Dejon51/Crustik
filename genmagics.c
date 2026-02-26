@@ -2,78 +2,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-uint64_t bishopGenerateBlockers(int ind, int blocker)
-{
-  uint64_t output = 0ULL;
-
-  int x = ind % 8;
-  int y = ind / 8;
-
-  // Direction vectors: NE, SE, SW, NW
-  int dx[] = {1, 1, -1, -1};
-  int dy[] = {1, -1, -1, 1};
-  int offset[] = {0, 7, 14, 21};
-
-  for (int dir = 0; dir < 4; dir++)
-  {
-    for (int i = 1; i < 7; i++)
-    {
-      printf("%i", i);
-      int nx = x + dx[dir] * i;
-      int ny = y + dy[dir] * i;
-
-      // Check bounds first
-      if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-      {
-        break;
-      }
-      int target = nx + ny * 8;
-      if (blocker > i)
-      {
-        output |= (1ULL << target);
-      }
-    }
-  }
-  printf("\n");
-  return output;
-}
-uint64_t rookGenerateBlockers(int ind, int blocker)
-{
-  uint64_t output = 0ULL;
-
-  int x = ind % 8;
-  int y = ind / 8;
-
-  // Direction vectors: NE, SE, SW, NW
-  
-      int dx[] = {0, 1, 0, -1};
-      int dy[] = {1, 0, -1, 0};
-  int offset[] = {0, 7, 14, 21};
-
-  for (int dir = 0; dir < 4; dir++)
-  {
-    for (int i = 1; i < 7; i++)
-    {
-      printf("%i", i);
-      int nx = x + dx[dir] * i;
-      int ny = y + dy[dir] * i;
-
-      // Check bounds first
-      if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-      {
-        break;
-      }
-      int target = nx + ny * 8;
-      if (blocker > i)
-      {
-        output |= (1ULL << target);
-      }
-    }
-  }
-  printf("\n");
-  return output;
-}
-
 uint64_t bishopMoves(int ind)
 {
   uint64_t output = 0ULL;
@@ -82,9 +10,9 @@ uint64_t bishopMoves(int ind)
   int y = ind / 8;
 
   // Direction vectors: NE, SE, SW, NW
-  int dx[] = {0, 1, 0, -1};
-  int dy[] = {1, 0, -1, 0};
-  int offset[] = {0, 7, 14, 21};
+          int dx[] = {1, 1, -1, -1};
+        int dy[] = {1, -1, -1, 1};
+        int offset[] = {0, 7, 14, 21};
 
   for (int dir = 0; dir < 4; dir++)
   {
@@ -132,64 +60,7 @@ uint64_t rookMoves(int ind){
   }
   return output;
 }
-
-int genmagiccs()
-{
-  FILE *fptr;
-  fptr = fopen("magics.h", "w");
-  fprintf(fptr, "uint64_t rookmagic[] = {\n");
-
-  for (int i = 0; i < 64; i++)
-  {
-    uint64_t moves = rookMoves(i);
-    fprintf(fptr, "0x%llxULL,\n", moves);
-  }
-  fprintf(fptr, "};\n");
-
-  fprintf(fptr, "uint64_t bishopmagic[] = {\n");
-  for (int i = 0; i < 64; i++)
-  {
-    uint64_t moves = bishopMoves(i);
-    fprintf(fptr, "0x%llxULL,\n", moves);
-  }
-  fprintf(fptr, "};\n");
-
-  fclose(fptr);
-}
-
-int genblockers()
-{
-  FILE *fptr;
-  fptr = fopen("blockers.h", "w");
-  fprintf(fptr, "uint64_t rookblockers[] = {\n");
-
-  for (int i = 0; i < 64; i++)
-  {
-    for (int j = 1; j < 7; j++)
-    {
-
-      uint64_t moves = rookGenerateBlockers(i, j);
-      fprintf(fptr, "0x%llxULL,\n", moves);
-    }
-  }
-  fprintf(fptr, "};\n");
-
-  fprintf(fptr, "uint64_t bishopblockers[] = {\n");
-  for (int i = 0; i < 64; i++)
-  {
-    for (int j = 1; j < 7; j++)
-    {
-
-      uint64_t moves = bishopGenerateBlockers(i, j);
-      fprintf(fptr, "0x%llxULL,\n", moves);
-    }
-  }
-  fprintf(fptr, "};\n");
-
-  fclose(fptr);
-}
-
 int main()
 {
-  genblockers();
+
 }
