@@ -29,13 +29,13 @@ void d(Position *board) // Displays board or something
         board8x8[sq / 8][sq % 8] = '.';
         for (int piece = 0; piece < 6; piece++)
         {
-            if (is_set(board->pieces[piece], sq))
+            if ((board->pieces[piece] >> sq) & 1)
             {
-                if (is_set(board->color[1], sq))
+                if ((board->color[1] >> sq) & 1)
                 {
                     board8x8[sq / 8][sq % 8] = piecelowercase[piece];
                 }
-                else if (is_set(board->color[0], sq))
+                else if ((board->color[0] >> sq) & 1)
                 {
                     board8x8[sq / 8][sq % 8] = pieceuppercase[piece];
                 }
@@ -52,7 +52,7 @@ void d(Position *board) // Displays board or something
         }
         printf("\n");
     }
-    printf("\n"); 
+    printf("\n");
 }
 
 char uciStart(void)
@@ -117,19 +117,19 @@ char uciStart(void)
             {
                 fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
                 struct timespec start, stop;
-                #ifdef __linux__
-                    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+#ifdef __linux__
+                clock_gettime(CLOCK_MONOTONIC_RAW, &start);
 
-                    uint64_t total_nodes = perft(&board, arg2[0] - '0');
+                uint64_t total_nodes = perft(&board, arg2[0] - '0');
 
-                    clock_gettime(CLOCK_MONOTONIC_RAW, &stop);
-                #elif __WIN32__
-                    clock_gettime(CLOCK_MONOTONIC, &start);
+                clock_gettime(CLOCK_MONOTONIC_RAW, &stop);
+#elif __WIN32__
+                clock_gettime(CLOCK_MONOTONIC, &start);
 
-                    uint64_t total_nodes = perft(&board, arg2[0] - '0');
+                uint64_t total_nodes = perft(&board, arg2[0] - '0');
 
-                    clock_gettime(CLOCK_MONOTONIC, &stop);
-                #endif
+                clock_gettime(CLOCK_MONOTONIC, &stop);
+#endif
                 long sec = stop.tv_sec - start.tv_sec;
                 long nsec = stop.tv_nsec - start.tv_nsec;
                 if (nsec < 0)

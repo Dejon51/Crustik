@@ -3,7 +3,9 @@
 #include "play.h"
 #include "lmath.h"
 #include "eval.h"
-#include "magics.h"
+#include "precomputed.h"
+#include "rook_table.h"
+#include "bishop_table.h"
 
 void print_bytes(long value)
 {
@@ -43,23 +45,19 @@ void print_bytes(long value)
 
 Bitboard pawnMask(Position *board, bool color)
 {
-    Bitboard pawnmask = 0ULL;
-    int direction = (color == 0) ? -1 : 1;
-    uint64_t pawns = board->pieces[0] & board->color[color];
-    while (pawns)
+    Bitboard pawns = board->pieces[0] & board->color[color];
+
+    if (color) 
     {
-        int ind = pop_lsb(&pawns);
-        int x = ind % 8;
-        int y = ind / 8;
-        if (x - 1 >= 0 && y + direction >= 0 && y + direction < 8)
-            pawnmask |= (1ULL << (x - 1 + (y + direction) * 8));
-        if (x + 1 < 8 && y + direction >= 0 && y + direction < 8)
-            pawnmask |= (1ULL << (x + 1 + (y + direction) * 8));
+        return ((pawns << 7) & 0x7f7f7f7f7f7f7f7fULL) |
+               ((pawns << 9) & 0xfefefefefefefefeULL);
     }
-
-    return pawnmask;
+    else
+    {
+        return ((pawns >> 7) & 0xfefefefefefefefeULL) |
+               ((pawns >> 9) & 0x7f7f7f7f7f7f7f7fULL);
+    }
 }
-
 Bitboard horseMask(Position *board, bool color)
 {
     Bitboard horsemask = 0ULL;
@@ -76,120 +74,53 @@ Bitboard bishopMask(Position *board, bool color)
 {
     Bitboard bishopmask = 0ULL;
 
-    uint64_t bishop = (board->pieces[1] | board->pieces[4]) & board->color[color];
-    while (bishop)
+    uint64_t sliding = (board->pieces[1] | board->pieces[4]) & board->color[color];
+
+    uint64_t occupancy = board->color[0] | board->color[1];
+
+    while (sliding)
     {
-        int ind = pop_lsb(&bishop);
+        int ind = pop_lsb(&sliding);
 
-        int x = ind % 8;
-        int y = ind / 8;
+        uint64_t attacks = getbishopAttacks(ind, occupancy);
 
-        // Direction vectors: NE, SE, SW, NW
-        int dx[] = {1, 1, -1, -1};
-        int dy[] = {1, -1, -1, 1};
-        int offset[] = {0, 7, 14, 21};
+        attacks &= ~board->color[color];
 
-        for (int dir = 0; dir < 4; dir++)
-        {
-            for (int i = 1; i < 8; i++)
-            {
-                int nx = x + dx[dir] * i;
-                int ny = y + dy[dir] * i;
-
-                // Check bounds first
-                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                {
-                    break;
-                }
-                else
-                {
-                    bishopmask |= (1ULL << (nx + ny * 8));
-
-                    // Occupied
-                    if ((board->color[0] >> nx + ny * 8) & 1ULL || (board->color[1] >> nx + ny * 8) & 1ULL)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
+        bishopmask |= attacks;
     }
+
     return bishopmask;
 }
+
 Bitboard rookMask(Position *board, bool color)
 {
     Bitboard rookmask = 0ULL;
-    uint64_t rook = (board->pieces[3] | board->pieces[4]) & board->color[color];
-    while (rook)
+
+    uint64_t sliding = (board->pieces[3] | board->pieces[4]) & board->color[color];
+
+    uint64_t occupancy = board->color[0] | board->color[1];
+
+    while (sliding)
     {
-        int ind = pop_lsb(&rook);
+        int ind = pop_lsb(&sliding);
 
-        int x = ind % 8;
-        int y = ind / 8;
+        uint64_t attacks = getrookAttacks(ind, occupancy);
 
-        // Direction vectors: NE, SE, SW, NW
-        int dx[] = {0, 1, 0, -1};
-        int dy[] = {1, 0, -1, 0};
-        int offset[] = {0, 7, 14, 21};
+        attacks &= ~board->color[color];
 
-        for (int dir = 0; dir < 4; dir++)
-        {
-            for (int i = 1; i < 8; i++)
-            {
-                int nx = x + dx[dir] * i;
-                int ny = y + dy[dir] * i;
-
-                // Check bounds first
-                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                {
-                    break;
-                }
-                else
-                {
-                    rookmask |= (1ULL << (nx + ny * 8));
-
-                    if ((board->color[0] >> (nx + ny * 8)) & 1ULL || (board->color[1] >> (nx + ny * 8)) & 1ULL)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
+        rookmask |= attacks;
     }
+
     return rookmask;
 }
 
 Bitboard kingMask(Position *board, bool color)
 {
+    Bitboard king = board->pieces[5];
 
-    Bitboard kingmask = 0ULL;
-    for (int ind = 0; ind < 64; ind++)
-    {
-        if ((color == is_set(board->color[0], ind) && !is_set(board->color[1], ind)) && is_set(board->pieces[5], ind))
-        {
-            int x = ind % 8;
-            int y = ind / 8;
+    Bitboard kingscolor = king & board->color[color];
 
-            int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-            int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-
-            for (int i = 0; i < 8; i++)
-            {
-                int nx = x + dx[i];
-                int ny = y + dy[i];
-
-                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                {
-                    continue;
-                }
-                else
-                {
-                    kingmask |= (1ULL << (nx + ny * 8));
-                }
-            }
-        }
-    }
-    return kingmask;
+    return kingtable[__builtin_ctzll(kingscolor)];
 }
 
 void pawnMoves(Position *board, MoveList *list, bool color)
@@ -228,8 +159,8 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 }
                 else if (i == 2 && (y == 1 || y == 6))
                 {
-                    if (!is_set(board->color[color], x + (y + direction * offsety[i - 1]) * 8) &&
-                        !is_set(board->color[!color], x + (y + direction * offsety[i - 1]) * 8))
+                    if (!((board->color[color] >> x + (y + direction * offsety[i - 1]) * 8) & 1) &&
+                        !((board->color[!color] >> x + (y + direction * offsety[i - 1]) * 8) & 1))
                     {
                         list->movelist[list->offset++] = ((ind & 63) << 6) | (to & 63);
                     }
@@ -239,17 +170,17 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                     int to_file = to % 8;
                     int from_rank = ind / 8;
                     int captured_sq = to_file + from_rank * 8;
-                    if (is_set(board->pieces[0], captured_sq) && is_set(board->color[!color], captured_sq))
+                    if (((board->pieces[0] >> captured_sq) & 1) && ((board->color[!color] >> captured_sq) & 1))
                     {
                         list->movelist[list->offset++] = ((ind & 63) << 6) | (to & 63);
                     }
                 }
-                else if (is_set(board->color[color], to))
+                else if (((board->color[color] >> to) & 1))
                 {
                     continue;
                 }
-                else if (!is_set(board->color[color], to) &&
-                         !is_set(board->color[!color], to))
+                else if (!((board->color[color] >> to) & 1) &&
+                         !((board->color[!color] >> to) & 1))
                 {
                     continue;
                 }
@@ -290,7 +221,7 @@ void horseMoves(Position *board, MoveList *list, bool color)
             }
             else
             {
-                if (!is_set(board->color[color], target))
+                if (!((board->color[color] >> target) & 1))
                 {
 
                     list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
@@ -302,91 +233,44 @@ void horseMoves(Position *board, MoveList *list, bool color)
 
 void bishopMoves(Position *board, MoveList *list, bool color)
 {
+    uint64_t sliding = (board->pieces[1] | board->pieces[4]) & board->color[color];
 
-    uint64_t bishop = (board->pieces[1] | board->pieces[4]) & board->color[color];
-    while (bishop)
+    uint64_t occupancy = board->color[0] | board->color[1];
+
+    while (sliding)
     {
-        int ind = pop_lsb(&bishop);
+        int ind = pop_lsb(&sliding); 
 
-        int x = ind % 8;
-        int y = ind / 8;
+        uint64_t attacks = getbishopAttacks(ind, occupancy);
 
-        // Direction vectors: NE, SE, SW, NW
-        int dx[] = {1, 1, -1, -1};
-        int dy[] = {1, -1, -1, 1};
-        int offset[] = {0, 7, 14, 21};
+        attacks &= ~board->color[color];
 
-        for (int dir = 0; dir < 4; dir++)
+        while (attacks)
         {
-            for (int i = 1; i < 8; i++)
-            {
-                int nx = x + dx[dir] * i;
-                int ny = y + dy[dir] * i;
-
-                // Check bounds first
-                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                {
-                    break;
-                }
-                int target = nx + ny * 8;
-                if (is_set(board->color[color], target))
-                {
-                    break;
-                }
-
-                // Add the move
-                list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
-
-                if (is_set(board->color[!color], target))
-                {
-                    break;
-                }
-            }
+            int target = pop_lsb(&attacks);
+            list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
         }
     }
 }
 
 void rookMoves(Position *board, MoveList *list, bool color)
 {
+    uint64_t sliding = (board->pieces[3] | board->pieces[4]) & board->color[color];
 
-    uint64_t rook = (board->pieces[3] | board->pieces[4]) & board->color[color];
-    while (rook)
+    uint64_t occupancy = board->color[0] | board->color[1];
+
+    while (sliding)
     {
-        int ind = pop_lsb(&rook);
+        int ind = pop_lsb(&sliding);
 
-        int x = ind % 8;
-        int y = ind / 8;
+        uint64_t attacks = getrookAttacks(ind, occupancy);
 
-        // Direction vectors: NE, SE, SW, NW
-        int dx[] = {0, 1, 0, -1};
-        int dy[] = {1, 0, -1, 0};
-        int offset[] = {0, 7, 14, 21};
+        attacks &= ~board->color[color];
 
-        for (int dir = 0; dir < 4; dir++)
+        while (attacks)
         {
-            for (int i = 1; i < 8; i++)
-            {
-                int nx = x + dx[dir] * i;
-                int ny = y + dy[dir] * i;
-
-                if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-                {
-                    break;
-                }
-                int target = nx + ny * 8;
-                if (is_set(board->color[color], target))
-                {
-                    break;
-                }
-
-                // Add the move
-                list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
-
-                if (is_set(board->color[!color], target))
-                {
-                    break;
-                }
-            }
+            int target = pop_lsb(&attacks);
+            list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
         }
     }
 }
@@ -415,7 +299,7 @@ void kingMoves(Position *board, MoveList *list, bool color)
             }
             else
             {
-                if (!is_set(board->color[color], nx + ny * 8))
+                if (!(board->color[color] >> (nx + ny * 8) & 1))
                 {
 
                     list->movelist[list->offset++] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
@@ -465,11 +349,11 @@ void makeMove(Position *board, MoveList *list, int move)
 {
     int direction = (board->turn == 0) ? -1 : 1;
 
-    int to   =  list->movelist[move]        & 0x3F;
-    int from = (list->movelist[move] >> 6)  & 0x3F;
+    int to = list->movelist[move] & 0x3F;
+    int from = (list->movelist[move] >> 6) & 0x3F;
 
     uint64_t frombb = 1ULL << from;
-    uint64_t tobb   = 1ULL << to;
+    uint64_t tobb = 1ULL << to;
 
     int old_epsquare = board->epsquare;
     board->epsquare = -1;
@@ -478,8 +362,8 @@ void makeMove(Position *board, MoveList *list, int move)
     int piece = 6;
     board->mailbox[to] = 6;
     for (int i = 0; i < 6; i++)
-    piece = board->mailbox[from];
-    
+        piece = board->mailbox[from];
+
     if (piece == 6)
         return; // return nothing if piecetype is empty
 
@@ -496,7 +380,7 @@ void makeMove(Position *board, MoveList *list, int move)
 
         board->pieces[0] &= ~capBB;
         board->color[!board->turn] &= ~capBB;
-        board->mailbox[captured_sq] = 6; 
+        board->mailbox[captured_sq] = 6;
     }
 
     // clear destination piece
@@ -514,7 +398,7 @@ void makeMove(Position *board, MoveList *list, int move)
     if (piece == 0)
     {
         int from_y = from / 8;
-        int to_y   = to   / 8;
+        int to_y = to / 8;
 
         if (abs1(to_y - from_y) == 2)
             board->epsquare = from + 8 * direction;
@@ -524,7 +408,6 @@ void makeMove(Position *board, MoveList *list, int move)
 }
 void unMakeMove(Position *board, MoveList *move_list, int ind)
 {
-    
 }
 
 uint64_t perft(Position *board, int depth)

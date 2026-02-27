@@ -8,36 +8,6 @@ int pop_lsb(Bitboard* bb) {
   return sq;
 }
 
-bool is_set(u64 value, int sq)
-{
-    if ((unsigned)sq >= 64) // ensure index is within bounds
-        return 0;
-
-    return (value >> sq) & 1;
-}
-
-u64 set_bit(u64 value, int sq, int on)
-{
-    if ((unsigned)sq >= 64)
-        return value;
-
-    u64 mask = 1ULL << sq;
-    return (value & ~mask) | (-((u64)on) & mask);
-}
-
-uint16_t pack6(uint8_t a, uint8_t b)
-{
-    // a and b must be 0–63
-    return (a & 63) | ((b & 63) << 6);
-}
-
-uint8_t unpack6(uint16_t v, uint8_t which)
-{
-    return (which == 0)
-        ? (v & 63)          // bits 0–5
-        : ((v >> 6) & 63);  // bits 6–11
-}
-
 bool isDigit(char c) {
     if (c >= '0' && c <= '9') {
         return 1; // It is a digit
@@ -56,16 +26,6 @@ char mstrcmp(const char *s1, const char *s2) {
     }
     return *s1 - *s2;        
 }
-
-int charToInt(char digit_char) {
-    if (digit_char >= '0' && digit_char <= '9') {
-        return digit_char - '0';
-    } else {
-        // Handle non-digit characters, e.g., return an error code
-        return -1; // Or throw an error, depending on desired error handling
-    }
-}
-
 
 uint64_t simple_rand(void)
 {

@@ -4,84 +4,81 @@
 
 #define ILLEGALMOVE 42 // Answer to the universe
 
-typedef enum {
-    PAWNVAL = 1,  
-    BISHOPVAL = 3, 
-    KNIGHTVAL = 3, 
-    ROOKVAL = 5, 
+typedef enum
+{
+    PAWNVAL = 1,
+    BISHOPVAL = 3,
+    KNIGHTVAL = 3,
+    ROOKVAL = 5,
     QUEENVAL = 9,
-    KINGVAL = 11, 
+    KINGVAL = 11,
 } pieceVal;
-
 
 int assessSquare(int ind, Position *board)
 {
-
 
     if (ind > 63 || ind < 0)
     {
         return ILLEGALMOVE; // Random Value for invalid move
     }
-    
+
     int val = 0;
-    if (is_set(board->color[0], ind))
+    if ((board->color[0] >> ind) & 1)
     {
-        if (is_set(board->pieces[0], ind))
+        if ((board->pieces[0] >> ind) & 1)
         {
             return PAWNVAL;
         }
-        if (is_set(board->pieces[1], ind))
+        if ((board->pieces[1] >> ind) & 1)
         {
             return BISHOPVAL;
         }
-        if (is_set(board->pieces[2], ind))
+        if ((board->pieces[2] >> ind) & 1)
         {
             return KNIGHTVAL;
         }
-        if (is_set(board->pieces[3], ind))
+        if ((board->pieces[3] >> ind) & 1)
         {
             return ROOKVAL;
         }
-        if (is_set(board->pieces[4], ind))
+        if ((board->pieces[4] >> ind) & 1)
         {
             return QUEENVAL;
         }
-        if (is_set(board->pieces[5], ind))
+        if ((board->pieces[5] >> ind) & 1)
         {
             return KINGVAL;
         }
     }
     else
     {
-        if (is_set(board->pieces[0], ind))
+        if ((board->pieces[0] >> ind) & 1)
         {
             return -PAWNVAL;
         }
-        if (is_set(board->pieces[1], ind))
+        if ((board->pieces[1] >> ind) & 1)
         {
             return -BISHOPVAL;
         }
-        if (is_set(board->pieces[2], ind))
+        if ((board->pieces[2] >> ind) & 1)
         {
             return -KNIGHTVAL;
         }
-        if (is_set(board->pieces[3], ind))
+        if ((board->pieces[3] >> ind) & 1)
         {
             return -ROOKVAL;
         }
-        if (is_set(board->pieces[4], ind))
+        if ((board->pieces[4] >> ind) & 1)
         {
             return -QUEENVAL;
         }
-        if (is_set(board->pieces[5], ind))
+        if ((board->pieces[5] >> ind) & 1)
         {
             return -KINGVAL;
         }
     }
     return val;
 }
-
-
 
 short eval(Position board)
 {
@@ -94,5 +91,5 @@ short eval(Position board)
         totalw += v * __builtin_popcount(board.color[0] & board.pieces[piece]);
         totalb += v * __builtin_popcount(board.color[1] & board.pieces[piece]);
     }
-    return totalw-totalb;
+    return totalw - totalb;
 }
