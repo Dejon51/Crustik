@@ -5,7 +5,7 @@
 
 #define MAX_FEN_LEN 200
 
-void fenRead(Position *board,char *fen, char *arg1, char *arg2, char *arg3, char *arg4, char *arg5)
+void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, char *arg4, char *arg5)
 {
 
     int square = 0;
@@ -45,7 +45,7 @@ void fenRead(Position *board,char *fen, char *arg1, char *arg2, char *arg3, char
             break;
         case 'q':
             board->pieces[4] |= 1ULL << square;
-            board->color[1] |=1ULL << square;
+            board->color[1] |= 1ULL << square;
             board->mailbox[square] = 4;
             square++;
             break;
@@ -128,19 +128,16 @@ void fenRead(Position *board,char *fen, char *arg1, char *arg2, char *arg3, char
         switch (arg2[d])
         {
         case 'K':
-            board->castling |= (1ULL<<0);
+            board->castling |= (1ULL << 1); // white kingside
             break;
         case 'k':
-            board->castling |= (1ULL<<1);
+            board->castling |= (1ULL << 3); // black kingside
             break;
         case 'Q':
-            board->castling |= (1ULL<<2);
+            board->castling |= (1ULL << 0); // white queenside
             break;
         case 'q':
-            board->castling |= (1ULL<<3);
-            break;
-        case '-':
-            d = lengthcastling;
+            board->castling |= (1ULL << 2); // black queenside
             break;
         default:
             printf("Error: Invalid fen problem: %c\n", arg2[d]);

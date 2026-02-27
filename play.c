@@ -47,7 +47,7 @@ Bitboard pawnMask(Position *board, bool color)
 {
     Bitboard pawns = board->pieces[0] & board->color[color];
 
-    if (color) 
+    if (color)
     {
         return ((pawns << 7) & 0x7f7f7f7f7f7f7f7fULL) |
                ((pawns << 9) & 0xfefefefefefefefeULL);
@@ -193,40 +193,24 @@ void pawnMoves(Position *board, MoveList *list, bool color)
         }
     }
 }
+
 void horseMoves(Position *board, MoveList *list, bool color)
 {
-
     uint64_t knights = board->pieces[2] & board->color[color];
+    uint64_t occupancy = board->color[0] | board->color[1];
+
     while (knights)
     {
         int ind = pop_lsb(&knights);
 
-        int x = ind % 8;
-        int y = ind / 8;
+        uint64_t attacks = knighttable[ind];
 
-        static const struct
+        attacks &= ~board->color[color];
+
+        while (attacks)
         {
-            int dx;
-            int dy;
-        } offsets[] = {{2, 1}, {1, 2}, {-1, 2}, {-2, 1}, {-2, -1}, {-1, -2}, {1, -2}, {2, -1}};
-
-        for (int i = 0; i < 8; i++)
-        {
-            int target = (x + offsets[i].dx) + (y + offsets[i].dy) * 8;
-            int nx = x + offsets[i].dx;
-            int ny = y + offsets[i].dy;
-            if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
-            {
-                continue;
-            }
-            else
-            {
-                if (!((board->color[color] >> target) & 1))
-                {
-
-                    list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
-                }
-            }
+            int target = pop_lsb(&attacks);
+            list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
         }
     }
 }
@@ -239,7 +223,7 @@ void bishopMoves(Position *board, MoveList *list, bool color)
 
     while (sliding)
     {
-        int ind = pop_lsb(&sliding); 
+        int ind = pop_lsb(&sliding);
 
         uint64_t attacks = getbishopAttacks(ind, occupancy);
 
@@ -277,34 +261,47 @@ void rookMoves(Position *board, MoveList *list, bool color)
 
 void kingMoves(Position *board, MoveList *list, bool color)
 {
+    Bitboard danger = pawnMask(board, !color) |
+                      bishopMask(board, !color) |
+                      horseMask(board, !color) |
+                      rookMask(board, !color) |
+                      kingMask(board, !color);
+    uint64_t kings = board->pieces[5] & board->color[color];
+    uint64_t occupancy = board->color[0] | board->color[1];
+    uint64_t nocastle = occupancy | danger;
 
-    uint64_t king = board->pieces[5] & board->color[color];
-    while (king)
+    while (kings)
     {
-        int ind = pop_lsb(&king);
-        int x = ind % 8;
-        int y = ind / 8;
-
-        int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-        int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-
-        for (int i = 0; i < 8; i++)
+        int ind = pop_lsb(&kings);
+        if (ind == E1)
         {
-            int nx = x + dx[i];
-            int ny = y + dy[i];
-
-            if (nx < 0 || nx >= 8 || ny < 0 || ny >= 8)
+            if (!((0xcULL & nocastle) == 0xcULL))
             {
-                continue;
+                list->movelist[list->offset++] = (1 << 9) | ((ind & 63) << 6) | (C1 & 63);
             }
-            else
+            if (!((0x60ULL & nocastle) == 0x60ULL))
             {
-                if (!(board->color[color] >> (nx + ny * 8) & 1))
-                {
-
-                    list->movelist[list->offset++] = ((ind & 63) << 6) | (nx + ny * 8 & 63);
-                }
+                list->movelist[list->offset++] = (2 << 9) | ((ind & 63) << 6) | (G1 & 63);
             }
+        } else if (ind == E8)
+        {
+            if (!((0xc00000000000000ULL & nocastle)== 0xc00000000000000ULL))
+            {
+                list->movelist[list->offset++] = (3 << 9) | ((ind & 63) << 6) | (C8 & 63);
+            }
+            if (!((0x6000000000000000ULL & nocastle) ==0x6000000000000000ULL))
+            {
+                list->movelist[list->offset++] = (4 << 9) | ((ind & 63) << 6) | (G8 & 63);
+            }
+        }
+        uint64_t attacks = kingtable[ind];
+
+        attacks &= ~board->color[color];
+
+        while (attacks)
+        {
+            int target = pop_lsb(&attacks);
+            list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
         }
     }
 }
@@ -351,6 +348,7 @@ void makeMove(Position *board, MoveList *list, int move)
 
     int to = list->movelist[move] & 0x3F;
     int from = (list->movelist[move] >> 6) & 0x3F;
+    int flag = (list->movelist[move] >> 9) & 0x457;
 
     uint64_t frombb = 1ULL << from;
     uint64_t tobb = 1ULL << to;
@@ -366,7 +364,54 @@ void makeMove(Position *board, MoveList *list, int move)
 
     if (piece == 6)
         return; // return nothing if piecetype is empty
+    if (piece == KINGNUMBER)
+    {
+        if (flag == 1 && board->castling == 0b0001)
+        {
+            board->pieces[ROOKNUMBER] &= ~(1ULL << A1);
+            board->color[board->turn] &= ~(1ULL << A1);
+            board->mailbox[A1] = 6;
 
+            board->pieces[ROOKNUMBER] |= (1ULL << C1);
+            board->color[board->turn] |= (1ULL << C1);
+            board->mailbox[C1] = ROOKNUMBER;
+            board->castling &= ~(1U << 1);
+        }
+
+        else if (flag == 2 && board->castling == 0b0010)
+        {
+            board->pieces[ROOKNUMBER] &= ~(1ULL << H1);
+            board->color[board->turn] &= ~(1ULL << H1);
+            board->mailbox[H1] = 6;
+
+            board->pieces[ROOKNUMBER] |= (1ULL << F1);
+            board->color[board->turn] |= (1ULL << F1);
+            board->mailbox[F1] = ROOKNUMBER;
+            board->castling &= ~(1U << 2);
+        }
+        else if (flag == 3 && board->castling == 0b0100)
+        {
+            board->pieces[ROOKNUMBER] &= ~(1ULL << A8);
+            board->color[board->turn] &= ~(1ULL << A8);
+            board->mailbox[A8] = 6;
+
+            board->pieces[ROOKNUMBER] |= (1ULL << C8);
+            board->color[board->turn] |= (1ULL << C8);
+            board->mailbox[C8] = ROOKNUMBER;
+            board->castling &= ~(1U << 3);
+        }
+        else if (flag == 4 && board->castling == 0b1000)
+        {
+            board->pieces[ROOKNUMBER] &= ~(1ULL << H8);
+            board->color[board->turn] &= ~(1ULL << H8);
+            board->mailbox[H8] = 6;
+
+            board->pieces[ROOKNUMBER] |= (1ULL << F8);
+            board->color[board->turn] |= (1ULL << F8);
+            board->mailbox[F8] = ROOKNUMBER;
+            board->castling &= ~(1U << 4);
+        }
+    }
     // remove piece from from
     board->pieces[piece] &= ~frombb;
     board->color[board->turn] &= ~frombb;
