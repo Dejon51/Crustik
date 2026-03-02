@@ -61,6 +61,8 @@ char uciStart(void)
     char run = 1;
     char uciok = 0;
 
+    fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
+
     while (run)
     {
         char line[270] = {0};
@@ -100,22 +102,18 @@ char uciStart(void)
 
             if (strcmp(arg1, "startpos") == 0)
             {
-                fenRead(&board, "8/8/8/3pP3/8/8/8/8", "w", "-", "d6", " 0", " 1");
+                fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
             }
             else
             {
                 fenRead(&board, arg1, arg2, arg3, arg4, arg5, arg6);
             }
-            legalMoveGen(&board, &list, board.turn);
-            d(&board);
-            makeMove(&board, &list, 0);
             d(&board);
         }
         else if (strcmp(arg, "go") == 0)
         {
             if (strcmp(arg1, "perft") == 0)
             {
-                fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
                 struct timespec start, stop;
 #ifdef __linux__
                 clock_gettime(CLOCK_MONOTONIC_RAW, &start);
@@ -149,6 +147,21 @@ char uciStart(void)
         }
         else if (strcmp(arg, "d") == 0)
         {
+            d(&board);
+        }
+        else if (strcmp(arg, "pml") == 0)
+        {
+            fenRead(&board, "4K3/8/8/8/8/8/8/8", "w", "", "", "0", "1");
+            MoveList move_list = {};
+            move_list.offset = 0;
+            legalMoveGen(&board, &move_list, board.turn);
+            printf("%i\n",move_list.offset);
+            int result = 0;
+            for (int i = 0; arg1[i] != '\0'; i++)
+            {
+                result = result * 10 + (arg1[i] - '0');
+            }
+            makeMove(&board, &move_list, result);
             d(&board);
         }
         else
