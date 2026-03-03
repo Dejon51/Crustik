@@ -263,11 +263,11 @@ void rookMoves(Position *board, MoveList *list, bool color)
 
 void kingMoves(Position *board, MoveList *list, bool color)
 {
-    Bitboard danger = pawnMask(board, color) |
-                      bishopMask(board, color) |
-                      horseMask(board, color) |
-                      rookMask(board, color) |
-                      kingMask(board, color);
+    Bitboard danger = pawnMask(board, !color) |
+                      bishopMask(board, !color) |
+                      horseMask(board, !color) |
+                      rookMask(board, !color) |
+                      kingMask(board, !color);
     uint64_t kings = board->pieces[5] & board->color[color];
     uint64_t occupancy = board->color[0] | board->color[1];
     uint64_t nocastle = occupancy | danger;
@@ -275,18 +275,38 @@ void kingMoves(Position *board, MoveList *list, bool color)
     while (kings)
     {
         int ind = pop_lsb(&kings);
-        // printf("\n");
-        // if (ind == E1)
-        // {
-        //     // (1 & 15) << 9 |
-        //     // (2 & 15) << 9 |
-            // printf("Wtf");
-            // list->movelist[list->offset++] =  ((ind & 63) << 6) | (G1 & 63);
-            // list->movelist[list->offset++] =  ((ind & 63) << 6) | (C1 & 63);
-        // }
-        
+        if (ind == E1 && color == 0)
+        {
+            if ((nocastle & 0x600000000000000ULL) == 0ULL)
+            {
+                printf("Q\n");
+                list->movelist[list->offset++] = (1 & 15) << 12 | ((ind & 63) << 6) | (G1 & 63);
+            }
+            if ((nocastle & 0x3000000000000000ULL) == 0ULL)
+            {
+                printf("K\n");
+                list->movelist[list->offset++] = (2 & 15) << 12 | ((ind & 63) << 6) | (C1 & 63);
+            }
+        }
+        else if (ind == E8 && color == 1)
+        {
+            if ((nocastle & 0x6ULL) == 0ULL)
+            {
+                printf("q\n");
+
+            list->movelist[list->offset++] = (4 & 15) << 12 | ((ind & 63) << 6) | (G8 & 63);
+            }
+            
+            if ((nocastle & 0x30ULL) == 0ULL)
+            {
+                printf("k\n");
+
+            list->movelist[list->offset++] = (3 & 15) << 12 | ((ind & 63) << 6) | (C8 & 63);
+            }
+        }
+
         // printf("%i %i %i\n",ind,E1,color);
-        
+
         uint64_t attacks = kingtable[ind];
 
         attacks &= ~board->color[color];
@@ -341,7 +361,7 @@ void makeMove(Position *board, MoveList *list, int move)
 
     int to = list->movelist[move] & 0x3F;
     int from = (list->movelist[move] >> 6) & 0x3F;
-    int flag = (list->movelist[move] >> 9) & 0xF;
+    int flag = (list->movelist[move] >> 12) & 0xF;
     // printf("From %i To %i Index %i\n",from,to,list->offset);
     uint64_t frombb = 1ULL << from;
     uint64_t tobb = 1ULL << to;
@@ -357,54 +377,50 @@ void makeMove(Position *board, MoveList *list, int move)
 
     if (piece == 6)
         return; // return nothing if piecetype is empty
-    // if (piece == KINGNUMBER)
-    // {
-    //     if (flag == 1)
-    //     {
-    //         board->pieces[ROOKNUMBER] &= ~(1ULL << A1);
-    //         board->color[board->turn] &= ~(1ULL << A1);
-    //         board->mailbox[A1] = 6;
+    switch (flag)
+    {
+    case 2:
+        board->pieces[ROOKNUMBER] &= ~(1ULL << A1);
+        board->color[board->turn] &= ~(1ULL << A1);
+        board->mailbox[A1] = 6;
 
-    //         board->pieces[ROOKNUMBER] |= (1ULL << C1);
-    //         board->color[board->turn] |= (1ULL << C1);
-    //         board->mailbox[C1] = ROOKNUMBER;
-    //         board->castling &= ~(1U << 1);
-    //     }
+        board->pieces[ROOKNUMBER] |= (1ULL << D1);
+        board->color[board->turn] |= (1ULL << D1);
+        board->mailbox[D1] = ROOKNUMBER;
+        board->castling &= ~(1U << 1);
+        break;
+    case 1:
+        board->pieces[ROOKNUMBER] &= ~(1ULL << H1);
+        board->color[board->turn] &= ~(1ULL << H1);
+        board->mailbox[H1] = 6;
 
-    //     else if (flag == 2)
-    //     {
-    //         board->pieces[ROOKNUMBER] &= ~(1ULL << H1);
-    //         board->color[board->turn] &= ~(1ULL << H1);
-    //         board->mailbox[H1] = 6;
+        board->pieces[ROOKNUMBER] |= (1ULL << F1);
+        board->color[board->turn] |= (1ULL << F1);
+        board->mailbox[F1] = ROOKNUMBER;
+        board->castling &= ~(1U << 2);
+        break;
+    case 3:
+        board->pieces[ROOKNUMBER] &= ~(1ULL << A8);
+        board->color[board->turn] &= ~(1ULL << A8);
+        board->mailbox[A8] = 6;
 
-    //         board->pieces[ROOKNUMBER] |= (1ULL << F1);
-    //         board->color[board->turn] |= (1ULL << F1);
-    //         board->mailbox[F1] = ROOKNUMBER;
-    //         board->castling &= ~(1U << 2);
-    //     }
-    //     else if (flag == 3)
-    //     {
-    //         board->pieces[ROOKNUMBER] &= ~(1ULL << A8);
-    //         board->color[board->turn] &= ~(1ULL << A8);
-    //         board->mailbox[A8] = 6;
+        board->pieces[ROOKNUMBER] |= (1ULL << D8);
+        board->color[board->turn] |= (1ULL << D8);
+        board->mailbox[D8] = ROOKNUMBER;
+        board->castling &= ~(1U << 3);
+        break;
+    case 4:
+        board->pieces[ROOKNUMBER] &= ~(1ULL << H8);
+        board->color[board->turn] &= ~(1ULL << H8);
+        board->mailbox[H8] = 6;
 
-    //         board->pieces[ROOKNUMBER] |= (1ULL << C8);
-    //         board->color[board->turn] |= (1ULL << C8);
-    //         board->mailbox[C8] = ROOKNUMBER;
-    //         board->castling &= ~(1U << 3);
-    //     }
-    //     else if (flag == 4)
-    //     {
-    //         board->pieces[ROOKNUMBER] &= ~(1ULL << H8);
-    //         board->color[board->turn] &= ~(1ULL << H8);
-    //         board->mailbox[H8] = 6;
+        board->pieces[ROOKNUMBER] |= (1ULL << F8);
+        board->color[board->turn] |= (1ULL << F8);
+        board->mailbox[F8] = ROOKNUMBER;
+        board->castling &= ~(1U << 4);
+        break;
+    }
 
-    //         board->pieces[ROOKNUMBER] |= (1ULL << F8);
-    //         board->color[board->turn] |= (1ULL << F8);
-    //         board->mailbox[F8] = ROOKNUMBER;
-    //         board->castling &= ~(1U << 4);
-    //     }
-    // }
     // remove piece from from
     board->pieces[piece] &= ~frombb;
     board->color[board->turn] &= ~frombb;
@@ -462,17 +478,17 @@ uint64_t perft(Position *board, int depth)
         Position copy = *board;
         makeMove(&copy, &move_list, i);
         nodes += perft(&copy, depth - 1);
-        // if (depth == 3)
-        // {
-        //     int from = (move_list.movelist[i] >> 6 & 0x3F);
+        if (depth == 1)
+        {
+            int from = (move_list.movelist[i] >> 6 & 0x3F);
 
-        //     int to = (move_list.movelist[i] & 0x3F);
-        //     int x1 = from % 8;
-        //     int y1 = from / 8;
-        //     int x2 = to % 8;
-        //     int y2 = to / 8;
-        //     printf("%c%i%c%i %li\n", 'a' + (x1), y1 + 1, 'a' + (x2), y2 + 1, nodes);
-        // }
+            int to = (move_list.movelist[i] & 0x3F);
+            int x1 = from % 8;
+            int y1 = from / 8;
+            int x2 = to % 8;
+            int y2 = to / 8;
+            printf("%c%i%c%i %li\n", 'a' + (x1), y1 + 1, 'a' + (x2), y2 + 1, nodes);
+        }
     }
 
     return nodes;

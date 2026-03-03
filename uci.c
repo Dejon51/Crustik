@@ -151,7 +151,7 @@ char uciStart(void)
         }
         else if (strcmp(arg, "pml") == 0)
         {
-            fenRead(&board, "4K3/8/8/8/8/8/8/8", "w", "", "", "0", "1");
+            fenRead(&board, "4k3/8/8/8/8/8/8/4K3", "b", "", "", "0", "1");
             MoveList move_list = {};
             move_list.offset = 0;
             legalMoveGen(&board, &move_list, board.turn);
