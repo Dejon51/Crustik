@@ -301,7 +301,7 @@ void kingMoves(Position *board, MoveList *list, bool color)
             }
             // queenside
             if ((board->castling & (1U << WHITE_QUEENSIDE)) &&
-                (nocastle & 0x0E00000000000000ULL) == 0ULL && (occupancy & 0x200000000000000ULL) == 0ULL)
+                (nocastle & 0xc00000000000000ULL) == 0ULL && (occupancy & 0x200000000000000ULL) == 0ULL)
             {
                 list->movelist[list->offset++] = (2U << 12) | ((ind & 63) << 6) | (C1 & 63);
             }
@@ -595,7 +595,7 @@ uint64_t perft(Position *board, int depth)
         uint64_t move_nodes = perft(&copy, depth - 1);
         nodes += move_nodes;
 
-        // if (depth == 4)
+        // if (depth == 5)
         // {
         //     int from = (move_list.movelist[i] >> 6) & 0x3F;
         //     int to = move_list.movelist[i] & 0x3F;
