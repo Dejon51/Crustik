@@ -5,6 +5,8 @@
 
 #define MAX_FEN_LEN 200
 
+
+
 void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, char *arg4, char *arg5)
 {
     memset(board, 0, sizeof(Position));
@@ -123,27 +125,32 @@ void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, cha
         memset(board, 0, sizeof(Position));
     }
     int lengthcastling = strlen(arg2);
-    for (int d = 0; d < lengthcastling; d++)
-    {
-        switch (arg2[d])
-        {
+    board->castling = 0;
+
+if (arg2[0] != '-') {
+    int lengthcastling = strlen(arg2);
+    for (int d = 0; d < lengthcastling; d++) {
+        switch (arg2[d]) {
         case 'K':
-            board->castling |= (1ULL << 1); // white kingside
-            break;
-        case 'k':
-            board->castling |= (1ULL << 3); // black kingside
+            board->castling |= (1U << WHITE_KINGSIDE);
             break;
         case 'Q':
-            board->castling |= (1ULL << 0); // white queenside
+            board->castling |= (1U << WHITE_QUEENSIDE);
+            break;
+        case 'k':
+            board->castling |= (1U << BLACK_KINGSIDE);
             break;
         case 'q':
-            board->castling |= (1ULL << 2); // black queenside
+            board->castling |= (1U << BLACK_QUEENSIDE);
             break;
         default:
-            printf("Error: Invalid fen problem: %c\n", arg2[d]);
+            printf("Error: Invalid castling character in FEN: %c\n", arg2[d]);
             break;
         }
     }
+} else {
+    board->castling = 0; // no castling rights
+}
 
     if (arg3[0] != '-' && arg3[1] != '-')
     {

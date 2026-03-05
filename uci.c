@@ -58,6 +58,8 @@ void d(Position *board) // Displays board or something
 char uciStart(void)
 {
     Position board = {0};
+    Position copyboard = {0};
+
     char run = 1;
     char uciok = 0;
 
@@ -151,18 +153,19 @@ char uciStart(void)
         }
         else if (strcmp(arg, "pml") == 0)
         {
-            fenRead(&board, "4k3/8/8/8/8/8/8/4K3", "b", "", "", "0", "1");
+            // fenRead(&board, "4k3/8/8/8/8/8/8/4K3", "b", "", "", "0", "1");
+            copyboard = board;
             MoveList move_list = {};
             move_list.offset = 0;
-            legalMoveGen(&board, &move_list, board.turn);
+            legalMoveGen(&copyboard, &move_list, board.turn);
             printf("%i\n",move_list.offset);
             int result = 0;
             for (int i = 0; arg1[i] != '\0'; i++)
             {
                 result = result * 10 + (arg1[i] - '0');
             }
-            makeMove(&board, &move_list, result);
-            d(&board);
+            makeMove(&copyboard, &move_list, result);
+            d(&copyboard);
         }
         else
         {

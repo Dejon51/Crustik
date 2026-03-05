@@ -8,6 +8,13 @@
 typedef uint64_t u64;
 typedef u64 Bitboard;
 
+typedef enum {
+    WHITE_QUEENSIDE = 0,
+    WHITE_KINGSIDE  = 1,
+    BLACK_QUEENSIDE = 2,
+    BLACK_KINGSIDE  = 3
+} CastlingRight;
+
 typedef struct {
     // color 0 is white
     // color 1 is black
@@ -20,11 +27,18 @@ typedef struct {
     // king 5
     Bitboard color[2];
     Bitboard pieces[6];
-    int16_t epsquare;
+    int8_t epsquare;
     int8_t castling;
     uint8_t mailbox[64];
     bool turn;
 } Position;
+
+struct Undo {
+    int capturedPiece;
+    int castlingRights;
+    int enPassantSquare;
+    int halfmoveClock;
+};
 
 enum {
     PAWNNUMBER = 0,
@@ -74,6 +88,7 @@ enum {
 #else
     #error "C standard must be C17 or newer"
 #endif
+
 
 
 typedef struct {
