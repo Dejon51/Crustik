@@ -5,6 +5,7 @@
 #include "play.h"
 #include "eval.h"
 #include "fen.h"
+#include "search.h"
 
 void d(Position *board) // Displays board or something
 {
@@ -114,7 +115,15 @@ char uciStart(void)
         }
         else if (strcmp(arg, "go") == 0)
         {
-            if (strcmp(arg1, "perft") == 0)
+            if (strcmp(arg1, "depth") == 0){
+                int depth = 0;
+                for (int i = 0; arg2[i] != '\0'; i++)
+                {
+                    depth = depth * 10 + (arg1[i] - '0');
+                }
+                search(&board, depth,0,0,0);
+            }
+            else if (strcmp(arg1, "perft") == 0)
             {
                 struct timespec start, stop;
 #ifdef __linux__
@@ -158,7 +167,7 @@ char uciStart(void)
             MoveList move_list = {};
             move_list.offset = 0;
             legalMoveGen(&copyboard, &move_list, board.turn);
-            printf("%i\n",move_list.offset);
+            printf("%i\n", move_list.offset);
             int result = 0;
             for (int i = 0; arg1[i] != '\0'; i++)
             {

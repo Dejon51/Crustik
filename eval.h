@@ -13,6 +13,6 @@ typedef struct
 
 int assessSquare(int ind, Position *board);
 
-short eval(Position board);
+int eval(Position *board);
 
 #endif

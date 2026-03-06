@@ -134,8 +134,8 @@ void pawnMoves(Position *board, MoveList *list, bool color)
     while (pawns)
     {
         int ind = pop_lsb(&pawns);
-        int x = ind % 8;
-        int y = ind / 8;
+        int x = ind &7;
+        int y = ind >> 3;
         int offsetx[4] = {-1, 0, 0, 1};
         int offsety[4] = {1, 1, 2, 1};
         for (int i = 0; i < 4; i++)
@@ -185,8 +185,8 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 }
                 else if (board->epsquare == to && board->epsquare != -1)
                 {
-                    int to_file = to % 8;
-                    int from_rank = ind / 8;
+                    int to_file = to & 7;
+                    int from_rank = ind >> 3;
                     int captured_sq = to_file + from_rank * 8;
                     if (((board->pieces[0] >> captured_sq) & 1) && ((board->color[!color] >> captured_sq) & 1))
                     {
@@ -276,6 +276,32 @@ void rookMoves(Position *board, MoveList *list, bool color)
     }
 }
 
+bool squareAttacked(Position *b, int sq, int enemy)
+{
+    uint64_t occ = b->color[0] | b->color[1];
+    uint64_t enemyPieces = b->color[enemy];
+
+    if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
+        (b->pieces[PAWNNUMBER] & enemyPieces))
+        return true;
+
+    if (knighttable[sq] & (b->pieces[HORSENUMBER] & enemyPieces))
+        return true;
+
+    if (kingtable[sq] & (b->pieces[KINGNUMBER] & enemyPieces))
+        return true;
+
+    if (getbishopAttacks(sq, occ) &
+        ((b->pieces[BISHOPNUMBER] | b->pieces[QUEENNUMBER]) & enemyPieces))
+        return true;
+
+    if (getrookAttacks(sq, occ) &
+        ((b->pieces[ROOKNUMBER] | b->pieces[QUEENNUMBER]) & enemyPieces))
+        return true;
+
+    return false;
+}
+
 void kingMoves(Position *board, MoveList *list, bool color)
 {
     Bitboard danger = pawnMask(board, !color) |
@@ -318,8 +344,6 @@ void kingMoves(Position *board, MoveList *list, bool color)
 
             if ((board->castling & (1U << BLACK_QUEENSIDE)) &&
                 (nocastle & 0xCULL) == 0ULL && (occupancy & 0x2ULL) == 0ULL)
-                
-                
             {
                 list->movelist[list->offset++] = (3U << 12) | ((ind & 63) << 6) | (C8 & 63);
             }
@@ -338,15 +362,7 @@ void kingMoves(Position *board, MoveList *list, bool color)
     }
 }
 
-bool iskingcheck(Position *board, int ind, bool color)
-{
-    Bitboard danger = pawnMask(board, color) |
-                      bishopMask(board, color) |
-                      horseMask(board, color) |
-                      rookMask(board, color) |
-                      kingMask(board, color);
-    return (danger & (1ULL << ind)) != 0;
-}
+
 // x+y*8
 
 void legalMoveGen(Position *board, MoveList *list, bool turn)
@@ -361,7 +377,7 @@ void legalMoveGen(Position *board, MoveList *list, bool turn)
 
     uint64_t king_bb = board->pieces[5] & board->color[turn];
     int current_king_pos = pop_lsb(&king_bb);
-    bool in_check = iskingcheck(board, current_king_pos, !turn);
+    bool in_check = squareAttacked(board, current_king_pos, !turn);
 
     for (int i = 0; i < pseudo.offset; i++)
     {
@@ -376,7 +392,7 @@ void legalMoveGen(Position *board, MoveList *list, bool turn)
         uint64_t our_king = copy.pieces[5] & copy.color[turn];
         int king_pos = pop_lsb(&our_king);
 
-        if (!iskingcheck(&copy, king_pos, !turn))
+        if (!squareAttacked(&copy, king_pos, !turn))
         {
             list->movelist[list->offset++] = pseudo.movelist[i];
         }
@@ -504,7 +520,7 @@ void makeMove(Position *board, MoveList *list, int move)
     // en passant capture
     if (piece == 0 && to == old_epsquare)
     {
-        int captured_sq = to - 8 * direction;
+        int captured_sq = to - (direction << 3);
         uint64_t capBB = 1ULL << captured_sq;
 
         board->pieces[0] &= ~capBB;
@@ -534,11 +550,11 @@ void makeMove(Position *board, MoveList *list, int move)
 
     if (piece == 0)
     {
-        int from_y = from / 8;
-        int to_y = to / 8;
+        int from_y = from >> 3;
+        int to_y = to >> 3;
 
         if (abs1(to_y - from_y) == 2)
-            board->epsquare = from + 8 * direction;
+            board->epsquare = from + (direction << 3);
     }
 
     board->turn ^= 1;

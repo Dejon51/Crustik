@@ -33,12 +33,12 @@ typedef struct {
     bool turn;
 } Position;
 
-struct Undo {
-    int capturedPiece;
-    int castlingRights;
-    int enPassantSquare;
-    int halfmoveClock;
-};
+// struct Undo {
+//     int capturedPiece;
+//     int castlingRights;
+//     int enPassantSquare;
+//     int halfmoveClock;
+// };
 
 enum {
     PAWNNUMBER = 0,

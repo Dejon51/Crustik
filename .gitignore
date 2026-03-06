@@ -3,3 +3,5 @@ a.out
 .vscode
 misc
 a.exe
+perf.data
+perf.data.old

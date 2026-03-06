@@ -80,7 +80,7 @@ int assessSquare(int ind, Position *board)
     return val;
 }
 
-short eval(Position board)
+int eval(Position *board)
 {
     short totalw = 0;
     short totalb = 0;
@@ -88,8 +88,8 @@ short eval(Position board)
     for (int piece = 0; piece < 6; piece++)
     {
         short v = bitVal[piece];
-        totalw += v * __builtin_popcount(board.color[0] & board.pieces[piece]);
-        totalb += v * __builtin_popcount(board.color[1] & board.pieces[piece]);
+        totalw += v * __builtin_popcount(board->color[0] & board->pieces[piece]);
+        totalb += v * __builtin_popcount(board->color[1] & board->pieces[piece]);
     }
     return totalw - totalb;
 }
