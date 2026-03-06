@@ -44,6 +44,33 @@ void print_bytes(uint64_t value)
     printf("\n");
 }
 
+bool squareAttacked(Position *b, int sq, int enemy)
+{
+
+    uint64_t occ = b->color[0] | b->color[1];
+    uint64_t enemyPieces = b->color[enemy];
+
+    if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
+        (b->pieces[PAWNNUMBER] & enemyPieces))
+        return true;
+
+    if (knighttable[sq] & (b->pieces[HORSENUMBER] & enemyPieces))
+        return true;
+
+    if (kingtable[sq] & (b->pieces[KINGNUMBER] & enemyPieces))
+        return true;
+
+    if (getbishopAttacks(sq, occ) &
+        ((b->pieces[BISHOPNUMBER] | b->pieces[QUEENNUMBER]) & enemyPieces))
+        return true;
+
+    if (getrookAttacks(sq, occ) &
+        ((b->pieces[ROOKNUMBER] | b->pieces[QUEENNUMBER]) & enemyPieces))
+        return true;
+
+    return false;
+}
+
 Bitboard pawnMask(Position *board, bool color)
 {
     Bitboard pawns = board->pieces[0] & board->color[color];
@@ -134,7 +161,7 @@ void pawnMoves(Position *board, MoveList *list, bool color)
     while (pawns)
     {
         int ind = pop_lsb(&pawns);
-        int x = ind &7;
+        int x = ind & 7;
         int y = ind >> 3;
         int offsetx[4] = {-1, 0, 0, 1};
         int offsety[4] = {1, 1, 2, 1};
@@ -276,31 +303,7 @@ void rookMoves(Position *board, MoveList *list, bool color)
     }
 }
 
-bool squareAttacked(Position *b, int sq, int enemy)
-{
-    uint64_t occ = b->color[0] | b->color[1];
-    uint64_t enemyPieces = b->color[enemy];
 
-    if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
-        (b->pieces[PAWNNUMBER] & enemyPieces))
-        return true;
-
-    if (knighttable[sq] & (b->pieces[HORSENUMBER] & enemyPieces))
-        return true;
-
-    if (kingtable[sq] & (b->pieces[KINGNUMBER] & enemyPieces))
-        return true;
-
-    if (getbishopAttacks(sq, occ) &
-        ((b->pieces[BISHOPNUMBER] | b->pieces[QUEENNUMBER]) & enemyPieces))
-        return true;
-
-    if (getrookAttacks(sq, occ) &
-        ((b->pieces[ROOKNUMBER] | b->pieces[QUEENNUMBER]) & enemyPieces))
-        return true;
-
-    return false;
-}
 
 void kingMoves(Position *board, MoveList *list, bool color)
 {
@@ -362,13 +365,12 @@ void kingMoves(Position *board, MoveList *list, bool color)
     }
 }
 
-
 // x+y*8
 
-void legalMoveGen(Position *board, MoveList *list, bool turn)
+void legalMoveGen(Position *board, MoveList *list)
 {
     MoveList pseudo = {0};
-
+    bool turn = board->turn;
     pawnMoves(board, &pseudo, turn);
     bishopMoves(board, &pseudo, turn);
     horseMoves(board, &pseudo, turn);
@@ -382,6 +384,10 @@ void legalMoveGen(Position *board, MoveList *list, bool turn)
     for (int i = 0; i < pseudo.offset; i++)
     {
         int flag = (pseudo.movelist[i] >> 12) & 0xF;
+        int to = pseudo.movelist[i] & 0x3F;
+
+        if ((board->pieces[KINGNUMBER] >> to) & 1)
+            continue;
 
         if (in_check && flag >= 1 && flag <= 4)
             continue;
@@ -390,6 +396,8 @@ void legalMoveGen(Position *board, MoveList *list, bool turn)
         makeMove(&copy, &pseudo, i);
 
         uint64_t our_king = copy.pieces[5] & copy.color[turn];
+        if (!our_king)
+            continue; // safety net
         int king_pos = pop_lsb(&our_king);
 
         if (!squareAttacked(&copy, king_pos, !turn))
@@ -398,6 +406,7 @@ void legalMoveGen(Position *board, MoveList *list, bool turn)
         }
     }
 }
+
 void makeMove(Position *board, MoveList *list, int move)
 {
     int direction = (board->turn == 0) ? -1 : 1;
@@ -413,6 +422,7 @@ void makeMove(Position *board, MoveList *list, int move)
     board->epsquare = -1;
 
     int piece = board->mailbox[from];
+    int moving_piece = piece;
 
     if (piece == 6)
         return;
@@ -425,7 +435,6 @@ void makeMove(Position *board, MoveList *list, int move)
         case 0:
             board->castling &= ~((1U << WHITE_KINGSIDE) | (1U << WHITE_QUEENSIDE));
             break;
-
         case 1:
             board->castling &= ~((1U << BLACK_KINGSIDE) | (1U << BLACK_QUEENSIDE));
             break;
@@ -495,6 +504,7 @@ void makeMove(Position *board, MoveList *list, int move)
 
         board->castling &= ~(1U << BLACK_QUEENSIDE);
         break;
+
     case 5:
         piece = 1;
         break;
@@ -512,13 +522,13 @@ void makeMove(Position *board, MoveList *list, int move)
         break;
     }
 
-    // remove piece from origin
-    board->pieces[piece] &= ~frombb;
+    // remove piece from origin (use moving_piece, not piece)
+    board->pieces[moving_piece] &= ~frombb;
     board->color[board->turn] &= ~frombb;
     board->mailbox[from] = 6;
 
     // en passant capture
-    if (piece == 0 && to == old_epsquare)
+    if (moving_piece == 0 && to == old_epsquare)
     {
         int captured_sq = to - (direction << 3);
         uint64_t capBB = 1ULL << captured_sq;
@@ -543,12 +553,175 @@ void makeMove(Position *board, MoveList *list, int move)
 
     board->color[!board->turn] &= ~tobb;
 
-    // place moving piece
+    // place moving piece (use piece, which is promoted type if applicable)
     board->pieces[piece] |= tobb;
     board->color[board->turn] |= tobb;
     board->mailbox[to] = piece;
 
-    if (piece == 0)
+    if (moving_piece == 0)
+    {
+        int from_y = from >> 3;
+        int to_y = to >> 3;
+
+        if (abs1(to_y - from_y) == 2)
+            board->epsquare = from + (direction << 3);
+    }
+
+    board->turn ^= 1;
+}
+
+void moveint(Position *board, int move)
+{
+    int direction = (board->turn == 0) ? -1 : 1;
+
+    int to = move & 0x3F;
+    int from = (move >> 6) & 0x3F;
+    int flag = (move >> 12) & 0xF;
+
+    uint64_t frombb = 1ULL << from;
+    uint64_t tobb = 1ULL << to;
+
+    int old_epsquare = board->epsquare;
+    board->epsquare = -1;
+
+    int piece = board->mailbox[from];
+    int moving_piece = piece;
+
+    if (piece == 6)
+        return;
+
+    // king moved remove both castling rights
+    if (piece == KINGNUMBER)
+    {
+        switch (board->turn)
+        {
+        case 0:
+            board->castling &= ~((1U << WHITE_KINGSIDE) | (1U << WHITE_QUEENSIDE));
+            break;
+        case 1:
+            board->castling &= ~((1U << BLACK_KINGSIDE) | (1U << BLACK_QUEENSIDE));
+            break;
+        }
+    }
+
+    // rook moved remove that sides castling
+    if (piece == 3)
+    {
+        if (from == H1)
+            board->castling &= ~(1U << WHITE_KINGSIDE);
+        if (from == A1)
+            board->castling &= ~(1U << WHITE_QUEENSIDE);
+        if (from == H8)
+            board->castling &= ~(1U << BLACK_KINGSIDE);
+        if (from == A8)
+            board->castling &= ~(1U << BLACK_QUEENSIDE);
+    }
+
+    // castling move handling
+    switch (flag)
+    {
+    case 1: // white king side
+        board->pieces[3] &= ~(1ULL << H1);
+        board->color[board->turn] &= ~(1ULL << H1);
+        board->mailbox[H1] = 6;
+
+        board->pieces[3] |= (1ULL << F1);
+        board->color[board->turn] |= (1ULL << F1);
+        board->mailbox[F1] = 3;
+
+        board->castling &= ~(1U << WHITE_KINGSIDE);
+        break;
+
+    case 2: // white queen side
+        board->pieces[3] &= ~(1ULL << A1);
+        board->color[board->turn] &= ~(1ULL << A1);
+        board->mailbox[A1] = 6;
+
+        board->pieces[3] |= (1ULL << D1);
+        board->color[board->turn] |= (1ULL << D1);
+        board->mailbox[D1] = 3;
+
+        board->castling &= ~(1U << WHITE_QUEENSIDE);
+        break;
+
+    case 4: // black king side
+        board->pieces[3] &= ~(1ULL << H8);
+        board->color[board->turn] &= ~(1ULL << H8);
+        board->mailbox[H8] = 6;
+
+        board->pieces[3] |= (1ULL << F8);
+        board->color[board->turn] |= (1ULL << F8);
+        board->mailbox[F8] = 3;
+
+        board->castling &= ~(1U << BLACK_KINGSIDE);
+        break;
+
+    case 3: // black queen side
+        board->pieces[3] &= ~(1ULL << A8);
+        board->color[board->turn] &= ~(1ULL << A8);
+        board->mailbox[A8] = 6;
+
+        board->pieces[3] |= (1ULL << D8);
+        board->color[board->turn] |= (1ULL << D8);
+        board->mailbox[D8] = 3;
+
+        board->castling &= ~(1U << BLACK_QUEENSIDE);
+        break;
+
+    case 5:
+        piece = 1;
+        break;
+    case 6:
+        piece = 2;
+        break;
+    case 7:
+        piece = 3;
+        break;
+    case 8:
+        piece = 4;
+        break;
+
+    default:
+        break;
+    }
+
+    // remove piece from origin (use moving_piece, not piece)
+    board->pieces[moving_piece] &= ~frombb;
+    board->color[board->turn] &= ~frombb;
+    board->mailbox[from] = 6;
+
+    // en passant capture
+    if (moving_piece == 0 && to == old_epsquare)
+    {
+        int captured_sq = to - (direction << 3);
+        uint64_t capBB = 1ULL << captured_sq;
+
+        board->pieces[0] &= ~capBB;
+        board->color[!board->turn] &= ~capBB;
+        board->mailbox[captured_sq] = 6;
+    }
+
+    if (to == H1)
+        board->castling &= ~(1U << WHITE_KINGSIDE);
+    if (to == A1)
+        board->castling &= ~(1U << WHITE_QUEENSIDE);
+    if (to == H8)
+        board->castling &= ~(1U << BLACK_KINGSIDE);
+    if (to == A8)
+        board->castling &= ~(1U << BLACK_QUEENSIDE);
+
+    // clear destination square
+    for (int i = 0; i < 6; i++)
+        board->pieces[i] &= ~tobb;
+
+    board->color[!board->turn] &= ~tobb;
+
+    // place moving piece (use piece, which is promoted type if applicable)
+    board->pieces[piece] |= tobb;
+    board->color[board->turn] |= tobb;
+    board->mailbox[to] = piece;
+
+    if (moving_piece == 0)
     {
         int from_y = from >> 3;
         int to_y = to >> 3;
@@ -601,7 +774,7 @@ uint64_t perft(Position *board, int depth)
 
     MoveList move_list;
     move_list.offset = 0;
-    legalMoveGen(board, &move_list, board->turn);
+    legalMoveGen(board, &move_list);
     uint64_t nodes = 0;
     for (int i = 0; i < move_list.offset; i++)
     {
@@ -640,5 +813,3 @@ uint64_t perft(Position *board, int depth)
     }
     return nodes;
 }
-
-

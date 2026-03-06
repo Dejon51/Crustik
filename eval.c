@@ -82,14 +82,17 @@ int assessSquare(int ind, Position *board)
 
 int eval(Position *board)
 {
-    short totalw = 0;
-    short totalb = 0;
+    
+    int totalw = 0;
+    int totalb = 0;
+
+    int direction = (board->turn == 0) ? 1 : -1;
 
     for (int piece = 0; piece < 6; piece++)
     {
-        short v = bitVal[piece];
+        int v = bitVal[piece];
         totalw += v * __builtin_popcount(board->color[0] & board->pieces[piece]);
         totalb += v * __builtin_popcount(board->color[1] & board->pieces[piece]);
     }
-    return totalw - totalb;
+    return (totalw - totalb)*direction;
 }

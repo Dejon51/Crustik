@@ -4,77 +4,61 @@
 #include "eval.h"
 #include "search.h"
 
-
-searchOutput search(Position *board, int depth,int ply,int alpha,int beta)
+searchOutput search(Position *board, int depth, int ply, int alpha, int beta)
 {
-    searchOutput output = {};
+    searchOutput output = {0};
+
     if (depth <= 0)
     {
         output.score = eval(board);
         return output;
     }
-    int best_score = -2000;
-    
 
-    // Play each move
     MoveList move_list;
     move_list.offset = 0;
+
+    legalMoveGen(board, &move_list);
+
+    if (move_list.offset == 0)
+    {
+        uint64_t king_bb = board->pieces[5] & board->color[board->turn];
+        if (!king_bb)
+        {
+            output.score = -32000 + ply;
+            return output;
+        }
+        int king_pos = __builtin_ctzll(king_bb);
+        if (squareAttacked(board, king_pos, !board->turn))
+            output.score = -32000 + ply;
+        else
+            output.score = 0;
+        return output;
+    }
+
+    int best_score = -32000;
     Position copy;
-    legalMoveGen(&copy, &move_list, &copy.turn);
 
     for (int i = 0; i < move_list.offset; i++)
     {
         copy = *board;
-        makeMove(&copy, &move_list,i);
-        int score = -search(&copy,depth -1,ply+1,-beta,-alpha).score;
-        if (score > best_score){
-            best_score = score;
-        }
+        makeMove(&copy, &move_list, i);
 
-        if (score > alpha) {
-            if (ply == 0) {
-                output.move = i;
-            }
+        int score = -search(&copy, depth - 1, ply + 1, -beta, -alpha).score;
+
+        if (score > best_score)
+            best_score = score;
+
+        if (score > alpha)
+        {
+            if (ply == 0)
+                output.move = move_list.movelist[i];
             alpha = score;
         }
 
-        if (score >= beta) {
+        if (score >= beta)
             break;
-        }
     }
+
     output.score = best_score;
     return output;
 }
-
-/*
-fn search(&mut self, pos: &Position, depth: i32, ply: i32, mut alpha: i32, beta: i32) -> i32 {
-    if depth <= 0 {
-        return eval(pos); // or qsearch
-    }
-
-    let mut best_score = -SCORE_INF;
-
-    let moves = generate_moves(pos);
-    for mv in moves {
-        let new_pos = pos.make_move(mv);
-        let score = -self.search(&new_pos, depth - 1, ply + 1, -beta, -alpha);
-
-        if score > best_score {
-            best_score = score;
-        }
-
-        if score > alpha {
-            if ply == 0 {
-                self.best_move = mv;
-            }
-            alpha = score;
-        }
-
-        if score >= beta {
-            break;
-        }
-    }
-
-    best_score
-}
-*/

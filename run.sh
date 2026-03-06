@@ -1,3 +1,3 @@
 #!/bin/bash
 
-gcc main.c play.c lmath.c eval.c uci.c fen.c lmath.h search.c -g -O3 -flto -march=native "$@" -o chess
+gcc main.c play.c lmath.c eval.c uci.c fen.c lmath.h search.c -g -O3 -flto -fno-strict-aliasing -march=native "$@" -o crustik
