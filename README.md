@@ -16,7 +16,7 @@
 ##### How to Run
 - Get GCC on your computer make sure to have it in system path.
 - To run for macos and linux use `./run.sh`, in windows double click the .bat file.
-- run chess in terminal/cmd with `./chess` or `chess` if your on windows.
+- run chess in terminal/cmd with `./crustik` or `crustik` if your on windows.
 
 ##### Dev Log
 Ideas and stuff I have in future or problems in my etc etc. [DEVLOG](DEVBLOG.md).
