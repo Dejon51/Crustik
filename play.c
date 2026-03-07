@@ -303,8 +303,6 @@ void rookMoves(Position *board, MoveList *list, bool color)
     }
 }
 
-
-
 void kingMoves(Position *board, MoveList *list, bool color)
 {
     Bitboard danger = pawnMask(board, !color) |

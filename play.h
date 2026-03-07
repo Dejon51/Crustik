@@ -13,7 +13,15 @@ typedef struct {
     uint16_t moves[218];
 } LegalMoves;
 
-static uint8_t penaltymap[64] = {1, 2, 3, 4, 4, 3, 2, 1, 2, 3, 4, 5, 5, 4, 3, 2, 3, 4, 5, 6, 6, 5, 4, 3, 4, 5, 6, 7, 7, 6, 5, 4, 4, 5, 6, 7, 7, 6, 5, 4, 3, 4, 5, 6, 6, 5, 4, 3, 2, 3, 4, 5, 5, 4, 3, 2, 1, 2, 3, 4, 4, 3, 2, 1};
+Bitboard pawnMask(Position *board, bool color);
+
+Bitboard horseMask(Position *board, bool color);
+
+Bitboard bishopMask(Position *board, bool color);
+
+Bitboard rookMask(Position *board, bool color);
+
+Bitboard kingMask(Position *board, bool color);
 
 bool squareAttacked(Position *b, int sq, int enemy);
 

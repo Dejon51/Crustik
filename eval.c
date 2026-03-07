@@ -1,6 +1,7 @@
 #include "eval.h"
 #include "lmath.h"
 #include "stdio.h"
+#include "play.h"
 
 #define ILLEGALMOVE 42 // Answer to the universe
 
@@ -82,11 +83,28 @@ int assessSquare(int ind, Position *board)
 
 int eval(Position *board)
 {
+    Bitboard danger = pawnMask(board, !board->turn) |
+                    bishopMask(board, !board->turn) |
+                    horseMask(board, !board->turn) |
+                    rookMask(board, !board->turn);
     
     int totalw = 0;
     int totalb = 0;
+    int squarecontrol = 0;
+
+    squarecontrol +=  -__builtin_popcount(danger);
+
 
     int direction = (board->turn == 0) ? 1 : -1;
+
+    uint64_t pieces = board->color[board->turn];
+
+    int totalcentrality = 0;
+    while (pieces)
+    {
+        int ind = pop_lsb(&pieces);
+        totalcentrality += penaltymap[ind]*5;
+    }
 
     for (int piece = 0; piece < 6; piece++)
     {
@@ -94,5 +112,5 @@ int eval(Position *board)
         totalw += v * __builtin_popcount(board->color[0] & board->pieces[piece]);
         totalb += v * __builtin_popcount(board->color[1] & board->pieces[piece]);
     }
-    return (totalw - totalb)*direction;
+    return (totalw - totalb + totalcentrality + squarecontrol)*direction;
 }

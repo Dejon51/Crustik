@@ -7,6 +7,109 @@
 #include "fen.h"
 #include "search.h"
 
+char *movestring(uint16_t movex)
+{
+    static char buf[32]; // Enough to hold a move string like "e2e4q"
+
+    int from = (movex >> 6) & 0x3F;
+    int to = movex & 0x3F;
+    int flag = (movex >> 12) & 0xF;
+
+    int x1 = from % 8;
+    int y1 = 8 - (from / 8);
+    int x2 = to % 8;
+    int y2 = 8 - (to / 8);
+
+    char promotion = 0;
+    if (flag == 5)
+        promotion = 'b';
+    else if (flag == 6)
+        promotion = 'n';
+    else if (flag == 7)
+        promotion = 'r';
+    else if (flag == 8)
+        promotion = 'q';
+
+    if (promotion)
+        snprintf(buf, sizeof(buf), "%c%i%c%i%c", 'a' + x1, y1, 'a' + x2, y2, promotion);
+    else
+        snprintf(buf, sizeof(buf), "%c%i%c%i", 'a' + x1, y1, 'a' + x2, y2);
+
+    return buf;
+}
+
+uint16_t parsemove(Position *board, char *move)
+{
+    int x1 = move[0] - 'a';
+    int y1 = move[1] - '1';
+    int x2 = move[2] - 'a';
+    int y2 = move[3] - '1';
+    int flag = 0;
+    switch (move[4])
+    {
+    case 'b':
+        flag = 5U;
+
+        break;
+    case 'n':
+        flag = 6U;
+
+        break;
+    case 'r':
+        flag = 7U;
+
+        break;
+    case 'q':
+        flag = 8U;
+        break;
+
+    default:
+        break;
+    }
+    int from = x1 + (y1 << 3);
+    int to = x2 + (y2 << 3);
+    if (board->mailbox[from] == 5)
+    {
+        switch (board->turn)
+        {
+        case 0:
+            switch (from)
+            {
+            case E1:
+                switch (to)
+                {
+                case G1:
+                    flag = 1U;
+                    break;
+                case C1:
+                    flag = 2U;
+                    break;
+                }
+                break;
+            }
+            break;
+        case 1:
+            switch (from)
+            {
+            case E8:
+                switch (to)
+                {
+                case G8:
+                    flag = 4U;
+                    break;
+                case C8:
+                    flag = 3U;
+                    break;
+                }
+                break;
+            }
+            break;
+        }
+    }
+
+    return (flag << 12) | ((from & 63) << 6) | (to & 63);
+}
+
 void d(Position *board) // Displays board or something
 {
     char piecelowercase[] = {
@@ -109,12 +212,34 @@ char uciStart(void)
             else if (strcmp(tokens[1], "startpos") == 0)
             {
                 fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
-                d(&board);
+
+                int i = 2;
+                if (tokens[i] && strcmp(tokens[i], "moves") == 0)
+                    i++;
+                while (tokens[i])
+                {
+                    uint16_t move = parsemove(&board, tokens[i]);
+                    moveint(&board, move);
+                    i++;
+                }
+            }
+            else if (strcmp(tokens[1], "fen") == 0)
+            {
+                fenRead(&board, tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7]);
+
+                int i = 8;
+                if (tokens[i] && strcmp(tokens[i], "moves") == 0)
+                    i++;
+                while (tokens[i])
+                {
+                    uint16_t move = parsemove(&board, tokens[i]);
+                    moveint(&board, move);
+                    i++;
+                }
             }
             else
             {
-                fenRead(&board, tokens[1],tokens[2],tokens[3],tokens[4],tokens[5],tokens[6]);
-                d(&board);
+                printf("position: unknown argument '%s'\n", tokens[1]);
             }
         }
         else if (strcmp(tokens[0], "go") == 0)
@@ -131,26 +256,27 @@ char uciStart(void)
                 }
                 else
                 {
-                    for (int i = 0; i < 120; i++)
+                    searchOutput result = search(&board, tokens[2][0] - '0', 0, -32000, 32000);
+
+                    if (result.move == 0)
                     {
-                        searchOutput result = search(&board, tokens[2][0] - '0', 0, -32000, 32000);
-
-                        if (result.move == 0)
-                        {
-                            uint64_t king_bb = board.pieces[5] & board.color[board.turn];
-                            if (!king_bb)
-                                break;
-                            int king_pos = __builtin_ctzll(king_bb);
-                            if (squareAttacked(&board, king_pos, !board.turn))
-                                printf("%s is checkmated\n", board.turn ? "Black" : "White");
-                            else
-                                printf("Stalemate\n");
+                        uint64_t king_bb = board.pieces[5] & board.color[board.turn];
+                        if (!king_bb)
                             break;
+                        int king_pos = __builtin_ctzll(king_bb);
+                        if (squareAttacked(&board, king_pos, !board.turn)){
+                            puts("bestmove 0000");
+                            printf("%s is checkmated\n", board.turn ? "Black" : "White");
                         }
-
-                        moveint(&board, result.move);
-                        d(&board);
+                        else{
+                            puts("bestmove 0000");
+                            printf("Stalemate\n");
+                        }
                     }
+
+                    moveint(&board, result.move);
+                    printf("bestmove %s\n", movestring(result.move));
+                    // d(&board);
                 }
             }
             else if (strcmp(tokens[1], "perft") == 0)
@@ -177,7 +303,11 @@ char uciStart(void)
 #endif
                     long sec = stop.tv_sec - start.tv_sec;
                     long nsec = stop.tv_nsec - start.tv_nsec;
-                    if (nsec < 0) { sec -= 1; nsec += 1000000000L; }
+                    if (nsec < 0)
+                    {
+                        sec -= 1;
+                        nsec += 1000000000L;
+                    }
 
                     long elapsed_ms = sec * 1000 + nsec / 1000000;
                     double nps = total_nodes / (elapsed_ms / 1000.0);
