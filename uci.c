@@ -250,13 +250,19 @@ char uciStart(void)
             }
             else if (strcmp(tokens[1], "depth") == 0)
             {
+
                 if (tokens[2] == NULL)
                 {
                     printf("go depth: missing depth value\n");
                 }
                 else
                 {
-                    searchOutput result = search(&board, tokens[2][0] - '0', 0, -32000, 32000);
+                    int depth = 0;
+                    for (int i = 0; tokens[2][i] != '\0'; i++)
+                    {
+                        depth = depth * 10 + (tokens[2][i] - '0');
+                    }
+                    searchOutput result = search(&board, depth, 0, -32000, 32000);
 
                     if (result.move == 0)
                     {
@@ -264,11 +270,13 @@ char uciStart(void)
                         if (!king_bb)
                             break;
                         int king_pos = __builtin_ctzll(king_bb);
-                        if (squareAttacked(&board, king_pos, !board.turn)){
+                        if (squareAttacked(&board, king_pos, !board.turn))
+                        {
                             puts("bestmove 0000");
                             printf("%s is checkmated\n", board.turn ? "Black" : "White");
                         }
-                        else{
+                        else
+                        {
                             puts("bestmove 0000");
                             printf("Stalemate\n");
                         }
