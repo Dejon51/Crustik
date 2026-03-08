@@ -83,34 +83,37 @@ int assessSquare(int ind, Position *board)
 
 int eval(Position *board)
 {
-    Bitboard danger = pawnMask(board, !board->turn) |
-                    bishopMask(board, !board->turn) |
-                    horseMask(board, !board->turn) |
-                    rookMask(board, !board->turn);
-    
-    int totalw = 0;
-    int totalb = 0;
-    int squarecontrol = 0;
+    Bitboard danger_bitboard = pawnMask(board, !board->turn) |
+                      bishopMask(board, !board->turn) |
+                      horseMask(board, !board->turn) |
+                      rookMask(board, !board->turn);
+    Bitboard attack_bitboard = pawnMask(board, board->turn) |
+                      bishopMask(board, board->turn) |
+                      horseMask(board, board->turn) |
+                      rookMask(board, board->turn);
 
-    squarecontrol +=  -__builtin_popcount(danger);
-
-
-    int direction = (board->turn == 0) ? 1 : -1;
-
-    uint64_t pieces = board->color[board->turn];
+    int squarecontrol = __builtin_popcount(attack_bitboard)-__builtin_popcount(danger_bitboard);
 
     int totalcentrality = 0;
+    uint64_t pieces = board->color[board->turn];
     while (pieces)
     {
         int ind = pop_lsb(&pieces);
-        totalcentrality += penaltymap[ind]*5;
+        totalcentrality += penaltymap[ind] * 2;
     }
 
+    int attacks = 0;
+    int endangered = 0;
+
+    int totalstm = 0;
+    int totalopp = 0;
     for (int piece = 0; piece < 6; piece++)
     {
         int v = bitVal[piece];
-        totalw += v * __builtin_popcount(board->color[0] & board->pieces[piece]);
-        totalb += v * __builtin_popcount(board->color[1] & board->pieces[piece]);
+        totalstm += v * __builtin_popcount(board->color[board->turn] & board->pieces[piece]);
+        totalopp += v * __builtin_popcount(board->color[!board->turn] & board->pieces[piece]);
+        attacks += (v/5)*__builtin_popcount((board->color[!board->turn] & board->pieces[piece]) & attack_bitboard);
+        endangered += (v/2)*__builtin_popcount((board->color[board->turn] & board->pieces[piece]) & danger_bitboard);
     }
-    return (totalw - totalb + totalcentrality + squarecontrol)*direction;
+    return (totalstm - totalopp + totalcentrality + squarecontrol + attacks - endangered);
 }

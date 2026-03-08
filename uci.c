@@ -314,7 +314,13 @@ char uciStart(void)
                         depth = depth * 10 + (tokens[2][i] - '0');
                     }
                     stopConditions stop = {};
+                    stop.start_time = 0;
+                    stop.max_time = 0;
+                    stop.max_nodes = 0;
+                    stop.nodes = 0;
+                    stop.stop = 0;
                     searchOutput result = search(&board, depth, 0, -32000, 32000, &stop);
+
 
                     if (result.move == 0)
                     {

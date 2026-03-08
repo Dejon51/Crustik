@@ -10,13 +10,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
 {
     searchOutput output = {0};
     stop->nodes += 1;
-    if ((stop->nodes & 2047) == 0)
+    if (stop->start_time != 0)
     {
-        if (get_time_ms() - stop->start_time >= stop->max_time)
+        if ((stop->nodes & 2047) == 0)
         {
-            stop->stop = 1;
+            if (get_time_ms() - stop->start_time >= stop->max_time)
+            {
+                stop->stop = 1;
+            }
         }
     }
+
     if (stop->max_nodes != 0)
     {
         if (stop->nodes >= stop->max_nodes)
