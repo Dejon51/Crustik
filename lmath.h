@@ -96,6 +96,8 @@ typedef struct {
     unsigned offset;
 } MoveList;
 
+uint64_t get_time_ms();
+
 int pop_lsb(Bitboard* bb);
 
 bool isDigit(char c);

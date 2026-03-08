@@ -1,6 +1,20 @@
 
 #include "play.h"
 #include "lmath.h"
+#include <time.h>
+
+
+uint64_t get_time_ms()
+{
+    struct timespec ts;
+#ifdef __linux__
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+#else
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+#endif
+
+    return (ts.tv_sec * 1000L) + (ts.tv_nsec / 1000000L);
+}
 
 int pop_lsb(Bitboard* bb) {
   const int sq = __builtin_ctzll(*bb);

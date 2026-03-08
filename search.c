@@ -4,9 +4,30 @@
 #include "eval.h"
 #include "search.h"
 
-searchOutput search(Position *board, int depth, int ply, int alpha, int beta)
+#define MAX_DEPTH 14
+
+searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop)
 {
     searchOutput output = {0};
+    stop->nodes += 1;
+    if ((stop->nodes & 2047) == 0)
+    {
+        if (get_time_ms() - stop->start_time >= stop->max_time)
+        {
+            stop->stop = 1;
+        }
+    }
+    if (stop->max_nodes != 0)
+    {
+        if (stop->nodes >= stop->max_nodes)
+            stop->stop = 1;
+    }
+
+    if (stop->stop)
+    {
+        output.score = eval(board);
+        return output;
+    }
 
     if (depth <= 0)
     {
@@ -43,7 +64,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta)
         copy = *board;
         makeMove(&copy, &move_list, i);
 
-        int score = -search(&copy, depth - 1, ply + 1, -beta, -alpha).score;
+        int score = -search(&copy, depth - 1, ply + 1, -beta, -alpha, stop).score;
 
         if (score > best_score)
             best_score = score;
@@ -61,4 +82,22 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta)
 
     output.score = best_score;
     return output;
+}
+
+uint16_t iterative_deepening(Position *board, stopConditions *stop)
+{
+    uint16_t best_move_so_far = 0;
+
+    for (int depth = 1; depth <= MAX_DEPTH; depth++)
+    {
+        searchOutput out = search(board, depth, 0, -32000, 32000, stop);
+
+        if (out.move != 0)
+            best_move_so_far = out.move;
+
+        if (stop->stop)
+            break;
+    }
+
+    return best_move_so_far;
 }

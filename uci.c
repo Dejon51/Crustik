@@ -248,6 +248,57 @@ char uciStart(void)
             {
                 printf("go: missing argument\n");
             }
+            else if (strcmp(tokens[1], "movetime") == 0)
+            {
+                if (tokens[2] == NULL)
+                {
+                    printf("go movetime: missing move time\n");
+                }
+                else
+                {
+
+                    int movetime = 0;
+                    for (int i = 0; tokens[2][i] != '\0'; i++)
+                    {
+                        movetime = movetime * 10 + (tokens[2][i] - '0');
+                    }
+                    if (movetime <= 0)
+                        movetime = 100;
+
+                    stopConditions stop = {};
+                    stop.start_time = get_time_ms();
+                    stop.max_time = movetime;
+                    stop.max_nodes = 0;
+                    stop.nodes = 0;
+                    stop.stop = 0;
+
+                    uint16_t result = iterative_deepening(&board, &stop);
+
+                    if (result == 0)
+                    {
+                        uint64_t king_bb = board.pieces[5] & board.color[board.turn];
+                        if (!king_bb)
+                            break;
+                        int king_pos = __builtin_ctzll(king_bb);
+                        if (squareAttacked(&board, king_pos, !board.turn))
+                        {
+                            puts("bestmove 0000");
+                            printf("%s is checkmated\n", board.turn ? "Black" : "White");
+                        }
+                        else
+                        {
+                            puts("bestmove 0000");
+                            printf("Stalemate\n");
+                        }
+                    }
+                    else
+                    {
+                        moveint(&board, result);
+                        printf("bestmove %s\n", movestring(result));
+                    }
+                }
+            }
+
             else if (strcmp(tokens[1], "depth") == 0)
             {
 
@@ -262,7 +313,8 @@ char uciStart(void)
                     {
                         depth = depth * 10 + (tokens[2][i] - '0');
                     }
-                    searchOutput result = search(&board, depth, 0, -32000, 32000);
+                    stopConditions stop = {};
+                    searchOutput result = search(&board, depth, 0, -32000, 32000, &stop);
 
                     if (result.move == 0)
                     {
