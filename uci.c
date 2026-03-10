@@ -7,35 +7,31 @@
 #include "fen.h"
 #include "search.h"
 
-char *movestring(uint16_t movex)
+void movestring(uint16_t move)
 {
-    static char buf[32]; // Enough to hold a move string like "e2e4q"
+    int from = (move >> 6) & 0x3F;
+    int to   = move & 0x3F;
+    int flag = (move >> 12) & 0xF;
 
-    int from = (movex >> 6) & 0x3F;
-    int to = movex & 0x3F;
-    int flag = (movex >> 12) & 0xF;
-
-    int x1 = from % 8;
-    int y1 = 8 - (from / 8);
-    int x2 = to % 8;
-    int y2 = 8 - (to / 8);
+    int x1 = from & 7;
+    int y1 = 8 - (from >> 3);
+    int x2 = to & 7;
+    int y2 = 8 - (to >> 3);
 
     char promotion = 0;
-    if (flag == 5)
-        promotion = 'b';
-    else if (flag == 6)
-        promotion = 'n';
-    else if (flag == 7)
-        promotion = 'r';
-    else if (flag == 8)
-        promotion = 'q';
+
+    switch (flag)
+    {
+        case 5: promotion = 'b'; break;
+        case 6: promotion = 'n'; break;
+        case 7: promotion = 'r'; break;
+        case 8: promotion = 'q'; break;
+    }
 
     if (promotion)
-        snprintf(buf, sizeof(buf), "%c%i%c%i%c", 'a' + x1, y1, 'a' + x2, y2, promotion);
+        printf("bestmove %c%d%c%d%c\n", 'a'+x1, y1, 'a'+x2, y2, promotion);
     else
-        snprintf(buf, sizeof(buf), "%c%i%c%i", 'a' + x1, y1, 'a' + x2, y2);
-
-    return buf;
+        printf("bestmove %c%d%c%d\n", 'a'+x1, y1, 'a'+x2, y2);
 }
 
 uint16_t parsemove(Position *board, char *move)
@@ -45,29 +41,19 @@ uint16_t parsemove(Position *board, char *move)
     int x2 = move[2] - 'a';
     int y2 = move[3] - '1';
     int flag = 0;
+
     switch (move[4])
     {
-    case 'b':
-        flag = 5U;
-
-        break;
-    case 'n':
-        flag = 6U;
-
-        break;
-    case 'r':
-        flag = 7U;
-
-        break;
-    case 'q':
-        flag = 8U;
-        break;
-
-    default:
-        break;
+        case 'b': flag = 5U; break;
+        case 'n': flag = 6U; break;
+        case 'r': flag = 7U; break;
+        case 'q': flag = 8U; break;
+        default:  break;
     }
-    int from = x1 + (y1 << 3);
-    int to = x2 + (y2 << 3);
+
+    int from = x1 + ((7 - y1) << 3);
+    int to   = x2 + ((7 - y2) << 3);
+
     if (board->mailbox[from] == 5)
     {
         switch (board->turn)
@@ -78,12 +64,8 @@ uint16_t parsemove(Position *board, char *move)
             case E1:
                 switch (to)
                 {
-                case G1:
-                    flag = 1U;
-                    break;
-                case C1:
-                    flag = 2U;
-                    break;
+                case G1: flag = 1U; break;
+                case C1: flag = 2U; break;
                 }
                 break;
             }
@@ -94,12 +76,8 @@ uint16_t parsemove(Position *board, char *move)
             case E8:
                 switch (to)
                 {
-                case G8:
-                    flag = 4U;
-                    break;
-                case C8:
-                    flag = 3U;
-                    break;
+                case G8: flag = 4U; break;
+                case C8: flag = 3U; break;
                 }
                 break;
             }
@@ -171,7 +149,7 @@ char uciStart(void)
 
     char line[20000];
 
-    char *tokens[64];
+    char *tokens[8850];
     while (run)
     {
         if (fgets(line, sizeof(line), stdin) == NULL)
@@ -182,7 +160,7 @@ char uciStart(void)
         line[strcspn(line, "\n")] = '\0';
 
         int t = 0;
-        for (char *tok = strtok(line, " \n"); tok != NULL && t < 63; tok = strtok(NULL, " \n"))
+        for (char *tok = strtok(line, " \n"); tok != NULL && t < 8849; tok = strtok(NULL, " \n"))
             tokens[t++] = tok;
         tokens[t] = NULL;
 
@@ -222,6 +200,16 @@ char uciStart(void)
                     moveint(&board, move);
                     i++;
                 }
+                FILE *dbg = fopen("/tmp/crustik_debug.txt", "a");
+fprintf(dbg, "DEBUG board: epsquare=%d turn=%d\n", board.epsquare, board.turn);
+fprintf(dbg, "DEBUG pawns white=%llx black=%llx\n",
+    (unsigned long long)(board.pieces[0] & board.color[0]),
+    (unsigned long long)(board.pieces[0] & board.color[1]));
+fprintf(dbg, "DEBUG mailbox: ");
+for (int j = 0; j < 64; j++)
+    fprintf(dbg, "%d ", board.mailbox[j]);
+fprintf(dbg, "\n");
+fclose(dbg);
             }
             else if (strcmp(tokens[1], "fen") == 0)
             {
@@ -293,8 +281,7 @@ char uciStart(void)
                     }
                     else
                     {
-                        moveint(&board, result);
-                        printf("bestmove %s\n", movestring(result));
+                        movestring(result);
                     }
                 }
             }
@@ -321,7 +308,6 @@ char uciStart(void)
                     stop.stop = 0;
                     searchOutput result = search(&board, depth, 0, -32000, 32000, &stop);
 
-
                     if (result.move == 0)
                     {
                         uint64_t king_bb = board.pieces[5] & board.color[board.turn];
@@ -339,9 +325,12 @@ char uciStart(void)
                             printf("Stalemate\n");
                         }
                     }
-
-                    moveint(&board, result.move);
-                    printf("bestmove %s\n", movestring(result.move));
+                    printf("debug move=%u from=%d to=%d flag=%d\n",
+                           result.move,
+                           (result.move >> 6) & 0x3F,
+                           result.move & 0x3F,
+                           (result.move >> 12) & 0xF);
+                    movestring(result.move);
                     // d(&board);
                 }
             }

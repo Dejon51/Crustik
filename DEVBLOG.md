@@ -1,1 +1,0 @@
-add bestmove and add position move handling

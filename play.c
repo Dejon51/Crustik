@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include "play.h"
 #include "lmath.h"
-#include "eval.h"
 #include "precomputed.h"
 #include "rook_table.h"
 #include "bishop_table.h"
@@ -204,8 +203,8 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 }
                 else if (i == 2 && ((color == 0 && y == 6) || (color == 1 && y == 1)))
                 {
-                    if (!((board->color[color] >> x + (y + direction * offsety[i - 1]) * 8) & 1) &&
-                        !((board->color[!color] >> x + (y + direction * offsety[i - 1]) * 8) & 1))
+                    if (!((board->color[color] >> (x + (y + direction * offsety[i - 1]) * 8)) & 1) &&
+                        !((board->color[!color] >> (x + (y + direction * offsety[i - 1]) * 8)) & 1))
                     {
                         list->movelist[list->offset++] = ((ind & 63) << 6) | (to & 63);
                     }
@@ -241,7 +240,6 @@ void pawnMoves(Position *board, MoveList *list, bool color)
 void horseMoves(Position *board, MoveList *list, bool color)
 {
     uint64_t knights = board->pieces[2] & board->color[color];
-    uint64_t occupancy = board->color[0] | board->color[1];
 
     while (knights)
     {

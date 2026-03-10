@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include "eval.h"
 #include "play.h"
 #include "lmath.h"
 #include "uci.h"

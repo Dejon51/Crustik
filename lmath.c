@@ -128,7 +128,7 @@ int findMaxValue(int arr[], int size)
     int max_value = arr[0];
     int max_index = 0;
 
-    for (char i = 1; i < size; i++)
+    for (int i = 1; i < size; i++)
     {
         if (arr[i] > max_value)
         {
