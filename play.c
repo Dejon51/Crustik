@@ -566,167 +566,78 @@ void makeMove(Position *board, MoveList *list, int move)
     board->turn ^= 1;
 }
 
-void moveint(Position *board, int move)
+void moveint(Position *board, uint16_t move) {
+    MoveList tmp;
+    tmp.movelist[0] = move;
+    makeMove(board, &tmp, 0);
+}
+
+void captureMoves(Position *board, MoveList *list, bool color)
 {
-    int direction = (board->turn == 0) ? -1 : 1;
+    Bitboard enemies = board->color[!color];
+    Bitboard occ = board->color[0] | board->color[1];
 
-    int to = move & 0x3F;
-    int from = (move >> 6) & 0x3F;
-    int flag = (move >> 12) & 0xF;
-
-    uint64_t frombb = 1ULL << from;
-    uint64_t tobb = 1ULL << to;
-
-    int old_epsquare = board->epsquare;
-    board->epsquare = -1;
-
-    int piece = board->mailbox[from];
-    int moving_piece = piece;
-
-    if (piece == 6)
-        return;
-
-    // king moved remove both castling rights
-    if (piece == KINGNUMBER)
+    Bitboard pawn_caps = pawnMask(board, color) & enemies;
+    while (pawn_caps)
     {
-        switch (board->turn)
+        int to = pop_lsb(&pawn_caps);
+        Bitboard pawns = board->pieces[0] & board->color[color];
+        while (pawns)
         {
-        case 0:
-            board->castling &= ~((1U << WHITE_KINGSIDE) | (1U << WHITE_QUEENSIDE));
-            break;
-        case 1:
-            board->castling &= ~((1U << BLACK_KINGSIDE) | (1U << BLACK_QUEENSIDE));
-            break;
+            int from = pop_lsb(&pawns);
+            Bitboard single = (color ? white_pawn_attacks[from] : black_pawn_attacks[from]);
+            if (single & (1ULL << to))
+                list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
     }
 
-    // rook moved remove that sides castling
-    if (piece == 3)
+    Bitboard knights = board->pieces[2] & board->color[color];
+    while (knights)
     {
-        if (from == H1)
-            board->castling &= ~(1U << WHITE_KINGSIDE);
-        if (from == A1)
-            board->castling &= ~(1U << WHITE_QUEENSIDE);
-        if (from == H8)
-            board->castling &= ~(1U << BLACK_KINGSIDE);
-        if (from == A8)
-            board->castling &= ~(1U << BLACK_QUEENSIDE);
+        int from = pop_lsb(&knights);
+        Bitboard attacks = knighttable[from] & enemies;
+        while (attacks)
+        {
+            int to = pop_lsb(&attacks);
+            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        }
     }
 
-    // castling move handling
-    switch (flag)
+    Bitboard bishops = (board->pieces[1] | board->pieces[4]) & board->color[color];
+    while (bishops)
     {
-    case 1: // white king side
-        board->pieces[3] &= ~(1ULL << H1);
-        board->color[board->turn] &= ~(1ULL << H1);
-        board->mailbox[H1] = 6;
-
-        board->pieces[3] |= (1ULL << F1);
-        board->color[board->turn] |= (1ULL << F1);
-        board->mailbox[F1] = 3;
-
-        board->castling &= ~(1U << WHITE_KINGSIDE);
-        break;
-
-    case 2: // white queen side
-        board->pieces[3] &= ~(1ULL << A1);
-        board->color[board->turn] &= ~(1ULL << A1);
-        board->mailbox[A1] = 6;
-
-        board->pieces[3] |= (1ULL << D1);
-        board->color[board->turn] |= (1ULL << D1);
-        board->mailbox[D1] = 3;
-
-        board->castling &= ~(1U << WHITE_QUEENSIDE);
-        break;
-
-    case 4: // black king side
-        board->pieces[3] &= ~(1ULL << H8);
-        board->color[board->turn] &= ~(1ULL << H8);
-        board->mailbox[H8] = 6;
-
-        board->pieces[3] |= (1ULL << F8);
-        board->color[board->turn] |= (1ULL << F8);
-        board->mailbox[F8] = 3;
-
-        board->castling &= ~(1U << BLACK_KINGSIDE);
-        break;
-
-    case 3: // black queen side
-        board->pieces[3] &= ~(1ULL << A8);
-        board->color[board->turn] &= ~(1ULL << A8);
-        board->mailbox[A8] = 6;
-
-        board->pieces[3] |= (1ULL << D8);
-        board->color[board->turn] |= (1ULL << D8);
-        board->mailbox[D8] = 3;
-
-        board->castling &= ~(1U << BLACK_QUEENSIDE);
-        break;
-
-    case 5:
-        piece = 1;
-        break;
-    case 6:
-        piece = 2;
-        break;
-    case 7:
-        piece = 3;
-        break;
-    case 8:
-        piece = 4;
-        break;
-
-    default:
-        break;
+        int from = pop_lsb(&bishops);
+        Bitboard attacks = getbishopAttacks(from, occ) & enemies;
+        while (attacks)
+        {
+            int to = pop_lsb(&attacks);
+            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        }
     }
 
-    // remove piece from origin (use moving_piece, not piece)
-    board->pieces[moving_piece] &= ~frombb;
-    board->color[board->turn] &= ~frombb;
-    board->mailbox[from] = 6;
-
-    // en passant capture
-    if (moving_piece == 0 && to == old_epsquare)
+    Bitboard rooks = (board->pieces[3] | board->pieces[4]) & board->color[color];
+    while (rooks)
     {
-        int captured_sq = to - (direction << 3);
-        uint64_t capBB = 1ULL << captured_sq;
-
-        board->pieces[0] &= ~capBB;
-        board->color[!board->turn] &= ~capBB;
-        board->mailbox[captured_sq] = 6;
+        int from = pop_lsb(&rooks);
+        Bitboard attacks = getrookAttacks(from, occ) & enemies;
+        while (attacks)
+        {
+            int to = pop_lsb(&attacks);
+            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        }
     }
 
-    if (to == H1)
-        board->castling &= ~(1U << WHITE_KINGSIDE);
-    if (to == A1)
-        board->castling &= ~(1U << WHITE_QUEENSIDE);
-    if (to == H8)
-        board->castling &= ~(1U << BLACK_KINGSIDE);
-    if (to == A8)
-        board->castling &= ~(1U << BLACK_QUEENSIDE);
-
-    // clear destination square
-    for (int i = 0; i < 6; i++)
-        board->pieces[i] &= ~tobb;
-
-    board->color[!board->turn] &= ~tobb;
-
-    // place moving piece (use piece, which is promoted type if applicable)
-    board->pieces[piece] |= tobb;
-    board->color[board->turn] |= tobb;
-    board->mailbox[to] = piece;
-
-    if (moving_piece == 0)
+    Bitboard kings = board->pieces[5] & board->color[color];
+    if (kings)
     {
-        int from_y = from >> 3;
-        int to_y = to >> 3;
-
-        if (abs1(to_y - from_y) == 2)
-            board->epsquare = from + (direction << 3);
+        int from = __builtin_ctzll(kings);
+        Bitboard attacks = kingtable[from] & enemies;
+        while (attacks)
+        {
+            int to = pop_lsb(&attacks);
+            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        }
     }
-
-    board->turn ^= 1;
 }
 // void unmakeMove(Position *board, MoveList *list, int move)
 // {

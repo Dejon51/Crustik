@@ -6,6 +6,39 @@
 
 #define MAX_DEPTH 14
 
+MoveList ordermoves(Position *board, MoveList move_list) {
+    MoveList scored_list = move_list;
+    if (move_list.offset == 0)
+        return scored_list;
+
+    int scores[218] = {0};
+    Position copy;
+
+    for (int i = 0; i < move_list.offset; i++) {
+        copy = *board;
+        moveint(&copy, move_list.movelist[i]);
+        scores[i] = eval(&copy, 8192); 
+    }
+
+    for (int i = 0; i < move_list.offset - 1; i++) {
+        int max_idx = i;
+        for (int j = i + 1; j < move_list.offset; j++) {
+            if (scores[j] > scores[max_idx]) {
+                max_idx = j;
+            }
+        }
+        int temp_score = scores[i];
+        scores[i] = scores[max_idx];
+        scores[max_idx] = temp_score;
+
+        uint16_t temp_move = scored_list.movelist[i];
+        scored_list.movelist[i] = scored_list.movelist[max_idx];
+        scored_list.movelist[max_idx] = temp_move;
+    }
+
+    return scored_list;
+}
+
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop)
 {
     searchOutput output = {0};
@@ -29,13 +62,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
 
     if (stop->stop)
     {
-        output.score = eval(board);
+        output.score = eval(board, stop->nodes);
         return output;
     }
 
     if (depth <= 0)
     {
-        output.score = eval(board);
+        output.score = output.score = quiesce(board, alpha, beta, stop->nodes);
         return output;
     }
 
@@ -44,6 +77,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
 
     legalMoveGen(board, &move_list);
 
+    // move_list = ordermoves(board, move_list);
+    
     if (move_list.offset == 0)
     {
         uint64_t king_bb = board->pieces[5] & board->color[board->turn];

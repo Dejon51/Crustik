@@ -10,7 +10,7 @@
 void movestring(uint16_t move)
 {
     int from = (move >> 6) & 0x3F;
-    int to   = move & 0x3F;
+    int to = move & 0x3F;
     int flag = (move >> 12) & 0xF;
 
     int x1 = from & 7;
@@ -22,16 +22,24 @@ void movestring(uint16_t move)
 
     switch (flag)
     {
-        case 5: promotion = 'b'; break;
-        case 6: promotion = 'n'; break;
-        case 7: promotion = 'r'; break;
-        case 8: promotion = 'q'; break;
+    case 5:
+        promotion = 'b';
+        break;
+    case 6:
+        promotion = 'n';
+        break;
+    case 7:
+        promotion = 'r';
+        break;
+    case 8:
+        promotion = 'q';
+        break;
     }
 
     if (promotion)
-        printf("bestmove %c%d%c%d%c\n", 'a'+x1, y1, 'a'+x2, y2, promotion);
+        printf("bestmove %c%d%c%d%c\n", 'a' + x1, y1, 'a' + x2, y2, promotion);
     else
-        printf("bestmove %c%d%c%d\n", 'a'+x1, y1, 'a'+x2, y2);
+        printf("bestmove %c%d%c%d\n", 'a' + x1, y1, 'a' + x2, y2);
 }
 
 uint16_t parsemove(Position *board, char *move)
@@ -44,15 +52,24 @@ uint16_t parsemove(Position *board, char *move)
 
     switch (move[4])
     {
-        case 'b': flag = 5U; break;
-        case 'n': flag = 6U; break;
-        case 'r': flag = 7U; break;
-        case 'q': flag = 8U; break;
-        default:  break;
+    case 'b':
+        flag = 5U;
+        break;
+    case 'n':
+        flag = 6U;
+        break;
+    case 'r':
+        flag = 7U;
+        break;
+    case 'q':
+        flag = 8U;
+        break;
+    default:
+        break;
     }
 
     int from = x1 + ((7 - y1) << 3);
-    int to   = x2 + ((7 - y2) << 3);
+    int to = x2 + ((7 - y2) << 3);
 
     if (board->mailbox[from] == 5)
     {
@@ -64,8 +81,12 @@ uint16_t parsemove(Position *board, char *move)
             case E1:
                 switch (to)
                 {
-                case G1: flag = 1U; break;
-                case C1: flag = 2U; break;
+                case G1:
+                    flag = 1U;
+                    break;
+                case C1:
+                    flag = 2U;
+                    break;
                 }
                 break;
             }
@@ -76,8 +97,12 @@ uint16_t parsemove(Position *board, char *move)
             case E8:
                 switch (to)
                 {
-                case G8: flag = 4U; break;
-                case C8: flag = 3U; break;
+                case G8:
+                    flag = 4U;
+                    break;
+                case C8:
+                    flag = 3U;
+                    break;
                 }
                 break;
             }
@@ -201,15 +226,15 @@ char uciStart(void)
                     i++;
                 }
                 FILE *dbg = fopen("/tmp/crustik_debug.txt", "a");
-fprintf(dbg, "DEBUG board: epsquare=%d turn=%d\n", board.epsquare, board.turn);
-fprintf(dbg, "DEBUG pawns white=%llx black=%llx\n",
-    (unsigned long long)(board.pieces[0] & board.color[0]),
-    (unsigned long long)(board.pieces[0] & board.color[1]));
-fprintf(dbg, "DEBUG mailbox: ");
-for (int j = 0; j < 64; j++)
-    fprintf(dbg, "%d ", board.mailbox[j]);
-fprintf(dbg, "\n");
-fclose(dbg);
+                fprintf(dbg, "DEBUG board: epsquare=%d turn=%d\n", board.epsquare, board.turn);
+                fprintf(dbg, "DEBUG pawns white=%llx black=%llx\n",
+                        (unsigned long long)(board.pieces[0] & board.color[0]),
+                        (unsigned long long)(board.pieces[0] & board.color[1]));
+                fprintf(dbg, "DEBUG mailbox: ");
+                for (int j = 0; j < 64; j++)
+                    fprintf(dbg, "%d ", board.mailbox[j]);
+                fprintf(dbg, "\n");
+                fclose(dbg);
             }
             else if (strcmp(tokens[1], "fen") == 0)
             {
@@ -300,13 +325,40 @@ fclose(dbg);
                     {
                         depth = depth * 10 + (tokens[2][i] - '0');
                     }
-                    stopConditions stop = {};
-                    stop.start_time = 0;
-                    stop.max_time = 0;
-                    stop.max_nodes = 0;
-                    stop.nodes = 0;
-                    stop.stop = 0;
-                    searchOutput result = search(&board, depth, 0, -32000, 32000, &stop);
+                    stopConditions stopcon = {};
+                    stopcon.start_time = 0;
+                    stopcon.max_time = 0;
+                    stopcon.max_nodes = 0;
+                    stopcon.nodes = 0;
+                    stopcon.stop = 0;
+
+                    struct timespec start, stop;
+#ifdef __linux__
+                    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+                    searchOutput result = search(&board, depth, 0, -32000, 32000, &stopcon);
+                    uint64_t total_nodes = stopcon.nodes;
+                    clock_gettime(CLOCK_MONOTONIC_RAW, &stop);
+#else
+                    clock_gettime(CLOCK_MONOTONIC, &start);
+                    searchOutput result = search(&board, depth, 0, -32000, 32000, &stopcon);
+                    uint64_t total_nodes = stopcon.nodes;
+                    
+                    clock_gettime(CLOCK_MONOTONIC, &stop);
+#endif
+                    long sec = stop.tv_sec - start.tv_sec;
+                    long nsec = stop.tv_nsec - start.tv_nsec;
+                    if (nsec < 0)
+                    {
+                        sec -= 1;
+                        nsec += 1000000000L;
+                    }
+
+                    long elapsed_ms = sec * 1000 + nsec / 1000000;
+                    double nps = total_nodes / (elapsed_ms / 1000.0);
+
+                    printf("Total Nodes: %llu\n", (unsigned long long)total_nodes);
+                    printf("Elapsed time: %ld ms\n", elapsed_ms);
+                    printf("N/S: %.0f\n", nps);
 
                     if (result.move == 0)
                     {
@@ -325,11 +377,6 @@ fclose(dbg);
                             printf("Stalemate\n");
                         }
                     }
-                    printf("debug move=%u from=%d to=%d flag=%d\n",
-                           result.move,
-                           (result.move >> 6) & 0x3F,
-                           result.move & 0x3F,
-                           (result.move >> 12) & 0xF);
                     movestring(result.move);
                     // d(&board);
                 }

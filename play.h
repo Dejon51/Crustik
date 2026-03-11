@@ -29,7 +29,9 @@ void legalMoveGen(Position *board, MoveList *list);
 
 void makeMove(Position *board,MoveList *list, int move);
 
-void moveint(Position *board, int move);
+void moveint(Position *board, uint16_t move);
+
+void captureMoves(Position *board, MoveList *list, bool color);
 
 uint64_t perft(Position *board, int depth);
 
