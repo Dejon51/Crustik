@@ -29,6 +29,7 @@ Ideas and stuff I have in future or problems in my etc etc. [DEVLOG](DEVBLOG.md)
 if you have the expertise you can use any other C compiler by editing the .sh file.
 
 ### Thanks for Help
+- Alphabeta Discord
 - Stockfish Discord
 - Flow
 - Ciekce
