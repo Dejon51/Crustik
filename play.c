@@ -572,6 +572,7 @@ void moveint(Position *board, uint16_t move) {
     makeMove(board, &tmp, 0);
 }
 
+
 void captureMoves(Position *board, MoveList *list, bool color)
 {
     Bitboard enemies = board->color[!color];

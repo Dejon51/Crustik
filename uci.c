@@ -333,32 +333,7 @@ char uciStart(void)
                     stopcon.stop = 0;
 
                     struct timespec start, stop;
-#ifdef __linux__
-                    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
                     searchOutput result = search(&board, depth, 0, -32000, 32000, &stopcon);
-                    uint64_t total_nodes = stopcon.nodes;
-                    clock_gettime(CLOCK_MONOTONIC_RAW, &stop);
-#else
-                    clock_gettime(CLOCK_MONOTONIC, &start);
-                    searchOutput result = search(&board, depth, 0, -32000, 32000, &stopcon);
-                    uint64_t total_nodes = stopcon.nodes;
-                    
-                    clock_gettime(CLOCK_MONOTONIC, &stop);
-#endif
-                    long sec = stop.tv_sec - start.tv_sec;
-                    long nsec = stop.tv_nsec - start.tv_nsec;
-                    if (nsec < 0)
-                    {
-                        sec -= 1;
-                        nsec += 1000000000L;
-                    }
-
-                    long elapsed_ms = sec * 1000 + nsec / 1000000;
-                    double nps = total_nodes / (elapsed_ms / 1000.0);
-
-                    printf("Total Nodes: %llu\n", (unsigned long long)total_nodes);
-                    printf("Elapsed time: %ld ms\n", elapsed_ms);
-                    printf("N/S: %.0f\n", nps);
 
                     if (result.move == 0)
                     {
@@ -421,7 +396,85 @@ char uciStart(void)
             }
             else
             {
-                printf("go: unknown argument: %s\n", tokens[1]);
+                int white_time = 0;
+                int black_time = 0;
+                int white_increment = 0;
+                int black_increment = 0;
+
+                for (int i = 1; tokens[i] != NULL; i++)
+                {
+                    if (strcmp(tokens[i], "wtime") == 0 && tokens[i + 1])
+                    {
+                        white_time = matoi(tokens[i + 1]);
+                        i++;
+                    }
+                    else if (strcmp(tokens[i], "btime") == 0 && tokens[i + 1])
+                    {
+                        black_time = matoi(tokens[i + 1]);
+                        i++;
+                    }
+                    else if (strcmp(tokens[i], "winc") == 0 && tokens[i + 1])
+                    {
+                        white_increment = matoi(tokens[i + 1]);
+                        i++;
+                    }
+                    else if (strcmp(tokens[i], "binc") == 0 && tokens[i + 1])
+                    {
+                        black_increment = matoi(tokens[i + 1]);
+                        i++;
+                    }
+                    else
+                    {
+                        printf("go: unknown argument: %s\n", tokens[1]);
+                    }
+                }
+                int increment = 0;
+                int time_move = 0;
+                if (board.turn)
+                {
+                    increment = white_increment * 0.7;
+                    time_move = white_time / 30 + increment;
+                }
+                else if (!board.turn)
+                {
+                    increment = black_increment * 0.7;
+                    time_move = black_time / 30 + increment;
+                }
+
+                int movetime = time_move;
+                if (movetime <= 0)
+                    movetime = 100;
+
+                stopConditions stop = {};
+                stop.start_time = get_time_ms();
+                stop.max_time = movetime;
+                stop.max_nodes = 0;
+                stop.nodes = 0;
+                stop.stop = 0;
+
+                uint16_t result = iterative_deepening(&board, &stop);
+
+                if (result == 0)
+                {
+                    uint64_t king_bb = board.pieces[5] & board.color[board.turn];
+                    if (!king_bb)
+                        break;
+                    int king_pos = __builtin_ctzll(king_bb);
+                    if (squareAttacked(&board, king_pos, !board.turn))
+                    {
+                        puts("bestmove 0000");
+                        printf("%s is checkmated\n", board.turn ? "Black" : "White");
+                    }
+                    else
+                    {
+                        puts("bestmove 0000");
+                        printf("Stalemate\n");
+                    }
+                }
+                else
+                {
+                    movestring(result);
+                }
             }
         }
         else if (strcmp(tokens[0], "d") == 0)
@@ -449,7 +502,7 @@ char uciStart(void)
         }
         else
         {
-            printf("Invalid arg: %s\n", tokens[0]);
+            printf("unknown argument: %s\n", tokens[0]);
         }
         fflush(stdout);
     }

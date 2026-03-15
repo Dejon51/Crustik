@@ -119,5 +119,7 @@ char abs1(int num);
 int findMaxValue(int arr[], int size);
 int findMinValue(int arr[], int size);
 
+int matoi(const char *str);
+
 
 #endif
