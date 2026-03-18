@@ -5,7 +5,7 @@
 
 typedef struct
 {
-    int score;
+    int16_t score;
     uint16_t move;
 } searchOutput;
 
@@ -16,6 +16,14 @@ typedef struct {
     uint64_t max_time;
     uint64_t max_nodes;
 } stopConditions;
+
+typedef struct {
+    uint64_t key;
+    int depth;
+    int score;
+    uint8_t flag; 
+    uint16_t best_move;
+} TTEntry;
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 

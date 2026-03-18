@@ -103,7 +103,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
         copy = *board;
         makeMove(&copy, &move_list, i);
 
-        int score = -search(&copy, depth - 1, ply + 1, -beta, -alpha, stop).score;
+        int16_t score = -search(&copy, depth - 1, ply + 1, -beta, -alpha, stop).score;
 
         if (score > best_score)
             best_score = score;

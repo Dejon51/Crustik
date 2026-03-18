@@ -134,28 +134,3 @@ int quiesce(Position *board, int alpha, int beta, int nodes)
 
     return alpha;
 }
-
-// int Quiesce( int alpha, int beta ) {
-//     int static_eval = eval();
-
-//     int best_value = static_eval;
-//     if( best_value >= beta )
-//         return best_value;
-//     if( best_value > alpha )
-//         alpha = best_value;
-
-//     until( every_capture_has_been_examined )  {
-//         MakeCapture();
-//         score = -Quiesce( -beta, -alpha );
-//         TakeBackMove();
-
-//         if( score >= beta )
-//             return score;
-//         if( score > best_value )
-//             best_value = score;
-//         if( score > alpha )
-//             alpha = score;
-//     }
-
-//     return best_value;
-// }

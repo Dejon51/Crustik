@@ -374,7 +374,7 @@ void legalMoveGen(Position *board, MoveList *list)
     kingMoves(board, &pseudo, turn);
 
     uint64_t king_bb = board->pieces[5] & board->color[turn];
-    int current_king_pos = pop_lsb(&king_bb);
+    int current_king_pos = __builtin_ctzll(king_bb);
     bool in_check = squareAttacked(board, current_king_pos, !turn);
 
     for (int i = 0; i < pseudo.offset; i++)
@@ -394,7 +394,7 @@ void legalMoveGen(Position *board, MoveList *list)
         uint64_t our_king = copy.pieces[5] & copy.color[turn];
         if (!our_king)
             continue; // safety net
-        int king_pos = pop_lsb(&our_king);
+        int king_pos = __builtin_ctzll(our_king);
 
         if (!squareAttacked(&copy, king_pos, !turn))
         {
