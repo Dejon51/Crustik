@@ -6,6 +6,41 @@
 
 #define MAX_DEPTH 14
 
+int quiesce(Position *board, int alpha, int beta, int nodes)
+{
+    int static_eval = eval(board, nodes);
+
+    if (static_eval >= beta)
+        return static_eval;
+
+    if (static_eval > alpha)
+        alpha = static_eval;
+
+    MoveList move_list = {};
+    captureMoves(board, &move_list, board->turn);
+
+    for (int i = 0; i < move_list.offset; i++)
+    {
+        Position copy = *board;
+        moveint(&copy, move_list.movelist[i]);
+
+        uint64_t our_king = copy.pieces[5] & copy.color[board->turn];
+        if (!our_king || squareAttacked(&copy, __builtin_ctzll(our_king), !board->turn))
+            continue;
+
+        int score = -quiesce(&copy, -beta, -alpha, nodes);
+
+        if (score >= beta)
+            return score;
+
+        if (score > alpha)
+            alpha = score;
+    }
+
+    return alpha;
+}
+
+
 MoveList ordermoves(Position *board, MoveList move_list) {
     MoveList scored_list = move_list;
     if (move_list.offset == 0)
