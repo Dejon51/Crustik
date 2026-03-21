@@ -3,6 +3,7 @@
 #include "lmath.h"
 #include "uci.h"
 #include "lmath.h"
+#include "eval.h"
 
 
 int main()

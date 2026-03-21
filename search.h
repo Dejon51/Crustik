@@ -15,6 +15,7 @@ typedef struct {
     uint64_t start_time;
     uint64_t max_time;
     uint64_t max_nodes;
+    int         print_info; 
 } stopConditions;
 
 typedef struct {
@@ -25,9 +26,14 @@ typedef struct {
     uint16_t best_move;
 } TTEntry;
 
+void tt_init(int mb);
+
+void tt_clear(void);
+
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop);
+
 
 
 #endif

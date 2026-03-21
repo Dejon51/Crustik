@@ -164,6 +164,7 @@ void d(Position *board) // Displays board or something
 
 char uciStart(void)
 {
+    tt_init(64);
     Position board = {0};
     Position copyboard = {0};
 
@@ -433,12 +434,12 @@ char uciStart(void)
                 if (board.turn)
                 {
                     increment = white_increment * 0.7;
-                    time_move = white_time / 30 + increment;
+                    time_move = white_time / 20 + increment;
                 }
                 else if (!board.turn)
                 {
                     increment = black_increment * 0.7;
-                    time_move = black_time / 30 + increment;
+                    time_move = black_time / 20 + increment;
                 }
 
                 int movetime = time_move;
@@ -480,6 +481,21 @@ char uciStart(void)
         else if (strcmp(tokens[0], "d") == 0)
         {
             d(&board);
+        }
+        else if (strcmp(tokens[0], "setoption") == 0)
+        {
+            if (tokens[1] && strcmp(tokens[1], "name") == 0 &&
+                tokens[2] && strcmp(tokens[2], "Hash") == 0 &&
+                tokens[3] && strcmp(tokens[3], "value") == 0 &&
+                tokens[4])
+            {
+                int mb = matoi(tokens[4]);
+                if (mb < 1)
+                    mb = 1;
+                if (mb > 1024)
+                    mb = 1024;
+                tt_init(mb);
+            }
         }
         else if (strcmp(tokens[0], "pml") == 0)
         {
