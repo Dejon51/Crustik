@@ -434,12 +434,12 @@ char uciStart(void)
                 if (board.turn)
                 {
                     increment = white_increment * 0.7;
-                    time_move = white_time / 20 + increment;
+                    time_move = white_time / 30 + increment;
                 }
                 else if (!board.turn)
                 {
                     increment = black_increment * 0.7;
-                    time_move = black_time / 20 + increment;
+                    time_move = black_time / 30 + increment;
                 }
 
                 int movetime = time_move;

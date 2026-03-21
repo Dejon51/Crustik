@@ -306,6 +306,6 @@ int eval(Position *board, int nodes)
 
     int base_eval = (mgScore * gamePhase + egScore * egPhase) / 24;
 
-    int noise = nodes % 128 - 64;
+    int noise = nodes % 16 - 8;
     return base_eval + noise;
 }

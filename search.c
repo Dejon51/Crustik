@@ -76,7 +76,7 @@ static void move_to_uci(uint16_t move, char *buf)
     buf[4] = '\0';
 }
 
-MoveList ordermoves(Position *board, MoveList *move_list)
+MoveList ordermoves(Position *board, MoveList *move_list, uint16_t tt_move)
 {
     MoveList scored_list = *move_list;
     if (move_list->offset == 0)
@@ -86,6 +86,12 @@ MoveList ordermoves(Position *board, MoveList *move_list)
 
     for (int i = 0; i < move_list->offset; i++)
     {
+        if (tt_move && move_list->movelist[i] == tt_move)
+        {
+            scores[i] = 20000;
+            continue;
+        }
+
         int to = move_list->movelist[i] & 0x3F;
         int from = (move_list->movelist[i] >> 6) & 0x3F;
         int victim = board->mailbox[to];
@@ -114,9 +120,24 @@ MoveList ordermoves(Position *board, MoveList *move_list)
 
     return scored_list;
 }
-
 int quiesce(Position *board, int alpha, int beta, int nodes)
 {
+    uint64_t key = zobrist(board);
+    TTEntry *tt = tt_probe(key);
+    uint16_t tt_move = 0;
+
+    if (tt)
+    {
+        if (tt->flag == 0)
+            return tt->score;
+        if (tt->flag == 1 && tt->score >= beta)
+            return tt->score;
+        if (tt->flag == 2 && tt->score <= alpha)
+            return tt->score;
+        tt_move = tt->best_move;
+    }
+
+    int original_alpha = alpha;
     int static_eval = eval(board, nodes);
 
     if (static_eval >= beta)
@@ -126,7 +147,10 @@ int quiesce(Position *board, int alpha, int beta, int nodes)
 
     MoveList move_list = {};
     captureMoves(board, &move_list, board->turn);
-    move_list = ordermoves(board, &move_list);
+    move_list = ordermoves(board, &move_list, tt_move);
+
+    uint16_t best_move = 0;
+    int best_score = static_eval;
 
     for (int i = 0; i < move_list.offset; i++)
     {
@@ -138,13 +162,29 @@ int quiesce(Position *board, int alpha, int beta, int nodes)
             continue;
 
         int score = -quiesce(&copy, -beta, -alpha, nodes);
+
+        if (score > best_score)
+        {
+            best_score = score;
+            best_move = move_list.movelist[i];
+        }
         if (score >= beta)
+        {
+            tt_store(key, 0, score, 1, best_move);
             return score;
+        }
         if (score > alpha)
             alpha = score;
     }
 
-    return alpha;
+    uint8_t flag;
+    if (best_score <= original_alpha)
+        flag = 2;
+    else
+        flag = 0;
+
+    tt_store(key, 0, best_score, flag, best_move);
+    return best_score;
 }
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop)
@@ -194,7 +234,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
     MoveList move_list;
     move_list.offset = 0;
     legalMoveGen(board, &move_list);
-    move_list = ordermoves(board, &move_list);
+    move_list = ordermoves(board, &move_list, tt_move);
 
     if (move_list.offset == 0)
     {
