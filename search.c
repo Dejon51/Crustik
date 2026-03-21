@@ -58,7 +58,7 @@ static int mvv_lva[] = {
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = (move >> 6) & 0x3F;
-    int to   =  move       & 0x3F;
+    int to = move & 0x3F;
     int flag = (move >> 12) & 0xF;
 
     buf[0] = 'a' + (from & 7);
@@ -66,11 +66,24 @@ static void move_to_uci(uint16_t move, char *buf)
     buf[2] = 'a' + (to & 7);
     buf[3] = '0' + (8 - (to >> 3));
 
-    switch (flag) {
-        case 5: buf[4] = 'b'; buf[5] = '\0'; return;
-        case 6: buf[4] = 'n'; buf[5] = '\0'; return;
-        case 7: buf[4] = 'r'; buf[5] = '\0'; return;
-        case 8: buf[4] = 'q'; buf[5] = '\0'; return;
+    switch (flag)
+    {
+    case 5:
+        buf[4] = 'b';
+        buf[5] = '\0';
+        return;
+    case 6:
+        buf[4] = 'n';
+        buf[5] = '\0';
+        return;
+    case 7:
+        buf[4] = 'r';
+        buf[5] = '\0';
+        return;
+    case 8:
+        buf[4] = 'q';
+        buf[5] = '\0';
+        return;
     }
 
     buf[4] = '\0';
@@ -99,10 +112,20 @@ MoveList ordermoves(Position *board, MoveList *move_list, uint16_t tt_move)
 
         if (victim == 6)
             scores[i] = 0;
-        else
+        else if (victim != 0)
             scores[i] = 10000 + mvv_lva[victim * 6 + attacker];
+        else
+        {
+            // quiet move - check if it gives check
+            Position copy = *board;
+            moveint(&copy, move_list->movelist[i]);
+            uint64_t their_king = copy.pieces[5] & copy.color[!board->turn];
+            if (their_king && squareAttacked(&copy, __builtin_ctzll(their_king), board->turn))
+                scores[i] = 9000; // below captures, above quiet moves
+            else
+                scores[i] = 0;
+        }
     }
-
     for (int i = 1; i < move_list->offset; i++)
     {
         int score = scores[i];
@@ -198,10 +221,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
     if (stop->max_nodes != 0 && stop->nodes >= stop->max_nodes)
         stop->stop = 1;
     if (stop->stop)
-    {
-        output.score = eval(board, stop->nodes);
-        return output;
-    }
+        return (searchOutput){.score = 0, .move = 0}; // no score
 
     int original_alpha = alpha;
 
@@ -264,11 +284,24 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
         }
 
         int score = -search(&copy, depth - 1, ply + 1, -beta, -alpha, stop).score;
-
+        if (stop->stop)
+            break;
         if (score > best_score)
         {
             best_score = score;
             best_move = move_list.movelist[i];
+        }
+        if (!stop->stop)
+        {
+            uint8_t flag;
+            if (best_score <= original_alpha)
+                flag = 2;
+            else if (best_score >= beta)
+                flag = 1;
+            else
+                flag = 0;
+
+            tt_store(key, depth, best_score, flag, best_move);
         }
         if (score > alpha)
             alpha = score;

@@ -164,7 +164,7 @@ void d(Position *board) // Displays board or something
 
 char uciStart(void)
 {
-    tt_init(64);
+    tt_init(128);
     Position board = {0};
     Position copyboard = {0};
 
@@ -206,6 +206,11 @@ char uciStart(void)
         else if (strcmp(tokens[0], "isready") == 0)
         {
             printf("readyok\n");
+        }
+        else if (strcmp(tokens[0], "ucinewgame") == 0)
+        {
+            tt_clear();
+            fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
         }
         else if (strcmp(tokens[0], "position") == 0)
         {
@@ -431,12 +436,12 @@ char uciStart(void)
                 }
                 int increment = 0;
                 int time_move = 0;
-                if (board.turn)
+                if (board.turn == 0)
                 {
                     increment = white_increment * 0.7;
                     time_move = white_time / 30 + increment;
                 }
-                else if (!board.turn)
+                else if (board.turn == 1)
                 {
                     increment = black_increment * 0.7;
                     time_move = black_time / 30 + increment;
