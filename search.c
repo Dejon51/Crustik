@@ -116,16 +116,16 @@ MoveList ordermoves(Position *board, MoveList *move_list, uint16_t tt_move)
             scores[i] = 10000 + mvv_lva[victim * 6 + attacker];
         else
         {
-            // quiet move - check if it gives check
             Position copy = *board;
             moveint(&copy, move_list->movelist[i]);
             uint64_t their_king = copy.pieces[5] & copy.color[!board->turn];
             if (their_king && squareAttacked(&copy, __builtin_ctzll(their_king), board->turn))
-                scores[i] = 9000; // below captures, above quiet moves
+                scores[i] = 9000;
             else
                 scores[i] = 0;
         }
     }
+
     for (int i = 1; i < move_list->offset; i++)
     {
         int score = scores[i];
@@ -143,6 +143,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, uint16_t tt_move)
 
     return scored_list;
 }
+
 int quiesce(Position *board, int alpha, int beta, int nodes)
 {
     uint64_t key = zobrist(board);
@@ -200,12 +201,7 @@ int quiesce(Position *board, int alpha, int beta, int nodes)
             alpha = score;
     }
 
-    uint8_t flag;
-    if (best_score <= original_alpha)
-        flag = 2;
-    else
-        flag = 0;
-
+    uint8_t flag = (best_score <= original_alpha) ? 2 : 0;
     tt_store(key, 0, best_score, flag, best_move);
     return best_score;
 }
@@ -221,27 +217,22 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
     if (stop->max_nodes != 0 && stop->nodes >= stop->max_nodes)
         stop->stop = 1;
     if (stop->stop)
-        return (searchOutput){.score = 0, .move = 0}; // no score
+        return (searchOutput){.score = 0, .move = 0};
 
     int original_alpha = alpha;
 
     uint64_t key = zobrist(board);
     TTEntry *tt = tt_probe(key);
     uint16_t tt_move = 0;
+
     if (tt && tt->depth >= depth)
     {
         if (tt->flag == 0)
-        {
-            if (tt->score >= beta)
-                return (searchOutput){.score = beta, .move = tt->best_move};
-            if (tt->score <= alpha)
-                return (searchOutput){.score = alpha, .move = tt->best_move};
             return (searchOutput){.score = tt->score, .move = tt->best_move};
-        }
         if (tt->flag == 1 && tt->score >= beta)
-            return (searchOutput){.score = beta};
+            return (searchOutput){.score = tt->score, .move = tt->best_move};
         if (tt->flag == 2 && tt->score <= alpha)
-            return (searchOutput){.score = alpha};
+            return (searchOutput){.score = tt->score, .move = tt->best_move};
         tt_move = tt->best_move;
     }
 
@@ -263,6 +254,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
             output.score = -32000 + ply;
         else
             output.score = 0;
+        tt_store(key, depth, output.score, 0, 0);
         return output;
     }
 
@@ -284,24 +276,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
         }
 
         int score = -search(&copy, depth - 1, ply + 1, -beta, -alpha, stop).score;
+
         if (stop->stop)
             break;
+
         if (score > best_score)
         {
             best_score = score;
             best_move = move_list.movelist[i];
-        }
-        if (!stop->stop)
-        {
-            uint8_t flag;
-            if (best_score <= original_alpha)
-                flag = 2;
-            else if (best_score >= beta)
-                flag = 1;
-            else
-                flag = 0;
-
-            tt_store(key, depth, best_score, flag, best_move);
         }
         if (score > alpha)
             alpha = score;
@@ -309,15 +291,19 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
             break;
     }
 
-    uint8_t flag;
-    if (best_score <= original_alpha)
-        flag = 2;
-    else if (best_score >= beta)
-        flag = 1;
-    else
-        flag = 0;
+    // FIX: store to TT once after the loop, not inside it
+    if (!stop->stop)
+    {
+        uint8_t flag;
+        if (best_score <= original_alpha)
+            flag = 2;
+        else if (best_score >= beta)
+            flag = 1;
+        else
+            flag = 0;
 
-    tt_store(key, depth, best_score, flag, best_move);
+        tt_store(key, depth, best_score, flag, best_move);
+    }
 
     output.score = best_score;
     output.move = best_move;
