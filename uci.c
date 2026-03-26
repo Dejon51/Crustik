@@ -301,12 +301,10 @@ char uciStart(void)
                         int king_pos = __builtin_ctzll(king_bb);
                         if (squareAttacked(&board, king_pos, !board.turn))
                         {
-                            puts("bestmove 0000");
                             printf("%s is checkmated\n", board.turn ? "Black" : "White");
                         }
                         else
                         {
-                            puts("bestmove 0000");
                             printf("Stalemate\n");
                         }
                     }
@@ -349,12 +347,10 @@ char uciStart(void)
                         int king_pos = __builtin_ctzll(king_bb);
                         if (squareAttacked(&board, king_pos, !board.turn))
                         {
-                            puts("bestmove 0000");
                             printf("%s is checkmated\n", board.turn ? "Black" : "White");
                         }
                         else
                         {
-                            puts("bestmove 0000");
                             printf("Stalemate\n");
                         }
                     }
@@ -468,12 +464,10 @@ char uciStart(void)
                     int king_pos = __builtin_ctzll(king_bb);
                     if (squareAttacked(&board, king_pos, !board.turn))
                     {
-                        puts("bestmove 0000");
                         printf("%s is checkmated\n", board.turn ? "Black" : "White");
                     }
                     else
                     {
-                        puts("bestmove 0000");
                         printf("Stalemate\n");
                     }
                 }

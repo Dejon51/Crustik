@@ -146,24 +146,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, uint16_t tt_move)
 
 int quiesce(Position *board, int alpha, int beta, int nodes)
 {
-    uint64_t key = zobrist(board);
-    TTEntry *tt = tt_probe(key);
-    uint16_t tt_move = 0;
-
-    if (tt)
-    {
-        if (tt->flag == 0)
-            return tt->score;
-        if (tt->flag == 1 && tt->score >= beta)
-            return tt->score;
-        if (tt->flag == 2 && tt->score <= alpha)
-            return tt->score;
-        tt_move = tt->best_move;
-    }
-
-    int original_alpha = alpha;
     int static_eval = eval(board, nodes);
-
     if (static_eval >= beta)
         return static_eval;
     if (static_eval > alpha)
@@ -171,9 +154,8 @@ int quiesce(Position *board, int alpha, int beta, int nodes)
 
     MoveList move_list = {};
     captureMoves(board, &move_list, board->turn);
-    move_list = ordermoves(board, &move_list, tt_move);
+    move_list = ordermoves(board, &move_list, 0);
 
-    uint16_t best_move = 0;
     int best_score = static_eval;
 
     for (int i = 0; i < move_list.offset; i++)
@@ -188,21 +170,15 @@ int quiesce(Position *board, int alpha, int beta, int nodes)
         int score = -quiesce(&copy, -beta, -alpha, nodes);
 
         if (score > best_score)
-        {
             best_score = score;
-            best_move = move_list.movelist[i];
-        }
+
         if (score >= beta)
-        {
-            tt_store(key, 0, score, 1, best_move);
             return score;
-        }
+
         if (score > alpha)
             alpha = score;
     }
 
-    uint8_t flag = (best_score <= original_alpha) ? 2 : 0;
-    tt_store(key, 0, best_score, flag, best_move);
     return best_score;
 }
 
