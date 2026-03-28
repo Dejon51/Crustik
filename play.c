@@ -301,108 +301,226 @@ void rookMoves(Position *board, MoveList *list, bool color)
     }
 }
 
-void kingMoves(Position *board, MoveList *list, bool color)
+bool squareAttacked_custom(Position *b, int sq, int enemy, uint64_t custom_occ)
 {
-    Bitboard danger = pawnMask(board, !color) |
-                      bishopMask(board, !color) |
-                      horseMask(board, !color) |
-                      rookMask(board, !color) |
-                      kingMask(board, !color);
-    uint64_t kings = board->pieces[5] & board->color[color];
-    uint64_t occupancy = board->color[0] | board->color[1];
-    uint64_t nocastle = occupancy | danger;
+    uint64_t enemyPieces = b->color[enemy];
 
-    while (kings)
-    {
-        int ind = pop_lsb(&kings);
-        // printf("Danger: %llu occupancy: %llu",occupancy,danger)
-        if (color == 0 && ind == E1) // white king
-        {
-            // kingside
-            if ((board->castling & (1U << WHITE_KINGSIDE)) &&
-                (nocastle & 0x6000000000000000ULL) == 0ULL)
-            {
-                list->movelist[list->offset++] = (1U << 12) | ((ind & 63) << 6) | (G1 & 63);
-            }
-            // queenside
-            if ((board->castling & (1U << WHITE_QUEENSIDE)) &&
-                (nocastle & 0xc00000000000000ULL) == 0ULL && (occupancy & 0x200000000000000ULL) == 0ULL)
-            {
-                list->movelist[list->offset++] = (2U << 12) | ((ind & 63) << 6) | (C1 & 63);
-            }
-        }
-        else if (color == 1 && ind == E8) // black king
-        {
-            // kingside
-            if ((board->castling & (1U << BLACK_KINGSIDE)) &&
-                (nocastle & 0x0000000000000060ULL) == 0ULL)
-            {
-                list->movelist[list->offset++] = (4U << 12) | ((ind & 63) << 6) | (G8 & 63);
-            }
-            // queenside
+    if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
+        (b->pieces[0] & enemyPieces))
+        return true;
 
-            if ((board->castling & (1U << BLACK_QUEENSIDE)) &&
-                (nocastle & 0xCULL) == 0ULL && (occupancy & 0x2ULL) == 0ULL)
-            {
-                list->movelist[list->offset++] = (3U << 12) | ((ind & 63) << 6) | (C8 & 63);
-            }
-        }
-        // printf("%i %i %i\n",ind,E1,color);
+    if (knighttable[sq] & (b->pieces[2] & enemyPieces))
+        return true;
 
-        uint64_t attacks = kingtable[ind];
+    if (kingtable[sq] & (b->pieces[5] & enemyPieces))
+        return true;
 
-        attacks &= ~board->color[color];
+    if (getbishopAttacks(sq, custom_occ) &
+        ((b->pieces[1] | b->pieces[4]) & enemyPieces))
+        return true;
 
-        while (attacks)
-        {
-            int target = pop_lsb(&attacks);
-            list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
-        }
-    }
+    if (getrookAttacks(sq, custom_occ) &
+        ((b->pieces[3] | b->pieces[4]) & enemyPieces))
+        return true;
+
+    return false;
 }
 
-// x+y*8
+void kingMoves(Position *board, MoveList *list, bool color, int check_count)
+{
+    int us = color;
+    int them = !color;
+    uint64_t kings = board->pieces[5] & board->color[us];
+    if (!kings)
+        return;
+
+    int from = __builtin_ctzll(kings);
+    uint64_t occupancy = board->color[0] | board->color[1];
+
+    uint64_t attacks = kingtable[from];
+    attacks &= ~board->color[us];
+
+    while (attacks)
+    {
+        int to = pop_lsb(&attacks);
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+    }
+
+    if (check_count == 0)
+    {
+        if (us == 0 && from == E1) // White King
+        {
+            // Kingside (White)
+            if (board->castling & (1U << WHITE_KINGSIDE))
+            {
+                if (!(occupancy & ((1ULL << F1) | (1ULL << G1))))
+                {
+                    if (!squareAttacked_custom(board, F1, them, occupancy))
+                    {
+                        list->movelist[list->offset++] = (1U << 12) | (from << 6) | G1;
+                    }
+                }
+            }
+            // Queenside (White)
+            if (board->castling & (1U << WHITE_QUEENSIDE))
+            {
+                if (!(occupancy & ((1ULL << B1) | (1ULL << C1) | (1ULL << D1))))
+                {
+                    if (!squareAttacked_custom(board, D1, them, occupancy))
+                    {
+                        list->movelist[list->offset++] = (2U << 12) | (from << 6) | C1;
+                    }
+                }
+            }
+        }
+        else if (us == 1 && from == E8)
+        {
+            // Kingside (Black)
+            if (board->castling & (1U << BLACK_KINGSIDE))
+            {
+                if (!(occupancy & ((1ULL << F8) | (1ULL << G8))))
+                {
+                    if (!squareAttacked_custom(board, F8, them, occupancy))
+                    {
+                        list->movelist[list->offset++] = (4U << 12) | (from << 6) | G8;
+                    }
+                }
+            }
+            // Queenside (Black)
+            if (board->castling & (1U << BLACK_QUEENSIDE))
+            {
+                if (!(occupancy & ((1ULL << B8) | (1ULL << C8) | (1ULL << D8))))
+                {
+                    if (!squareAttacked_custom(board, D8, them, occupancy))
+                    {
+                        list->movelist[list->offset++] = (3U << 12) | (from << 6) | C8;
+                    }
+                }
+            }
+        }
+    }
+} // x+y*8
+
+uint64_t get_checkers(Position *board, int sq, int enemy_color)
+{
+    uint64_t occ = board->color[0] | board->color[1];
+    uint64_t checkers = 0;
+
+    checkers |= (enemy_color == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
+                (board->pieces[0] & board->color[enemy_color]);
+    checkers |= knighttable[sq] & (board->pieces[2] & board->color[enemy_color]);
+    checkers |= getbishopAttacks(sq, occ) & ((board->pieces[1] | board->pieces[4]) & board->color[enemy_color]);
+    checkers |= getrookAttacks(sq, occ) & ((board->pieces[3] | board->pieces[4]) & board->color[enemy_color]);
+
+    return checkers;
+}
+
+uint64_t get_potential_pinners(Position *board, int king_sq, int enemy_color)
+{
+    uint64_t pinners = 0;
+    pinners |= getbishopAttacks(king_sq, 0) & ((board->pieces[1] | board->pieces[4]) & board->color[enemy_color]);
+    pinners |= getrookAttacks(king_sq, 0) & ((board->pieces[3] | board->pieces[4]) & board->color[enemy_color]);
+    return pinners;
+}
 
 void legalMoveGen(Position *board, MoveList *list)
 {
-    MoveList pseudo = {0};
-    bool turn = board->turn;
-    pawnMoves(board, &pseudo, turn);
-    bishopMoves(board, &pseudo, turn);
-    horseMoves(board, &pseudo, turn);
-    rookMoves(board, &pseudo, turn);
-    kingMoves(board, &pseudo, turn);
+    int us = board->turn;
+    int them = !us;
+    uint64_t king_bb = board->pieces[5] & board->color[us];
+    if (!king_bb)
+        return;
 
-    uint64_t king_bb = board->pieces[5] & board->color[turn];
-    int current_king_pos = __builtin_ctzll(king_bb);
-    bool in_check = squareAttacked(board, current_king_pos, !turn);
+    int king_sq = __builtin_ctzll(king_bb);
+    uint64_t occ = board->color[0] | board->color[1];
+
+    uint64_t checkers = get_checkers(board, king_sq, them);
+    int check_count = __builtin_popcountll(checkers);
+
+    uint64_t check_mask = 0xFFFFFFFFFFFFFFFFULL;
+    uint64_t pinned_pieces = 0;
+    uint64_t pinner_ray[64] = {0};
+
+    if (check_count == 1)
+    {
+        int checker_sq = __builtin_ctzll(checkers);
+
+        check_mask = ray_between_table[king_sq * 64 + checker_sq] | (1ULL << checker_sq);
+    }
+    else if (check_count >= 2)
+    {
+        check_mask = 0; // Only King moves allowed
+    }
+
+    uint64_t potential_pinners = get_potential_pinners(board, king_sq, them);
+    while (potential_pinners)
+    {
+        int pinner_sq = pop_lsb(&potential_pinners);
+        uint64_t ray = ray_between_table[king_sq * 64 + pinner_sq];
+        uint64_t overlap = ray & occ;
+
+        if (overlap && (overlap & (overlap - 1)) == 0)
+        {
+            if (overlap & board->color[us])
+            {
+                int pinned_sq = __builtin_ctzll(overlap);
+                pinned_pieces |= (1ULL << pinned_sq);
+                pinner_ray[pinned_sq] = ray | (1ULL << pinner_sq);
+            }
+        }
+    }
+
+    MoveList pseudo = {0};
+    kingMoves(board, &pseudo, us, check_count);
+
+    if (check_count < 2)
+    {
+        pawnMoves(board, &pseudo, us);
+        horseMoves(board, &pseudo, us);
+        bishopMoves(board, &pseudo, us);
+        rookMoves(board, &pseudo, us);
+    }
 
     for (int i = 0; i < pseudo.offset; i++)
     {
-        int flag = (pseudo.movelist[i] >> 12) & 0xF;
-        int to = pseudo.movelist[i] & 0x3F;
+        uint16_t move = pseudo.movelist[i];
+        int from = (move >> 6) & 0x3F;
+        int to = move & 0x3F;
+        int flag = (move >> 12) & 0xF;
+        uint64_t from_bb = 1ULL << from;
+        uint64_t to_bb = 1ULL << to;
 
-        if ((board->pieces[KINGNUMBER] >> to) & 1)
-            continue;
-
-        if (in_check && flag >= 1 && flag <= 4)
-            continue;
-
-        Position copy = *board;
-        makeMove(&copy, &pseudo, i);
-
-        uint64_t our_king = copy.pieces[5] & copy.color[turn];
-        if (!our_king)
-            continue; // safety net
-        int king_pos = __builtin_ctzll(our_king);
-
-        if (!squareAttacked(&copy, king_pos, !turn))
+        if (from == king_sq)
         {
-            list->movelist[list->offset++] = pseudo.movelist[i];
+            uint64_t occ_without_king = occ & ~from_bb;
+            if (!squareAttacked_custom(board, to, them, (occ_without_king | to_bb)))
+            {
+                list->movelist[list->offset++] = move;
+            }
+            continue;
         }
+
+        if (from_bb & pinned_pieces)
+        {
+            if (!(to_bb & pinner_ray[from]))
+                continue;
+        }
+
+        if (!(to_bb & check_mask))
+            continue;
+
+        if (board->mailbox[from] == 0 && (to == board->epsquare && board->epsquare != -1))
+        {
+            int cap_sq = to + (us == 0 ? 8 : -8);
+            uint64_t occ_after_ep = occ & ~from_bb & ~(1ULL << cap_sq) | to_bb;
+            if (squareAttacked_custom(board, king_sq, them, occ_after_ep))
+                continue;
+        }
+
+        // Move is verified legal!
+        list->movelist[list->offset++] = move;
     }
 }
-
 void makeMove(Position *board, MoveList *list, int move)
 {
     int direction = (board->turn == 0) ? -1 : 1;
@@ -422,6 +540,23 @@ void makeMove(Position *board, MoveList *list, int move)
 
     if (piece == 6)
         return;
+
+    // Check if this is a capture or pawn move (resets halfmove clock)
+    bool is_capture = (board->mailbox[to] != 6);
+    bool is_pawn_move = (moving_piece == 0);
+
+    // Check for en passant capture (also resets halfmove clock)
+    bool is_ep_capture = (moving_piece == 0 && to == old_epsquare && old_epsquare != -1);
+
+    // Update halfmove clock
+    if (is_pawn_move || is_capture || is_ep_capture)
+    {
+        board->halfmoves = 0;
+    }
+    else
+    {
+        board->halfmoves++;
+    }
 
     // king moved remove both castling rights
     if (piece == KINGNUMBER)
@@ -524,7 +659,7 @@ void makeMove(Position *board, MoveList *list, int move)
     board->mailbox[from] = 6;
 
     // en passant capture
-    if (moving_piece == 0 && to == old_epsquare)
+    if (moving_piece == 0 && to == old_epsquare && old_epsquare != -1)
     {
         int captured_sq = to - (direction << 3);
         uint64_t capBB = 1ULL << captured_sq;
@@ -563,15 +698,21 @@ void makeMove(Position *board, MoveList *list, int move)
             board->epsquare = from + (direction << 3);
     }
 
+    // Update fullmove counter (increments after black's move)
+    if (board->turn == 1)
+    {
+        board->fullmoves++;
+    }
+
     board->turn ^= 1;
 }
 
-void moveint(Position *board, uint16_t move) {
+void moveint(Position *board, uint16_t move)
+{
     MoveList tmp;
     tmp.movelist[0] = move;
     makeMove(board, &tmp, 0);
 }
-
 
 void captureMoves(Position *board, MoveList *list, bool color)
 {

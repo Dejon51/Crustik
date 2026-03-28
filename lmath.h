@@ -15,6 +15,7 @@ typedef enum {
     BLACK_KINGSIDE  = 3
 } CastlingRight;
 
+
 typedef struct {
     // color 0 is white
     // color 1 is black
@@ -30,6 +31,8 @@ typedef struct {
     int8_t epsquare;
     int8_t castling;
     uint8_t mailbox[64];
+    uint8_t halfmoves;   // half-move clock
+    uint8_t fullmoves; 
     bool turn;
 } Position;
 

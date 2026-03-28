@@ -7,45 +7,15 @@
 #include "search.h"
 #include "zobrist.h"
 
-#define MAX_DEPTH 70
+#define MATE_SCORE 32000
 
-TTEntry *transposition_table = NULL;
-size_t tt_size = 0;
+#define MAX_DEPTH 200
 
-void tt_init(int mb)
-{
-    size_t bytes = (size_t)mb * 1024 * 1024;
-    tt_size = 1;
-    while (tt_size * 2 * sizeof(TTEntry) <= bytes)
-        tt_size *= 2;
+#define MAX_GAME_PLY 2048
 
-    free(transposition_table);
-    transposition_table = calloc(tt_size, sizeof(TTEntry));
-}
-
-void tt_clear(void)
-{
-    if (transposition_table)
-        memset(transposition_table, 0, tt_size * sizeof(TTEntry));
-}
-
-TTEntry *tt_probe(uint64_t key)
-{
-    TTEntry *entry = &transposition_table[key & (tt_size - 1)];
-    if (entry->key == key)
-        return entry;
-    return NULL;
-}
-
-void tt_store(uint64_t key, int depth, int score, uint8_t flag, uint16_t best_move)
-{
-    TTEntry *entry = &transposition_table[key & (tt_size - 1)];
-    entry->key = key;
-    entry->depth = depth;
-    entry->score = score;
-    entry->flag = flag;
-    entry->best_move = best_move;
-}
+// Holds the hashes of positions leading up to the current node
+uint64_t position_history[MAX_GAME_PLY];
+int history_ply = 0;
 
 static int mvv_lva[] = {
     105, 205, 305, 405, 505, 605,
@@ -89,7 +59,7 @@ static void move_to_uci(uint16_t move, char *buf)
     buf[4] = '\0';
 }
 
-MoveList ordermoves(Position *board, MoveList *move_list, uint16_t tt_move)
+MoveList ordermoves(Position *board, MoveList *move_list)
 {
     MoveList scored_list = *move_list;
     if (move_list->offset == 0)
@@ -99,12 +69,6 @@ MoveList ordermoves(Position *board, MoveList *move_list, uint16_t tt_move)
 
     for (int i = 0; i < move_list->offset; i++)
     {
-        if (tt_move && move_list->movelist[i] == tt_move)
-        {
-            scores[i] = 20000;
-            continue;
-        }
-
         int to = move_list->movelist[i] & 0x3F;
         int from = (move_list->movelist[i] >> 6) & 0x3F;
         int victim = board->mailbox[to];
@@ -154,7 +118,7 @@ int quiesce(Position *board, int alpha, int beta, int nodes)
 
     MoveList move_list = {};
     captureMoves(board, &move_list, board->turn);
-    move_list = ordermoves(board, &move_list, 0);
+    move_list = ordermoves(board, &move_list);
 
     int best_score = static_eval;
 
@@ -187,71 +151,112 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
     searchOutput output = {0};
     stop->nodes++;
 
-    if (stop->start_time != 0 && (stop->nodes & 2047) == 0)
-        if (get_time_ms() - stop->start_time >= stop->max_time)
-            stop->stop = 1;
-    if (stop->max_nodes != 0 && stop->nodes >= stop->max_nodes)
+    // Stop conditions
+    if (stop->start_time && (stop->nodes & 2047) == 0 &&
+        get_time_ms() - stop->start_time >= stop->max_time)
+        stop->stop = 1;
+    if (stop->max_nodes && stop->nodes >= stop->max_nodes)
         stop->stop = 1;
     if (stop->stop)
         return (searchOutput){.score = 0, .move = 0};
 
-    int original_alpha = alpha;
+    uint64_t hash = zobrist(board);
 
-    uint64_t key = zobrist(board);
-    TTEntry *tt = tt_probe(key);
-    uint16_t tt_move = 0;
-
-    if (tt && tt->depth >= depth)
+    // Draw detection (50-move rule and repetition)
+    if (ply > 0)
     {
-        if (tt->flag == 0)
-            return (searchOutput){.score = tt->score, .move = tt->best_move};
-        if (tt->flag == 1 && tt->score >= beta)
-            return (searchOutput){.score = tt->score, .move = tt->best_move};
-        if (tt->flag == 2 && tt->score <= alpha)
-            return (searchOutput){.score = tt->score, .move = tt->best_move};
-        tt_move = tt->best_move;
+        if (board->halfmoves >= 100)
+            return (searchOutput){.score = 0, .move = 0};
+
+        int limit = history_ply - board->halfmoves;
+        if (limit < 0) limit = 0;
+
+        for (int i = history_ply - 2; i >= limit; i -= 2)
+        {
+            if (position_history[i] == hash)
+                return (searchOutput){.score = 0, .move = 0};
+        }
     }
 
+    // Null move pruning (safe with mate distance)
+    const int NULL_MOVE_REDUCTION = 2;
+    const int SAFE_MATE_PLY = 20;
+
+    if (depth >= 3 && ply > 0)
+    {
+        uint64_t king_bb = board->pieces[5] & board->color[board->turn];
+        int in_check = (!king_bb || squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
+
+        if (!in_check && ((board->pieces[1] | board->pieces[2] |
+                           board->pieces[3] | board->pieces[4]) & board->color[board->turn]))
+        {
+            if (beta < MATE_SCORE - SAFE_MATE_PLY) // avoid pruning close mates
+            {
+                Position copy = *board;
+                copy.turn ^= 1;
+
+                position_history[history_ply++] = hash;
+                int score = -search(&copy, depth - 1 - NULL_MOVE_REDUCTION, ply + 1, -beta, -beta + 1, stop).score;
+                history_ply--;
+
+                if (stop->stop)
+                    return (searchOutput){0};
+
+                if (score >= beta)
+                    return (searchOutput){.score = beta, .move = 0};
+            }
+        }
+    }
+
+    // Quiescence search
     if (depth <= 0)
     {
         output.score = quiesce(board, alpha, beta, stop->nodes);
         return output;
     }
 
+    // Generate moves
     MoveList move_list;
     move_list.offset = 0;
     legalMoveGen(board, &move_list);
-    move_list = ordermoves(board, &move_list, tt_move);
+    move_list = ordermoves(board, &move_list);
 
+    // No legal moves (mate or stalemate)
     if (move_list.offset == 0)
     {
         uint64_t king_bb = board->pieces[5] & board->color[board->turn];
         if (!king_bb || squareAttacked(board, __builtin_ctzll(king_bb), !board->turn))
-            output.score = -32000 + ply;
+            output.score = -MATE_SCORE + ply;  // encode mate distance
         else
-            output.score = 0;
-        tt_store(key, depth, output.score, 0, 0);
+            output.score = 0;                   // stalemate
         return output;
     }
 
-    int best_score = -32000;
+    int best_score = -MATE_SCORE;
     uint16_t best_move = 0;
 
     for (int i = 0; i < move_list.offset; i++)
     {
+        uint16_t move = move_list.movelist[i];
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
         if (ply == 0 && stop->print_info)
         {
             char mv[6];
-            move_to_uci(move_list.movelist[i], mv);
+            move_to_uci(move, mv);
             printf("info depth %d currmove %s currmovenumber %d\n",
                    depth, mv, i + 1);
             fflush(stdout);
         }
 
+        // Push position hash
+        position_history[history_ply++] = hash;
+
         int score = -search(&copy, depth - 1, ply + 1, -beta, -alpha, stop).score;
+
+        // Pop position hash
+        history_ply--;
 
         if (stop->stop)
             break;
@@ -259,26 +264,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
         if (score > best_score)
         {
             best_score = score;
-            best_move = move_list.movelist[i];
+            best_move = move;
         }
+
         if (score > alpha)
             alpha = score;
-        if (score >= beta)
+
+        if (alpha >= beta) // beta cutoff
             break;
-    }
-
-    // FIX: store to TT once after the loop, not inside it
-    if (!stop->stop)
-    {
-        uint8_t flag;
-        if (best_score <= original_alpha)
-            flag = 2;
-        else if (best_score >= beta)
-            flag = 1;
-        else
-            flag = 0;
-
-        tt_store(key, depth, best_score, flag, best_move);
     }
 
     output.score = best_score;
@@ -303,12 +296,6 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         long long elapsed = get_time_ms() - search_start;
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
 
-        int hashfull = 0;
-        size_t sample = tt_size < 1000 ? tt_size : 1000;
-        for (size_t i = 0; i < sample; i++)
-            if (transposition_table[i].key != 0)
-                hashfull++;
-
         char score_str[32];
         if (out.score > 31000)
             snprintf(score_str, sizeof(score_str), "mate %d", (32000 - out.score + 1) / 2);
@@ -320,10 +307,10 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         char best_uci[6];
         move_to_uci(best_move_so_far, best_uci);
 
-        printf("info depth %d score %s nodes %llu nps %lld time %lld hashfull %d pv %s\n",
+        printf("info depth %d score %s nodes %llu nps %lld time %lld pv %s\n",
                depth, score_str,
                (unsigned long long)stop->nodes,
-               nps, elapsed, hashfull,
+               nps, elapsed,
                best_uci);
         fflush(stdout);
     }

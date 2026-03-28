@@ -164,7 +164,6 @@ void d(Position *board) // Displays board or something
 
 char uciStart(void)
 {
-    tt_init(128);
     Position board = {0};
     Position copyboard = {0};
 
@@ -209,7 +208,6 @@ char uciStart(void)
         }
         else if (strcmp(tokens[0], "ucinewgame") == 0)
         {
-            tt_clear();
             fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
         }
         else if (strcmp(tokens[0], "position") == 0)
@@ -231,16 +229,6 @@ char uciStart(void)
                     moveint(&board, move);
                     i++;
                 }
-                FILE *dbg = fopen("/tmp/crustik_debug.txt", "a");
-                fprintf(dbg, "DEBUG board: epsquare=%d turn=%d\n", board.epsquare, board.turn);
-                fprintf(dbg, "DEBUG pawns white=%llx black=%llx\n",
-                        (unsigned long long)(board.pieces[0] & board.color[0]),
-                        (unsigned long long)(board.pieces[0] & board.color[1]));
-                fprintf(dbg, "DEBUG mailbox: ");
-                for (int j = 0; j < 64; j++)
-                    fprintf(dbg, "%d ", board.mailbox[j]);
-                fprintf(dbg, "\n");
-                fclose(dbg);
             }
             else if (strcmp(tokens[1], "fen") == 0)
             {
@@ -388,11 +376,10 @@ char uciStart(void)
                         nsec += 1000000000L;
                     }
 
-                    long elapsed_ms = sec * 1000 + nsec / 1000000;
-                    double nps = total_nodes / (elapsed_ms / 1000.0);
-
+                    double elapsed_ms = (double)sec * 1000.0 + (double)nsec / 1000000.0;
+                                        double nps = total_nodes / (elapsed_ms / 1000.0);
                     printf("Total Nodes: %llu\n", (unsigned long long)total_nodes);
-                    printf("Elapsed time: %ld ms\n", elapsed_ms);
+                    printf("Elapsed time: %lf ms\n", elapsed_ms);
                     printf("N/S: %.0f\n", nps);
                 }
             }
@@ -480,21 +467,6 @@ char uciStart(void)
         else if (strcmp(tokens[0], "d") == 0)
         {
             d(&board);
-        }
-        else if (strcmp(tokens[0], "setoption") == 0)
-        {
-            if (tokens[1] && strcmp(tokens[1], "name") == 0 &&
-                tokens[2] && strcmp(tokens[2], "Hash") == 0 &&
-                tokens[3] && strcmp(tokens[3], "value") == 0 &&
-                tokens[4])
-            {
-                int mb = matoi(tokens[4]);
-                if (mb < 1)
-                    mb = 1;
-                if (mb > 1024)
-                    mb = 1024;
-                tt_init(mb);
-            }
         }
         else if (strcmp(tokens[0], "pml") == 0)
         {

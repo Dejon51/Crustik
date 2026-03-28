@@ -18,18 +18,6 @@ typedef struct {
     int         print_info; 
 } stopConditions;
 
-typedef struct {
-    uint64_t key;
-    int depth;
-    int score;
-    uint8_t flag; 
-    uint16_t best_move;
-} TTEntry;
-
-void tt_init(int mb);
-
-void tt_clear(void);
-
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop);
