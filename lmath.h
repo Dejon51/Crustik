@@ -33,6 +33,7 @@ typedef struct {
     uint8_t mailbox[64];
     uint8_t halfmoves;   // half-move clock
     uint8_t fullmoves; 
+    uint64_t hash;
     bool turn;
 } Position;
 

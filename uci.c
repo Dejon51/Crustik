@@ -152,6 +152,7 @@ void d(Position *board) // Displays board or something
     }
     for (int y = 0; y < 8; y++)
     {
+        printf("     ");
         for (int x = 0; x < 8; x++)
         {
 
@@ -159,6 +160,7 @@ void d(Position *board) // Displays board or something
         }
         printf("\n");
     }
+    printf("HASH: 0x%lx",board->hash);
     printf("\n");
 }
 

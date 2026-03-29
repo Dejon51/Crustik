@@ -5,6 +5,7 @@
 #include "precomputed.h"
 #include "rook_table.h"
 #include "bishop_table.h"
+#include "zobrist.h"
 #include "uci.h"
 
 void print_bytes(uint64_t value)
@@ -606,13 +607,28 @@ void makeMove(Position *board, MoveList *list, int move)
     uint64_t tobb = 1ULL << to;
 
     int old_epsquare = board->epsquare;
+    int old_castling = board->castling;
+
+    // Remove old Castling and EP from hash
+    board->hash ^= zobrist_table[769 + old_castling];
+    if (old_epsquare != -1) board->hash ^= zobrist_table[785 + (old_epsquare & 7)];
+
     board->epsquare = -1;
 
     int piece = board->mailbox[from];
     int moving_piece = piece;
+    int victim = board->mailbox[to];
 
     if (piece == 6)
         return;
+
+    // Remove moving piece from 'from' square in hash
+    board->hash ^= zobrist_table[(board->turn * 384) + (moving_piece * 64) + from];
+    
+    // If regular capture, remove victim from hash
+    if (victim != 6) {
+        board->hash ^= zobrist_table[(!board->turn * 384) + (victim * 64) + to];
+    }
 
     // Check if this is a capture or pawn move (resets halfmove clock)
     bool is_capture = (board->mailbox[to] != 6);
@@ -671,6 +687,10 @@ void makeMove(Position *board, MoveList *list, int move)
         board->mailbox[F1] = 3;
 
         board->castling &= ~(1U << WHITE_KINGSIDE);
+        
+        // Update Rook hash for castle
+        board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + H1];
+        board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + F1];
         break;
 
     case 2: // white queen side
@@ -683,6 +703,10 @@ void makeMove(Position *board, MoveList *list, int move)
         board->mailbox[D1] = 3;
 
         board->castling &= ~(1U << WHITE_QUEENSIDE);
+        
+        // Update Rook hash for castle
+        board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + A1];
+        board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + D1];
         break;
 
     case 4: // black king side
@@ -695,6 +719,10 @@ void makeMove(Position *board, MoveList *list, int move)
         board->mailbox[F8] = 3;
 
         board->castling &= ~(1U << BLACK_KINGSIDE);
+        
+        // Update Rook hash for castle
+        board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + H8];
+        board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + F8];
         break;
 
     case 3: // black queen side
@@ -707,6 +735,10 @@ void makeMove(Position *board, MoveList *list, int move)
         board->mailbox[D8] = 3;
 
         board->castling &= ~(1U << BLACK_QUEENSIDE);
+        
+        // Update Rook hash for castle
+        board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + A8];
+        board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + D8];
         break;
 
     case 5:
@@ -740,6 +772,9 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[0] &= ~capBB;
         board->color[!board->turn] &= ~capBB;
         board->mailbox[captured_sq] = 6;
+        
+        // Remove captured pawn from hash
+        board->hash ^= zobrist_table[(!board->turn * 384) + (0 * 64) + captured_sq];
     }
 
     if (to == H1)
@@ -761,6 +796,9 @@ void makeMove(Position *board, MoveList *list, int move)
     board->pieces[piece] |= tobb;
     board->color[board->turn] |= tobb;
     board->mailbox[to] = piece;
+    
+    // Add piece to 'to' square in hash
+    board->hash ^= zobrist_table[(board->turn * 384) + (piece * 64) + to];
 
     if (moving_piece == 0)
     {
@@ -771,6 +809,13 @@ void makeMove(Position *board, MoveList *list, int move)
             board->epsquare = from + (direction << 3);
     }
 
+    // XOR IN new EP and Castling rights
+    if (board->epsquare != -1) board->hash ^= zobrist_table[785 + (board->epsquare & 7)];
+    board->hash ^= zobrist_table[769 + board->castling];
+    
+    // Toggle turn in hash
+    board->hash ^= zobrist_table[768];
+
     // Update fullmove counter (increments after black's move)
     if (board->turn == 1)
     {
@@ -779,7 +824,6 @@ void makeMove(Position *board, MoveList *list, int move)
 
     board->turn ^= 1;
 }
-
 void moveint(Position *board, uint16_t move)
 {
     MoveList tmp;
