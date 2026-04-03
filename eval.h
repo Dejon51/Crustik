@@ -18,6 +18,5 @@ void init_tables();
 
 int eval(Position *board,int nodes);
 
-int quiesce(Position *board, int alpha, int beta, int nodes);
 
 #endif

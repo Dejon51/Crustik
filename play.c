@@ -8,42 +8,6 @@
 #include "zobrist.h"
 #include "uci.h"
 
-void print_bytes(uint64_t value)
-{
-    // Determine the number of bits in a long without limits.h
-    // The C standard guarantees that a byte has at least 8 bits,
-    // so we can use a constant 8 for common systems.
-    // A more robust way to find CHAR_BIT without limits.h is complex,
-    // but for the sake of simplicity and common environments, we assume 8.
-    const int bits_in_byte = 8;
-    int total_bits = sizeof(long) * bits_in_byte;
-
-    // Use an unsigned long to avoid issues with right-shifting signed numbers.
-    unsigned long mask = 1UL << (total_bits - 1);
-
-    for (int i = 0; i < total_bits; i++)
-    {
-        // Use bitwise AND to check the current bit
-        if (value & mask)
-        {
-            printf("1 ");
-        }
-        else
-        {
-            printf("0 ");
-        }
-        // Right shift the mask to check the next bit
-        mask >>= 1;
-
-        // Optional: Add a space every 8 bits for readability (byte separation)
-        if ((i + 1) % bits_in_byte == 0 && (i + 1) != total_bits)
-        {
-            printf("\n");
-        }
-    }
-    printf("\n");
-}
-
 bool squareAttacked(Position *b, int sq, int enemy)
 {
 
