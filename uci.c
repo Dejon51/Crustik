@@ -6,6 +6,7 @@
 #include "eval.h"
 #include "fen.h"
 #include "search.h"
+#include "tt.h"
 
 void movestring(uint16_t move)
 {
@@ -210,6 +211,7 @@ char uciStart(void)
         }
         else if (strcmp(tokens[0], "ucinewgame") == 0)
         {
+            tt_clear();
             fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
         }
         else if (strcmp(tokens[0], "position") == 0)

@@ -6,19 +6,16 @@
 #include "eval.h"
 #include "search.h"
 #include "zobrist.h"
+#include "tt.h"
 
 #define MATE_SCORE 32000
-
 #define MAX_DEPTH 200
-
 #define MAX_GAME_PLY 2048
 
-// Holds the hashes of positions leading up to the current node
 uint64_t position_history[MAX_GAME_PLY];
 int history_ply = 0;
 
 static uint16_t killers[MAX_DEPTH][2];
-
 static int history[6][64];
 
 static void clear_ordering_tables(void)
@@ -64,28 +61,16 @@ static void move_to_uci(uint16_t move, char *buf)
 
     switch (flag)
     {
-    case 5:
-        buf[4] = 'b';
-        buf[5] = '\0';
-        return;
-    case 6:
-        buf[4] = 'n';
-        buf[5] = '\0';
-        return;
-    case 7:
-        buf[4] = 'r';
-        buf[5] = '\0';
-        return;
-    case 8:
-        buf[4] = 'q';
-        buf[5] = '\0';
-        return;
+    case 5: buf[4] = 'b'; buf[5] = '\0'; return;
+    case 6: buf[4] = 'n'; buf[5] = '\0'; return;
+    case 7: buf[4] = 'r'; buf[5] = '\0'; return;
+    case 8: buf[4] = 'q'; buf[5] = '\0'; return;
     }
 
     buf[4] = '\0';
 }
 
-MoveList ordermoves(Position *board, MoveList *move_list, int ply)
+MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList scored_list = *move_list;
     if (move_list->offset == 0)
@@ -102,26 +87,14 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply)
         int victim = board->mailbox[to];
         int attacker = board->mailbox[from];
 
-        if (flag == 8)
-        {
-            scores[i] = 9500;
-            continue;
-        }
-        if (flag == 7)
-        {
-            scores[i] = 9300;
-            continue;
-        }
-        if (flag == 5)
-        {
-            scores[i] = 9200;
-            continue;
-        }
-        if (flag == 6)
-        {
-            scores[i] = 9100;
-            continue;
-        }
+        // TT move gets highest priority
+        if (move == tt_move) { scores[i] = 20000; continue; }
+
+        if (flag == 8) { scores[i] = 9500; continue; }
+        if (flag == 7) { scores[i] = 9300; continue; }
+        if (flag == 5) { scores[i] = 9200; continue; }
+        if (flag == 6) { scores[i] = 9100; continue; }
+
         if (victim != 0 && victim != 6)
         {
             int att_idx = (attacker > 0 ? attacker - 1 : 0);
@@ -130,27 +103,8 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply)
             continue;
         }
 
-        if (move == killers[ply][0])
-        {
-            scores[i] = 9000;
-            continue;
-        }
-        if (move == killers[ply][1])
-        {
-            scores[i] = 8000;
-            continue;
-        }
-
-        {
-            Position copy = *board;
-            moveint(&copy, move);
-            uint64_t their_king = copy.pieces[5] & copy.color[!board->turn];
-            if (their_king && squareAttacked(&copy, __builtin_ctzll(their_king), board->turn))
-            {
-                scores[i] = 7000;
-                continue;
-            }
-        }
+        if (move == killers[ply][0]) { scores[i] = 9000; continue; }
+        if (move == killers[ply][1]) { scores[i] = 8000; continue; }
 
         int piece_idx = (attacker >= 1 && attacker <= 6) ? attacker - 1 : 0;
         scores[i] = history[piece_idx][to];
@@ -187,7 +141,7 @@ int quiesce(Position *board, int alpha, int beta, stopConditions *stop)
 
     MoveList move_list = {};
     captureMoves(board, &move_list, board->turn);
-    move_list = ordermoves(board, &move_list, 0);
+    move_list = ordermoves(board, &move_list, 0, 0);
 
     int best_score = static_eval;
 
@@ -202,12 +156,9 @@ int quiesce(Position *board, int alpha, int beta, stopConditions *stop)
 
         int score = -quiesce(&copy, -beta, -alpha, stop);
 
-        if (score > best_score)
-            best_score = score;
-        if (score >= beta)
-            return score;
-        if (score > alpha)
-            alpha = score;
+        if (score > best_score) best_score = score;
+        if (score >= beta) return best_score;
+        if (score > alpha) alpha = score;
     }
 
     return best_score;
@@ -228,7 +179,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (stop->stop)
         return (searchOutput){.score = 0, .move = 0};
 
-    uint64_t hash = zobrist(board);
+    uint64_t hash = board->hash;
+    int alpha_orig = alpha;
 
     // Draw detection (50-move rule and repetition)
     if (ply > 0)
@@ -237,45 +189,32 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             return (searchOutput){.score = 0, .move = 0};
 
         int limit = history_ply - board->halfmoves;
-        if (limit < 0)
-            limit = 0;
-
+        if (limit < 0) limit = 0;
         for (int i = history_ply - 2; i >= limit; i -= 2)
             if (position_history[i] == hash)
                 return (searchOutput){.score = 0, .move = 0};
     }
 
-    // Null move pruning
-    const int NULL_MOVE_REDUCTION = 2;
-    const int SAFE_MATE_PLY = 20;
-
-    if (depth >= 3 && ply > 0)
+    // TT probe
+    uint16_t tt_move = 0;
+    TTEntry *entry = tt_probe(hash);
+    if (entry)
     {
-        uint64_t king_bb = board->pieces[5] & board->color[board->turn];
-        int in_check = (!king_bb ||
-                        squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
+        tt_move = entry->move;
 
-        if (!in_check &&
-            ((board->pieces[1] | board->pieces[2] |
-              board->pieces[3] | board->pieces[4]) &
-             board->color[board->turn]))
+        if (entry->depth >= depth)
         {
-            if (beta < MATE_SCORE - SAFE_MATE_PLY)
-            {
-                Position copy = *board;
-                copy.turn ^= 1;
+            int tt_score = entry->score;
 
-                position_history[history_ply++] = hash;
-                int score = -search(&copy, depth - 1 - NULL_MOVE_REDUCTION,
-                                    ply + 1, -beta, -beta + 1, stop)
-                                 .score;
-                history_ply--;
+            if (tt_score > 31000) tt_score -= ply;
+            else if (tt_score < -31000) tt_score += ply;
 
-                if (stop->stop)
-                    return (searchOutput){0};
-                if (score >= beta)
-                    return (searchOutput){.score = beta, .move = 0};
-            }
+            if (entry->flag == TT_EXACT)
+                return (searchOutput){.score = tt_score, .move = tt_move};
+            if (entry->flag == TT_ALPHA && tt_score <= alpha)
+                return (searchOutput){.score = tt_score, .move = tt_move};
+            if (entry->flag == TT_BETA  && tt_score >= beta)
+                return (searchOutput){.score = tt_score, .move = tt_move};
         }
     }
 
@@ -285,15 +224,51 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return output;
     }
 
+    // In-check detection (used by NMP and LMR)
+    uint64_t king_bb = board->pieces[5] & board->color[board->turn];
+    int in_check = (!king_bb ||
+                    squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
+
+    // Null move pruning
+    const int NULL_MOVE_REDUCTION = 3;
+
+    if (depth >= 3 && ply > 0 && !in_check && abs(beta) < 31000)
+    {
+        if ((board->pieces[1] | board->pieces[2] |
+             board->pieces[3] | board->pieces[4]) &
+             board->color[board->turn])
+        {
+            Position copy = *board;
+            copy.turn ^= 1;
+            copy.hash ^= zobrist_table[768];
+
+            if (copy.epsquare != -1) {
+                copy.hash ^= zobrist_table[785 + (copy.epsquare & 7)];
+                copy.epsquare = -1;
+            }
+
+            if (history_ply < MAX_GAME_PLY)
+                position_history[history_ply++] = copy.hash;
+            int score = -search(&copy, depth - 1 - NULL_MOVE_REDUCTION,
+                                ply + 1, -beta, -beta + 1, stop).score;
+            history_ply--;
+
+            if (stop->stop) return (searchOutput){0};
+            if (score >= beta)
+                return (searchOutput){.score = beta, .move = 0};
+        }
+    }
+
     MoveList move_list;
     move_list.offset = 0;
     legalMoveGen(board, &move_list);
-    move_list = ordermoves(board, &move_list, ply);
+
+    // Pass tt_move into ordermoves — it handles priority internally
+    move_list = ordermoves(board, &move_list, ply, tt_move);
 
     if (move_list.offset == 0)
     {
-        uint64_t king_bb = board->pieces[5] & board->color[board->turn];
-        if (!king_bb || squareAttacked(board, __builtin_ctzll(king_bb), !board->turn))
+        if (in_check)
             output.score = -MATE_SCORE + ply;
         else
             output.score = 0;
@@ -302,15 +277,16 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     int best_score = -MATE_SCORE;
     uint16_t best_move = 0;
+    int moves_searched = 0;
 
     for (int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
-        int to = move & 0x3F;
-        int from = (move >> 6) & 0x3F;
-        int victim = board->mailbox[to];
-        int piece = board->mailbox[from];
-        int is_cap = (victim != 0 && victim != 6);
+        int to      = move & 0x3F;
+        int from    = (move >> 6) & 0x3F;
+        int victim  = board->mailbox[to];
+        int piece   = board->mailbox[from];
+        int is_cap  = (victim != 0 && victim != 6);
 
         Position copy = *board;
         makeMove(&copy, &move_list, i);
@@ -324,30 +300,53 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             fflush(stdout);
         }
 
-        position_history[history_ply++] = hash;
-        int score = -search(&copy, depth - 1, ply + 1,
-                            -beta, -alpha, stop)
-                         .score;
-        history_ply--;
+        if (history_ply < MAX_GAME_PLY)
+            position_history[history_ply++] = hash;
 
-        if (stop->stop)
-            break;
+        int score;
+
+        if (moves_searched >= 4 && depth >= 3 && !in_check && !is_cap)
+        {
+            int reduction = 1 + (moves_searched >= 8) + (depth >= 6);
+            score = -search(&copy, depth - 1 - reduction, ply + 1,
+                            -alpha - 1, -alpha, stop).score;
+            if (!stop->stop && score > alpha)
+                score = -search(&copy, depth - 1, ply + 1,
+                                -alpha - 1, -alpha, stop).score;
+            if (!stop->stop && score > alpha)
+                score = -search(&copy, depth - 1, ply + 1,
+                                -beta, -alpha, stop).score;
+        }
+        else if (moves_searched > 0)
+        {
+            score = -search(&copy, depth - 1, ply + 1,
+                            -alpha - 1, -alpha, stop).score;
+            if (!stop->stop && score > alpha)
+                score = -search(&copy, depth - 1, ply + 1,
+                                -beta, -alpha, stop).score;
+        }
+        else
+        {
+            score = -search(&copy, depth - 1, ply + 1, -beta, -alpha, stop).score;
+        }
+
+        history_ply--;
+        moves_searched++;
+
+        if (stop->stop) break;
 
         if (score > best_score)
         {
             best_score = score;
-            best_move = move;
+            best_move  = move;
         }
-
         if (score > alpha)
             alpha = score;
-
         if (alpha >= beta)
         {
             if (!is_cap)
             {
                 store_killer(move, ply);
-
                 int piece_idx = (piece >= 1 && piece <= 6) ? piece - 1 : 0;
                 history[piece_idx][to] += depth * depth;
                 if (history[piece_idx][to] > 1000000)
@@ -357,15 +356,28 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
 
+    if (!stop->stop)
+    {
+        int flag;
+        if (best_score <= alpha_orig) flag = TT_ALPHA;
+        else if (best_score >= beta)  flag = TT_BETA;
+        else                          flag = TT_EXACT;
+
+        int store_score = best_score;
+        if (store_score > 31000) store_score += ply;
+        else if (store_score < -31000) store_score -= ply;
+
+        tt_store(hash, store_score, best_move, depth, flag);
+    }
+
     output.score = best_score;
-    output.move = best_move;
+    output.move  = best_move;
     return output;
 }
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
     clear_ordering_tables();
-
     uint16_t best_move_so_far = 0;
     long long search_start = get_time_ms();
 
