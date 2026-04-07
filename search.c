@@ -87,7 +87,6 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         int victim = board->mailbox[to];
         int attacker = board->mailbox[from];
 
-        // TT move gets highest priority
         if (move == tt_move) { scores[i] = 20000; continue; }
 
         if (flag == 8) { scores[i] = 9500; continue; }
@@ -128,9 +127,12 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     return scored_list;
 }
 
-int quiesce(Position *board, int alpha, int beta, stopConditions *stop)
+int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 {
     stop->nodes++;
+
+    if (ply > stop->seldepth)
+        stop->seldepth = ply;
 
     int static_eval = eval(board, stop->nodes);
 
@@ -154,7 +156,7 @@ int quiesce(Position *board, int alpha, int beta, stopConditions *stop)
         if (!our_king || squareAttacked(&copy, __builtin_ctzll(our_king), !board->turn))
             continue;
 
-        int score = -quiesce(&copy, -beta, -alpha, stop);
+        int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
 
         if (score > best_score) best_score = score;
         if (score >= beta) return best_score;
@@ -170,7 +172,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     searchOutput output = {0};
     stop->nodes++;
 
-    // Stop conditions
+    if (ply > stop->seldepth)
+        stop->seldepth = ply;
+
     if (stop->start_time && (stop->nodes & 2047) == 0 &&
         get_time_ms() - stop->start_time >= stop->max_time)
         stop->stop = 1;
@@ -182,7 +186,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     uint64_t hash = board->hash;
     int alpha_orig = alpha;
 
-    // Draw detection (50-move rule and repetition)
     if (ply > 0)
     {
         if (board->halfmoves >= 100)
@@ -195,7 +198,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = 0, .move = 0};
     }
 
-    // TT probe
     uint16_t tt_move = 0;
     TTEntry *entry = tt_probe(hash);
     if (entry)
@@ -220,16 +222,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (depth <= 0)
     {
-        output.score = quiesce(board, alpha, beta, stop);
+        output.score = quiesce(board, alpha, beta, ply, stop);
         return output;
     }
 
-    // In-check detection (used by NMP and LMR)
     uint64_t king_bb = board->pieces[5] & board->color[board->turn];
     int in_check = (!king_bb ||
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
 
-    // Null move pruning
     const int NULL_MOVE_REDUCTION = 3;
 
     if (depth >= 3 && ply > 0 && !in_check && abs(beta) < 31000)
@@ -263,7 +263,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     move_list.offset = 0;
     legalMoveGen(board, &move_list);
 
-    // Pass tt_move into ordermoves — it handles priority internally
     move_list = ordermoves(board, &move_list, ply, tt_move);
 
     if (move_list.offset == 0)
@@ -383,6 +382,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
+        stop->seldepth = 0;
         searchOutput out = search(board, depth, 0, -32000, 32000, stop);
 
         if (stop->stop)
@@ -406,8 +406,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         char best_uci[6];
         move_to_uci(best_move_so_far, best_uci);
 
-        printf("info depth %d score %s nodes %llu nps %lld time %lld pv %s\n",
-               depth, score_str,
+        printf("info depth %d seldepth %d score %s nodes %llu nps %lld time %lld pv %s\n",
+               depth, stop->seldepth, score_str,
                (unsigned long long)stop->nodes,
                nps, elapsed,
                best_uci);

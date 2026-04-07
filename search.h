@@ -15,6 +15,7 @@ typedef struct {
     uint64_t start_time;
     uint64_t max_time;
     uint64_t max_nodes;
+    int seldepth;
     int         print_info; 
 } stopConditions;
 
