@@ -213,7 +213,7 @@ char uciStart(void) {
         if (tokens[2] == NULL) {
           printf("go nodes: missing node count\n");
         } else {
-          int max_nodes = 0;
+          uint64_t max_nodes = 0;
           for (int i = 0; tokens[2][i] != '\0'; i++)
             max_nodes = max_nodes * 10 + (tokens[2][i] - '0');
 
