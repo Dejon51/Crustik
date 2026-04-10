@@ -119,14 +119,17 @@ Bitboard kingMask(Position *board, bool color)
 void pawnMoves(Position *board, MoveList *list, bool color)
 {
     uint64_t pawns = board->pieces[0] & board->color[color];
-    if (!pawns) return;
+    if (!pawns)
+        return;
 
     uint64_t empty = ~(board->color[0] | board->color[1]);
     uint64_t enemies = board->color[!color];
 
-    if (board->epsquare != -1) {
+    if (board->epsquare != -1)
+    {
         int cap_sq = board->epsquare + (color == 0 ? 8 : -8);
-        if ((board->pieces[0] & board->color[!color]) & (1ULL << cap_sq)) {
+        if ((board->pieces[0] & board->color[!color]) & (1ULL << cap_sq))
+        {
             enemies |= (1ULL << board->epsquare);
         }
     }
@@ -139,47 +142,53 @@ void pawnMoves(Position *board, MoveList *list, bool color)
     const uint64_t RANK_3 = 0x0000FF0000000000ULL;
     const uint64_t RANK_2 = 0x00FF000000000000ULL;
 
-    if (color == 0) 
+    if (color == 0)
     {
         uint64_t norm_pawns = pawns & ~RANK_7;
         uint64_t prom_pawns = pawns & RANK_7;
 
         uint64_t single_push = (norm_pawns >> 8) & empty;
         uint64_t double_push = ((single_push & RANK_3) >> 8) & empty;
-        uint64_t capture_l   = ((norm_pawns & ~FILE_A) >> 9) & enemies;
-        uint64_t capture_r   = ((norm_pawns & ~FILE_H) >> 7) & enemies;
+        uint64_t capture_l = ((norm_pawns & ~FILE_A) >> 9) & enemies;
+        uint64_t capture_r = ((norm_pawns & ~FILE_H) >> 7) & enemies;
 
-        while (single_push) {
+        while (single_push)
+        {
             int to = pop_lsb(&single_push);
             int from = to + 8;
             list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
-        
-        while (double_push) {
+
+        while (double_push)
+        {
             int to = pop_lsb(&double_push);
             int from = to + 16;
             list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
-        
-        while (capture_l) {
+
+        while (capture_l)
+        {
             int to = pop_lsb(&capture_l);
             int from = to + 9;
             list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
-        
-        while (capture_r) {
+
+        while (capture_r)
+        {
             int to = pop_lsb(&capture_r);
             int from = to + 7;
             list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
 
         // Promotions
-        if (prom_pawns) {
-            uint64_t prom_single    = (prom_pawns >> 8) & empty;
+        if (prom_pawns)
+        {
+            uint64_t prom_single = (prom_pawns >> 8) & empty;
             uint64_t prom_capture_l = ((prom_pawns & ~FILE_A) >> 9) & enemies;
             uint64_t prom_capture_r = ((prom_pawns & ~FILE_H) >> 7) & enemies;
 
-            while (prom_single) {
+            while (prom_single)
+            {
                 int to = pop_lsb(&prom_single);
                 int from = to + 8;
                 list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
@@ -187,8 +196,9 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
                 list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
             }
-            
-            while (prom_capture_l) {
+
+            while (prom_capture_l)
+            {
                 int to = pop_lsb(&prom_capture_l);
                 int from = to + 9;
                 list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
@@ -196,8 +206,9 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
                 list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
             }
-            
-            while (prom_capture_r) {
+
+            while (prom_capture_r)
+            {
                 int to = pop_lsb(&prom_capture_r);
                 int from = to + 7;
                 list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
@@ -207,46 +218,52 @@ void pawnMoves(Position *board, MoveList *list, bool color)
             }
         }
     }
-    else 
+    else
     {
         uint64_t norm_pawns = pawns & ~RANK_2;
         uint64_t prom_pawns = pawns & RANK_2;
 
         uint64_t single_push = (norm_pawns << 8) & empty;
         uint64_t double_push = ((single_push & RANK_6) << 8) & empty;
-        uint64_t capture_l   = ((norm_pawns & ~FILE_A) << 7) & enemies;
-        uint64_t capture_r   = ((norm_pawns & ~FILE_H) << 9) & enemies;
+        uint64_t capture_l = ((norm_pawns & ~FILE_A) << 7) & enemies;
+        uint64_t capture_r = ((norm_pawns & ~FILE_H) << 9) & enemies;
 
-        while (single_push) {
+        while (single_push)
+        {
             int to = pop_lsb(&single_push);
             int from = to - 8;
             list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
-        
-        while (double_push) {
+
+        while (double_push)
+        {
             int to = pop_lsb(&double_push);
             int from = to - 16;
             list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
-        
-        while (capture_l) {
+
+        while (capture_l)
+        {
             int to = pop_lsb(&capture_l);
             int from = to - 7;
             list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
-        
-        while (capture_r) {
+
+        while (capture_r)
+        {
             int to = pop_lsb(&capture_r);
             int from = to - 9;
             list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
         }
 
-        if (prom_pawns) {
-            uint64_t prom_single    = (prom_pawns << 8) & empty;
+        if (prom_pawns)
+        {
+            uint64_t prom_single = (prom_pawns << 8) & empty;
             uint64_t prom_capture_l = ((prom_pawns & ~FILE_A) << 7) & enemies;
             uint64_t prom_capture_r = ((prom_pawns & ~FILE_H) << 9) & enemies;
 
-            while (prom_single) {
+            while (prom_single)
+            {
                 int to = pop_lsb(&prom_single);
                 int from = to - 8;
                 list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
@@ -254,8 +271,9 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
                 list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
             }
-            
-            while (prom_capture_l) {
+
+            while (prom_capture_l)
+            {
                 int to = pop_lsb(&prom_capture_l);
                 int from = to - 7;
                 list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
@@ -263,8 +281,9 @@ void pawnMoves(Position *board, MoveList *list, bool color)
                 list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
                 list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
             }
-            
-            while (prom_capture_r) {
+
+            while (prom_capture_r)
+            {
                 int to = pop_lsb(&prom_capture_r);
                 int from = to - 9;
                 list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
@@ -575,7 +594,8 @@ void makeMove(Position *board, MoveList *list, int move)
 
     // Remove old Castling and EP from hash
     board->hash ^= zobrist_table[769 + old_castling];
-    if (old_epsquare != -1) board->hash ^= zobrist_table[785 + (old_epsquare & 7)];
+    if (old_epsquare != -1)
+        board->hash ^= zobrist_table[785 + (old_epsquare & 7)];
 
     board->epsquare = -1;
 
@@ -588,9 +608,10 @@ void makeMove(Position *board, MoveList *list, int move)
 
     // Remove moving piece from 'from' square in hash
     board->hash ^= zobrist_table[(board->turn * 384) + (moving_piece * 64) + from];
-    
+
     // If regular capture, remove victim from hash
-    if (victim != 6) {
+    if (victim != 6)
+    {
         board->hash ^= zobrist_table[(!board->turn * 384) + (victim * 64) + to];
     }
 
@@ -651,7 +672,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->mailbox[F1] = 3;
 
         board->castling &= ~(1U << WHITE_KINGSIDE);
-        
+
         // Update Rook hash for castle
         board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + H1];
         board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + F1];
@@ -667,7 +688,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->mailbox[D1] = 3;
 
         board->castling &= ~(1U << WHITE_QUEENSIDE);
-        
+
         // Update Rook hash for castle
         board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + A1];
         board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + D1];
@@ -683,7 +704,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->mailbox[F8] = 3;
 
         board->castling &= ~(1U << BLACK_KINGSIDE);
-        
+
         // Update Rook hash for castle
         board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + H8];
         board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + F8];
@@ -699,7 +720,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->mailbox[D8] = 3;
 
         board->castling &= ~(1U << BLACK_QUEENSIDE);
-        
+
         // Update Rook hash for castle
         board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + A8];
         board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + D8];
@@ -736,7 +757,7 @@ void makeMove(Position *board, MoveList *list, int move)
         board->pieces[0] &= ~capBB;
         board->color[!board->turn] &= ~capBB;
         board->mailbox[captured_sq] = 6;
-        
+
         // Remove captured pawn from hash
         board->hash ^= zobrist_table[(!board->turn * 384) + (0 * 64) + captured_sq];
     }
@@ -760,7 +781,7 @@ void makeMove(Position *board, MoveList *list, int move)
     board->pieces[piece] |= tobb;
     board->color[board->turn] |= tobb;
     board->mailbox[to] = piece;
-    
+
     // Add piece to 'to' square in hash
     board->hash ^= zobrist_table[(board->turn * 384) + (piece * 64) + to];
 
@@ -774,9 +795,10 @@ void makeMove(Position *board, MoveList *list, int move)
     }
 
     // XOR IN new EP and Castling rights
-    if (board->epsquare != -1) board->hash ^= zobrist_table[785 + (board->epsquare & 7)];
+    if (board->epsquare != -1)
+        board->hash ^= zobrist_table[785 + (board->epsquare & 7)];
     board->hash ^= zobrist_table[769 + board->castling];
-    
+
     // Toggle turn in hash
     board->hash ^= zobrist_table[768];
 
@@ -909,7 +931,7 @@ uint64_t perft(Position *board, int depth)
     // {
     //     return move_list.offset;
     // }
-    
+
     uint64_t nodes = 0;
     for (int i = 0; i < move_list.offset; i++)
     {
@@ -919,33 +941,33 @@ uint64_t perft(Position *board, int depth)
         uint64_t move_nodes = perft(&copy, depth - 1);
         nodes += move_nodes;
 
-    //     if (depth == 5)
-    //     {
-    //         int from = (move_list.movelist[i] >> 6) & 0x3F;
-    //         int to = move_list.movelist[i] & 0x3F;
-    //         int flag = (move_list.movelist[i] >> 12) & 0xF;
+        //     if (depth == 5)
+        //     {
+        //         int from = (move_list.movelist[i] >> 6) & 0x3F;
+        //         int to = move_list.movelist[i] & 0x3F;
+        //         int flag = (move_list.movelist[i] >> 12) & 0xF;
 
-    //         int x1 = from % 8;
-    //         int y1 = 8 - (from / 8);
-    //         int x2 = to % 8;
-    //         int y2 = 8 - (to / 8);
+        //         int x1 = from % 8;
+        //         int y1 = 8 - (from / 8);
+        //         int x2 = to % 8;
+        //         int y2 = 8 - (to / 8);
 
-    //         char promotion = 0;
-    //         if (flag == 5)
-    //             promotion = 'b';
-    //         else if (flag == 6)
-    //             promotion = 'n';
-    //         else if (flag == 7)
-    //             promotion = 'r';
-    //         else if (flag == 8)
-    //             promotion = 'q';
+        //         char promotion = 0;
+        //         if (flag == 5)
+        //             promotion = 'b';
+        //         else if (flag == 6)
+        //             promotion = 'n';
+        //         else if (flag == 7)
+        //             promotion = 'r';
+        //         else if (flag == 8)
+        //             promotion = 'q';
 
-    //         if (promotion)
-    //             printf("%c%i%c%i%c - %llu\n", 'a' + x1, y1, 'a' + x2, y2, promotion, move_nodes);
-    //         else
-    //             printf("%c%i%c%i - %llu\n", 'a' + x1, y1, 'a' + x2, y2, move_nodes);
-    //     }
-    // }
+        //         if (promotion)
+        //             printf("%c%i%c%i%c - %llu\n", 'a' + x1, y1, 'a' + x2, y2, promotion, move_nodes);
+        //         else
+        //             printf("%c%i%c%i - %llu\n", 'a' + x1, y1, 'a' + x2, y2, move_nodes);
+        //     }
+        // }
     }
     return nodes;
 }
