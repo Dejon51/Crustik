@@ -444,7 +444,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
         stop->seldepth = 0;
-        int window = 20; // 20 centipawns
+        int window = 50; // 20 centipawns
 
         int alpha = prev_score - window;
         int beta = prev_score + window;
