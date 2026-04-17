@@ -61,10 +61,22 @@ static void move_to_uci(uint16_t move, char *buf)
 
     switch (flag)
     {
-    case 5: buf[4] = 'b'; buf[5] = '\0'; return;
-    case 6: buf[4] = 'n'; buf[5] = '\0'; return;
-    case 7: buf[4] = 'r'; buf[5] = '\0'; return;
-    case 8: buf[4] = 'q'; buf[5] = '\0'; return;
+    case 5:
+        buf[4] = 'b';
+        buf[5] = '\0';
+        return;
+    case 6:
+        buf[4] = 'n';
+        buf[5] = '\0';
+        return;
+    case 7:
+        buf[4] = 'r';
+        buf[5] = '\0';
+        return;
+    case 8:
+        buf[4] = 'q';
+        buf[5] = '\0';
+        return;
     }
 
     buf[4] = '\0';
@@ -87,12 +99,32 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         int victim = board->mailbox[to];
         int attacker = board->mailbox[from];
 
-        if (move == tt_move) { scores[i] = 20000; continue; }
+        if (move == tt_move)
+        {
+            scores[i] = 20000;
+            continue;
+        }
 
-        if (flag == 8) { scores[i] = 9500; continue; }
-        if (flag == 7) { scores[i] = 9300; continue; }
-        if (flag == 5) { scores[i] = 9200; continue; }
-        if (flag == 6) { scores[i] = 9100; continue; }
+        if (flag == 8)
+        {
+            scores[i] = 9500;
+            continue;
+        }
+        if (flag == 7)
+        {
+            scores[i] = 9300;
+            continue;
+        }
+        if (flag == 5)
+        {
+            scores[i] = 9200;
+            continue;
+        }
+        if (flag == 6)
+        {
+            scores[i] = 9100;
+            continue;
+        }
 
         if (victim != 0 && victim != 6)
         {
@@ -102,8 +134,16 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
             continue;
         }
 
-        if (move == killers[ply][0]) { scores[i] = 9000; continue; }
-        if (move == killers[ply][1]) { scores[i] = 8000; continue; }
+        if (move == killers[ply][0])
+        {
+            scores[i] = 9000;
+            continue;
+        }
+        if (move == killers[ply][1])
+        {
+            scores[i] = 8000;
+            continue;
+        }
 
         int piece_idx = (attacker >= 1 && attacker <= 6) ? attacker - 1 : 0;
         scores[i] = history[piece_idx][to];
@@ -158,9 +198,12 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
 
-        if (score > best_score) best_score = score;
-        if (score >= beta) return best_score;
-        if (score > alpha) alpha = score;
+        if (score > best_score)
+            best_score = score;
+        if (score >= beta)
+            return best_score;
+        if (score > alpha)
+            alpha = score;
     }
 
     return best_score;
@@ -192,7 +235,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             return (searchOutput){.score = 0, .move = 0};
 
         int limit = history_ply - board->halfmoves;
-        if (limit < 0) limit = 0;
+        if (limit < 0)
+            limit = 0;
         for (int i = history_ply - 2; i >= limit; i -= 2)
             if (position_history[i] == hash)
                 return (searchOutput){.score = 0, .move = 0};
@@ -208,14 +252,16 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int tt_score = entry->score;
 
-            if (tt_score > 31000) tt_score -= ply;
-            else if (tt_score < -31000) tt_score += ply;
+            if (tt_score > 31000)
+                tt_score -= ply;
+            else if (tt_score < -31000)
+                tt_score += ply;
 
             if (entry->flag == TT_EXACT)
                 return (searchOutput){.score = tt_score, .move = tt_move};
             if (entry->flag == TT_ALPHA && tt_score <= alpha)
                 return (searchOutput){.score = tt_score, .move = tt_move};
-            if (entry->flag == TT_BETA  && tt_score >= beta)
+            if (entry->flag == TT_BETA && tt_score >= beta)
                 return (searchOutput){.score = tt_score, .move = tt_move};
         }
     }
@@ -236,13 +282,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
         if ((board->pieces[1] | board->pieces[2] |
              board->pieces[3] | board->pieces[4]) &
-             board->color[board->turn])
+            board->color[board->turn])
         {
             Position copy = *board;
             copy.turn ^= 1;
             copy.hash ^= zobrist_table[768];
 
-            if (copy.epsquare != -1) {
+            if (copy.epsquare != -1)
+            {
                 copy.hash ^= zobrist_table[785 + (copy.epsquare & 7)];
                 copy.epsquare = -1;
             }
@@ -250,10 +297,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (history_ply < MAX_GAME_PLY)
                 position_history[history_ply++] = copy.hash;
             int score = -search(&copy, depth - 1 - NULL_MOVE_REDUCTION,
-                                ply + 1, -beta, -beta + 1, stop).score;
+                                ply + 1, -beta, -beta + 1, stop)
+                             .score;
             history_ply--;
 
-            if (stop->stop) return (searchOutput){0};
+            if (stop->stop)
+                return (searchOutput){0};
             if (score >= beta)
                 return (searchOutput){.score = beta, .move = 0};
         }
@@ -281,11 +330,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     for (int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
-        int to      = move & 0x3F;
-        int from    = (move >> 6) & 0x3F;
-        int victim  = board->mailbox[to];
-        int piece   = board->mailbox[from];
-        int is_cap  = (victim != 0 && victim != 6);
+        int to = move & 0x3F;
+        int from = (move >> 6) & 0x3F;
+        int victim = board->mailbox[to];
+        int piece = board->mailbox[from];
+        int is_cap = (victim != 0 && victim != 6);
 
         Position copy = *board;
         makeMove(&copy, &move_list, i);
@@ -308,21 +357,26 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int reduction = 1 + (moves_searched >= 8) + (depth >= 6);
             score = -search(&copy, depth - 1 - reduction, ply + 1,
-                            -alpha - 1, -alpha, stop).score;
+                            -alpha - 1, -alpha, stop)
+                         .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -alpha - 1, -alpha, stop).score;
+                                -alpha - 1, -alpha, stop)
+                             .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -beta, -alpha, stop).score;
+                                -beta, -alpha, stop)
+                             .score;
         }
         else if (moves_searched > 0)
         {
             score = -search(&copy, depth - 1, ply + 1,
-                            -alpha - 1, -alpha, stop).score;
+                            -alpha - 1, -alpha, stop)
+                         .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -beta, -alpha, stop).score;
+                                -beta, -alpha, stop)
+                             .score;
         }
         else
         {
@@ -332,12 +386,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         history_ply--;
         moves_searched++;
 
-        if (stop->stop) break;
+        if (stop->stop)
+            break;
 
         if (score > best_score)
         {
             best_score = score;
-            best_move  = move;
+            best_move = move;
         }
         if (score > alpha)
             alpha = score;
@@ -358,37 +413,60 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!stop->stop)
     {
         int flag;
-        if (best_score <= alpha_orig) flag = TT_ALPHA;
-        else if (best_score >= beta)  flag = TT_BETA;
-        else                          flag = TT_EXACT;
+        if (best_score <= alpha_orig)
+            flag = TT_ALPHA;
+        else if (best_score >= beta)
+            flag = TT_BETA;
+        else
+            flag = TT_EXACT;
 
         int store_score = best_score;
-        if (store_score > 31000) store_score += ply;
-        else if (store_score < -31000) store_score -= ply;
+        if (store_score > 31000)
+            store_score += ply;
+        else if (store_score < -31000)
+            store_score -= ply;
 
         tt_store(hash, store_score, best_move, depth, flag);
     }
 
     output.score = best_score;
-    output.move  = best_move;
+    output.move = best_move;
     return output;
 }
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
     clear_ordering_tables();
+    int prev_score = 0;
     uint16_t best_move_so_far = 0;
     long long search_start = get_time_ms();
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
         stop->seldepth = 0;
-        searchOutput out = search(board, depth, 0, -32000, 32000, stop);
+        int window = 20; // 20 centipawns
+
+        int alpha = prev_score - window;
+        int beta = prev_score + window;
+
+        searchOutput out = search(board, depth, 0, alpha, beta, stop);
+
+        // Fail low: score too low widen downward
+        if (!stop->stop && out.score <= alpha)
+        {
+            out = search(board, depth, 0, -32000, beta, stop);
+        }
+        // Fail high score too high widen upward
+        else if (!stop->stop && out.score >= beta)
+        {
+            out = search(board, depth, 0, alpha, 32000, stop);
+        }
 
         if (stop->stop)
             break;
         if (out.move != 0)
             best_move_so_far = out.move;
+        prev_score = out.score;
 
         long long elapsed = get_time_ms() - search_start;
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
