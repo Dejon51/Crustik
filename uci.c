@@ -368,7 +368,7 @@ char line[20000];
 
                     struct timespec start, stop;
                     searchOutput result =
-                        search(&board, depth, 0, -32000, 32000, &stopcon);
+                        search(&board, depth, 0, -32000, 32000, &stopcon,NULL);
 
                     if (result.move == 0)
                     {

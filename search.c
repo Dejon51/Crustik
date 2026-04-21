@@ -21,6 +21,7 @@ int history_ply = 0;
 static uint16_t killers[MAX_DEPTH][2];
 static int history[6][64];
 
+
 static void clear_ordering_tables(void)
 {
     memset(killers, 0, sizeof(killers));
@@ -310,10 +311,13 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 }
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
-                    stopConditions *stop)
+                    stopConditions *stop, PVLine *pv)
 {
     searchOutput output = {0};
     stop->nodes++;
+
+    if (pv)
+        pv->length = 0;
 
     if (ply > stop->seldepth)
         stop->seldepth = ply;
@@ -397,7 +401,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (history_ply < MAX_GAME_PLY)
                 position_history[history_ply++] = copy.hash;
             int score = -search(&copy, depth - 1 - NULL_MOVE_REDUCTION,
-                                ply + 1, -beta, -beta + 1, stop)
+                                ply + 1, -beta, -beta + 1, stop, NULL)
                              .score;
             history_ply--;
 
@@ -428,6 +432,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int moves_searched = 0;
 
     int static_eval = eval(board, stop->nodes);
+
     for (int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
@@ -439,12 +444,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         int is_cap = (victim != 0 && victim != 6);
         int is_promo = (flag >= 5 && flag <= 8);
         int is_quiet = !is_cap && !is_promo;
+
         if (depth <= 3 && !in_check && is_quiet && moves_searched > 0)
         {
             int margin = 100 * depth;
             if (static_eval + margin <= alpha)
                 continue;
         }
+
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -461,35 +468,38 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             position_history[history_ply++] = hash;
 
         int score;
+        PVLine child_pv = {0};
 
         if (moves_searched >= 4 && depth >= 3 && !in_check && !is_cap)
         {
             int reduction = 1 + (moves_searched >= 8) + (depth >= 6);
             score = -search(&copy, depth - 1 - reduction, ply + 1,
-                            -alpha - 1, -alpha, stop)
+                            -alpha - 1, -alpha, stop, NULL)
                          .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -alpha - 1, -alpha, stop)
+                                -alpha - 1, -alpha, stop, NULL)
                              .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -beta, -alpha, stop)
+                                -beta, -alpha, stop, &child_pv)
                              .score;
         }
         else if (moves_searched > 0)
         {
             score = -search(&copy, depth - 1, ply + 1,
-                            -alpha - 1, -alpha, stop)
+                            -alpha - 1, -alpha, stop, NULL)
                          .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -beta, -alpha, stop)
+                                -beta, -alpha, stop, &child_pv)
                              .score;
         }
         else
         {
-            score = -search(&copy, depth - 1, ply + 1, -beta, -alpha, stop).score;
+            score = -search(&copy, depth - 1, ply + 1,
+                            -beta, -alpha, stop, &child_pv)
+                         .score;
         }
 
         history_ply--;
@@ -503,8 +513,20 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             best_score = score;
             best_move = move;
         }
+
         if (score > alpha)
+        {
             alpha = score;
+
+            if (pv && child_pv.length + 1 <= MAX_PV_LENGTH)
+            {
+                pv->moves[0] = move;
+                memcpy(pv->moves + 1, child_pv.moves,
+                       child_pv.length * sizeof(uint16_t));
+                pv->length = child_pv.length + 1;
+            }
+        }
+
         if (alpha >= beta)
         {
             if (!is_cap)
@@ -548,33 +570,39 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     clear_ordering_tables();
     int prev_score = 0;
     uint16_t best_move_so_far = 0;
+    PVLine best_pv = {0};
     long long search_start = get_time_ms();
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
         stop->seldepth = 0;
-        int window = 50; // 20 centipawns
+        int window = 50;
 
         int alpha = prev_score - window;
         int beta = prev_score + window;
 
-        searchOutput out = search(board, depth, 0, alpha, beta, stop);
+        PVLine pv = {0};
+        searchOutput out = search(board, depth, 0, alpha, beta, stop, &pv);
 
-        // Fail low: score too low widen downward
         if (!stop->stop && out.score <= alpha)
         {
-            out = search(board, depth, 0, -32000, beta, stop);
+            pv = (PVLine){0};
+            out = search(board, depth, 0, -32000, beta, stop, &pv);
         }
-        // Fail high score too high widen upward
         else if (!stop->stop && out.score >= beta)
         {
-            out = search(board, depth, 0, alpha, 32000, stop);
+            pv = (PVLine){0};
+            out = search(board, depth, 0, alpha, 32000, stop, &pv);
         }
 
         if (stop->stop)
             break;
+
         if (out.move != 0)
+        {
             best_move_so_far = out.move;
+            best_pv = pv;
+        }
         prev_score = out.score;
 
         long long elapsed = get_time_ms() - search_start;
@@ -590,14 +618,22 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         else
             snprintf(score_str, sizeof(score_str), "cp %d", out.score);
 
-        char best_uci[6];
-        move_to_uci(best_move_so_far, best_uci);
+        char pv_str[1024] = {0};
+        int pos = 0;
+        for (int i = 0; i < best_pv.length && i < depth && pos < (int)sizeof(pv_str) - 7; i++)
+        {
+            char mv[6];
+            move_to_uci(best_pv.moves[i], mv);
+            pos += snprintf(pv_str + pos, sizeof(pv_str) - pos, "%s ", mv);
+        }
+        if (pos > 0 && pv_str[pos - 1] == ' ')
+            pv_str[pos - 1] = '\0';
 
         printf("info depth %d seldepth %d score %s nodes %llu nps %lld time %lld pv %s\n",
                depth, stop->seldepth, score_str,
                (unsigned long long)stop->nodes,
                nps, elapsed,
-               best_uci);
+               pv_str);
         fflush(stdout);
     }
 

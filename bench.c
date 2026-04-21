@@ -99,7 +99,7 @@ int bench() {
         stop.nodes = 0;
         stop.stop = 0;
 
-        searchOutput result = search(&boards[i], depth, 0, -32000, 32000, &stop);
+        searchOutput result = search(&boards[i], depth, 0, -32000, 32000, &stop,NULL);
         total_nodes += stop.nodes;
         
         printf("FEN %2d/%lu complete.\r", i + 1, (unsigned long)FEN_COUNT);
