@@ -3,7 +3,7 @@ CFLAGS = -g -O3 -flto -march=native
 LDFLAGS =
 TARGET = crustik
 
-SRCS = main.c play.c lmath.c eval.c uci.c fen.c search.c zobrist.c tt.c bench.c
+SRCS = main.c play.c lmath.c eval.c uci.c fen.c search.c zobrist.c tt.c bench.c text.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)

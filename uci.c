@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include "text.h"
 
 void movestring(uint16_t move)
 {
@@ -509,6 +510,10 @@ char line[20000];
         else if (strcmp(tokens[0], "d") == 0)
         {
             d(&board);
+        }
+        else if (strcmp(tokens[0], "help") == 0)
+        {
+            printf("%s", HELP_TEXT);
         }
         else if (strcmp(tokens[0], "pml") == 0)
         {
