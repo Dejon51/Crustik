@@ -11,8 +11,6 @@
 #include "rook_table.h"
 #include "bishop_table.h"
 
-
-
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
@@ -92,7 +90,7 @@ static const int SEE_VAL[6] = {100, 320, 330, 500, 900, 20000};
 int SEE(Position *pos, uint16_t move)
 {
     int from = (move >> 6) & 0x3F;
-    int to   = move & 0x3F;
+    int to = move & 0x3F;
 
     int gain[32];
     int depth = 0;
@@ -108,7 +106,7 @@ int SEE(Position *pos, uint16_t move)
     gain[0] = SEE_VAL[target];
     occ ^= (1ULL << from);
 
-    int stm = pos->turn ^ 1;  // opponent recaptures first
+    int stm = pos->turn ^ 1; // opponent recaptures first
     int next_victim = SEE_VAL[attacker_piece];
 
     while (1)
@@ -117,11 +115,11 @@ int SEE(Position *pos, uint16_t move)
 
         attackers |= (stm == 0 ? white_pawn_attacks[to] : black_pawn_attacks[to]) &
                      (pos->pieces[0] & pos->color[stm]);
-        attackers |= knighttable[to]  & (pos->pieces[2] & pos->color[stm]);
-        attackers |= kingtable[to]    & (pos->pieces[5] & pos->color[stm]);
+        attackers |= knighttable[to] & (pos->pieces[2] & pos->color[stm]);
+        attackers |= kingtable[to] & (pos->pieces[5] & pos->color[stm]);
         attackers |= getbishopAttacks(to, occ) &
                      ((pos->pieces[1] | pos->pieces[4]) & pos->color[stm]);
-        attackers |= getrookAttacks(to, occ)   &
+        attackers |= getrookAttacks(to, occ) &
                      ((pos->pieces[3] | pos->pieces[4]) & pos->color[stm]);
 
         if (!attackers)
@@ -133,7 +131,7 @@ int SEE(Position *pos, uint16_t move)
 
         gain[depth] = next_victim - gain[depth - 1];
 
-        if (-gain[depth] > gain[depth - 1])  // early cutoff
+        if (-gain[depth] > gain[depth - 1]) // early cutoff
             break;
 
         // pick least valuable attacker
@@ -144,7 +142,7 @@ int SEE(Position *pos, uint16_t move)
             uint64_t bb = attackers & pos->pieces[pt] & pos->color[stm];
             if (bb)
             {
-                best_sq    = __builtin_ctzll(bb);
+                best_sq = __builtin_ctzll(bb);
                 piece_type = pt;
                 break;
             }
@@ -210,7 +208,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         {
             int see = SEE(board, move);
             if (see >= 0)
-                scores[i] = 10000 + see; 
+                scores[i] = 10000 + see;
             else
                 scores[i] = -1000 + see;
             continue;
@@ -270,40 +268,43 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     int best_score = static_eval;
 
     for (int i = 0; i < move_list.offset; i++)
-{
-    uint16_t move = move_list.movelist[i];
-
-    int to = move & 0x3F;
-    int from = (move >> 6) & 0x3F;
-
-    int victim = board->mailbox[to];
-    int piece  = board->mailbox[from];
-
-    int is_cap = (victim != 6);
-
-    Position copy = *board;
-    if (is_cap)
     {
-        int see = SEE(board, move);
-        if (see < 0)
+        uint16_t move = move_list.movelist[i];
+
+        int to = move & 0x3F;
+        int from = (move >> 6) & 0x3F;
+
+        int victim = board->mailbox[to];
+        int piece = board->mailbox[from];
+
+        int is_cap = (victim != 6);
+
+        Position copy = *board;
+        if (is_cap)
+        {
+            int margin = SEE_VAL[victim] + 200; // piece value + safety margin
+            if (static_eval + margin < alpha)
+                continue;
+            int see = SEE(board, move);
+            if (see < 0)
+                continue;
+        }
+
+        makeMove(&copy, &move_list, i);
+
+        uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+        if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
             continue;
+
+        int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
+
+        if (score > best_score)
+            best_score = score;
+        if (score >= beta)
+            return best_score;
+        if (score > alpha)
+            alpha = score;
     }
-
-    makeMove(&copy, &move_list, i);
-
-    uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
-    if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
-        continue;
-
-    int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
-
-    if (score > best_score)
-        best_score = score;
-    if (score >= beta)
-        return best_score;
-    if (score > alpha)
-        alpha = score;
-}
 
     return best_score;
 }
@@ -426,6 +427,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     uint16_t best_move = 0;
     int moves_searched = 0;
 
+    int static_eval = eval(board, stop->nodes);
     for (int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
@@ -433,8 +435,16 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         int from = (move >> 6) & 0x3F;
         int victim = board->mailbox[to];
         int piece = board->mailbox[from];
+        int flag = (move >> 12) & 0xF;
         int is_cap = (victim != 0 && victim != 6);
-
+        int is_promo = (flag >= 5 && flag <= 8);
+        int is_quiet = !is_cap && !is_promo;
+        if (depth <= 3 && !in_check && is_quiet && moves_searched > 0)
+        {
+            int margin = 100 * depth;
+            if (static_eval + margin <= alpha)
+                continue;
+        }
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
