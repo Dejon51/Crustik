@@ -7,6 +7,11 @@
 #include "search.h"
 #include "zobrist.h"
 #include "tt.h"
+#include "precomputed.h"
+#include "rook_table.h"
+#include "bishop_table.h"
+
+
 
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
@@ -82,6 +87,81 @@ static void move_to_uci(uint16_t move, char *buf)
     buf[4] = '\0';
 }
 
+static const int SEE_VAL[6] = {100, 320, 330, 500, 900, 20000};
+
+int SEE(Position *pos, uint16_t move)
+{
+    int from = (move >> 6) & 0x3F;
+    int to   = move & 0x3F;
+
+    int gain[32];
+    int depth = 0;
+
+    uint64_t occ = pos->color[0] | pos->color[1];
+
+    int target = pos->mailbox[to];
+    int attacker_piece = pos->mailbox[from];
+
+    if (target == 6)
+        return 0;
+
+    gain[0] = SEE_VAL[target];
+    occ ^= (1ULL << from);
+
+    int stm = pos->turn ^ 1;  // opponent recaptures first
+    int next_victim = SEE_VAL[attacker_piece];
+
+    while (1)
+    {
+        uint64_t attackers = 0ULL;
+
+        attackers |= (stm == 0 ? white_pawn_attacks[to] : black_pawn_attacks[to]) &
+                     (pos->pieces[0] & pos->color[stm]);
+        attackers |= knighttable[to]  & (pos->pieces[2] & pos->color[stm]);
+        attackers |= kingtable[to]    & (pos->pieces[5] & pos->color[stm]);
+        attackers |= getbishopAttacks(to, occ) &
+                     ((pos->pieces[1] | pos->pieces[4]) & pos->color[stm]);
+        attackers |= getrookAttacks(to, occ)   &
+                     ((pos->pieces[3] | pos->pieces[4]) & pos->color[stm]);
+
+        if (!attackers)
+            break;
+
+        depth++;
+        if (depth >= 32)
+            break;
+
+        gain[depth] = next_victim - gain[depth - 1];
+
+        if (-gain[depth] > gain[depth - 1])  // early cutoff
+            break;
+
+        // pick least valuable attacker
+        int best_sq = -1;
+        int piece_type = -1;
+        for (int pt = 0; pt < 6; pt++)
+        {
+            uint64_t bb = attackers & pos->pieces[pt] & pos->color[stm];
+            if (bb)
+            {
+                best_sq    = __builtin_ctzll(bb);
+                piece_type = pt;
+                break;
+            }
+        }
+
+        occ ^= (1ULL << best_sq);
+        next_victim = SEE_VAL[piece_type];
+        stm ^= 1;
+    }
+
+    // backpropagation
+    while (--depth >= 0)
+        gain[depth] = -(gain[depth + 1] > -gain[depth] ? gain[depth + 1] : -gain[depth]);
+
+    return gain[0];
+}
+
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList scored_list = *move_list;
@@ -128,9 +208,11 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
         if (victim != 0 && victim != 6)
         {
-            int att_idx = (attacker > 0 ? attacker - 1 : 0);
-            int vic_idx = victim - 1;
-            scores[i] = 10000 + mvv_lva[vic_idx * 6 + att_idx];
+            int see = SEE(board, move);
+            if (see >= 0)
+                scores[i] = 10000 + see;   // winning/equal captures, ordered by gain
+            else
+                scores[i] = -1000 + see;   // losing captures, searched last
             continue;
         }
 
@@ -188,23 +270,44 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     int best_score = static_eval;
 
     for (int i = 0; i < move_list.offset; i++)
-    {
-        Position copy = *board;
-        moveint(&copy, move_list.movelist[i]);
+{
+    uint16_t move = move_list.movelist[i];
 
-        uint64_t our_king = copy.pieces[5] & copy.color[board->turn];
-        if (!our_king || squareAttacked(&copy, __builtin_ctzll(our_king), !board->turn))
+    int to = move & 0x3F;
+    int from = (move >> 6) & 0x3F;
+
+    int victim = board->mailbox[to];
+    int piece  = board->mailbox[from];
+
+    int is_cap = (victim != 6);
+
+    Position copy = *board;
+    if (is_cap)
+    {
+        int see = SEE(board, move);
+
+        if (see < -100)
             continue;
 
-        int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
-
-        if (score > best_score)
-            best_score = score;
-        if (score >= beta)
-            return best_score;
-        if (score > alpha)
-            alpha = score;
+        if (static_eval + see + 200 < alpha)
+            continue;
     }
+
+    makeMove(&copy, &move_list, i);
+
+    uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+    if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
+        continue;
+
+    int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
+
+    if (score > best_score)
+        best_score = score;
+    if (score >= beta)
+        return best_score;
+    if (score > alpha)
+        alpha = score;
+}
 
     return best_score;
 }
@@ -434,62 +537,139 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     return output;
 }
 
+static int count_repetitions(uint64_t hash)
+{
+    int count = 0;
+    for (int i = history_ply - 2; i >= 0; i -= 2)
+        if (position_history[i] == hash)
+            count++;
+    return count;
+}
+
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
     clear_ordering_tables();
     int prev_score = 0;
-    uint16_t best_move_so_far = 0;
+    uint16_t best_move_so_far  = 0;
+    uint16_t second_move_so_far = 0;
+    int      best_score_so_far  = 0;
+    int      second_score_so_far = -32001;
     long long search_start = get_time_ms();
+
+    int reps_now = count_repetitions(board->hash);
+    int near_rep = (reps_now >= 1);
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
         stop->seldepth = 0;
-        int window = 50; // 20 centipawns
+        int window = 50;
 
         int alpha = prev_score - window;
-        int beta = prev_score + window;
+        int beta  = prev_score + window;
 
+        /* ── First: find the best move normally ── */
         searchOutput out = search(board, depth, 0, alpha, beta, stop);
 
-        // Fail low: score too low widen downward
         if (!stop->stop && out.score <= alpha)
-        {
             out = search(board, depth, 0, -32000, beta, stop);
-        }
-        // Fail high score too high widen upward
         else if (!stop->stop && out.score >= beta)
-        {
             out = search(board, depth, 0, alpha, 32000, stop);
+
+        if (stop->stop) break;
+
+        if (out.move != 0)
+        {
+            best_move_so_far  = out.move;
+            best_score_so_far = out.score;
         }
 
-        if (stop->stop)
-            break;
-        if (out.move != 0)
-            best_move_so_far = out.move;
-        prev_score = out.score;
+        if (near_rep && best_move_so_far != 0 && !stop->stop)
+        {
+            MoveList ml; ml.offset = 0;
+            legalMoveGen(board, &ml);
+            ml = ordermoves(board, &ml, 0, best_move_so_far);
+
+            int second_score = -32001;
+            uint16_t second_move = 0;
+
+            for (int i = 0; i < ml.offset && !stop->stop; i++)
+            {
+                if (ml.movelist[i] == best_move_so_far)
+                    continue;
+
+                Position copy = *board;
+                makeMove(&copy, &ml, i);
+
+                uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+                if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb),
+                                               !board->turn))
+                    continue;
+
+                if (history_ply < MAX_GAME_PLY)
+                    position_history[history_ply++] = board->hash;
+
+                int score = -search(&copy, depth - 1, 1,
+                                    -32000, 32000, stop).score;
+                history_ply--;
+
+                if (score > second_score)
+                {
+                    second_score = score;
+                    second_move  = ml.movelist[i];
+                }
+            }
+
+            if (second_move != 0)
+            {
+                second_move_so_far  = second_move;
+                second_score_so_far = second_score;
+            }
+        }
+
+        prev_score = best_score_so_far;
 
         long long elapsed = get_time_ms() - search_start;
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
 
         char score_str[32];
-        if (out.score > 31000)
+        if (best_score_so_far > 31000)
             snprintf(score_str, sizeof(score_str), "mate %d",
-                     (32000 - out.score + 1) / 2);
-        else if (out.score < -31000)
+                     (32000 - best_score_so_far + 1) / 2);
+        else if (best_score_so_far < -31000)
             snprintf(score_str, sizeof(score_str), "mate -%d",
-                     (32000 + out.score + 1) / 2);
+                     (32000 + best_score_so_far + 1) / 2);
         else
-            snprintf(score_str, sizeof(score_str), "cp %d", out.score);
+            snprintf(score_str, sizeof(score_str), "cp %d", best_score_so_far);
 
         char best_uci[6];
         move_to_uci(best_move_so_far, best_uci);
 
         printf("info depth %d seldepth %d score %s nodes %llu nps %lld time %lld pv %s\n",
                depth, stop->seldepth, score_str,
-               (unsigned long long)stop->nodes,
-               nps, elapsed,
-               best_uci);
+               (unsigned long long)stop->nodes, nps, elapsed, best_uci);
         fflush(stdout);
+    }
+
+    if (near_rep && second_move_so_far != 0)
+    {
+        const int AVOID_REP_THRESHOLD = 150;
+
+        int score_diff = best_score_so_far - second_score_so_far;
+
+        if (score_diff <= AVOID_REP_THRESHOLD)
+        {
+            char mv[6]; move_to_uci(second_move_so_far, mv);
+            printf("info string avoiding repetition, playing %s (diff %d cp)\n",
+                   mv, score_diff);
+            fflush(stdout);
+            return second_move_so_far;
+        }
+        else
+        {
+            printf("info string near repetition but second move too bad (%d cp), accepting draw\n",
+                   score_diff);
+            fflush(stdout);
+        }
     }
 
     return best_move_so_far;
