@@ -25,8 +25,6 @@ typedef struct {
     uint16_t moves[MAX_PV_LENGTH];
     int length;
 } PVLine;
-
-
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *);

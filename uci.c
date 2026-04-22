@@ -164,7 +164,7 @@ char uciStart(void)
 
     fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq",
             "-", "0", "1");
-
+    
 char line[20000];
 
     char *tokens[8850];
