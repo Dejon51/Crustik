@@ -125,5 +125,7 @@ int findMinValue(int arr[], int size);
 
 int matoi(const char *str);
 
+float logf(float x);
+
 
 #endif

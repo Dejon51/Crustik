@@ -10,7 +10,6 @@
 #include "precomputed.h"
 #include "rook_table.h"
 #include "bishop_table.h"
-#include <math.h>
 
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
@@ -445,23 +444,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         int is_cap = (victim != 0 && victim != 6);
         int is_promo = (flag >= 5 && flag <= 8);
         int is_quiet = !is_cap && !is_promo;
-        int piece_idx = (piece >= 1 && piece <= 6) ? piece - 1 : 0;
-        int is_killer = (move == killers[ply][0] || move == killers[ply][1]);
 
-        if (depth <= 3 && !in_check && is_quiet && !is_killer && moves_searched > 0)
+        if (depth <= 3 && !in_check && is_quiet && moves_searched > 0)
         {
             int margin = 100 * depth;
             if (static_eval + margin <= alpha)
                 continue;
-        }
-        if (!in_check && is_quiet && depth <= 5)
-        {
-            int lmp_threshold = 3 + depth * depth;
-            if (moves_searched >= lmp_threshold)
-            {
-                if (!is_killer && history[piece_idx][to] <= 0)
-                    continue;
-            }
         }
 
         Position copy = *board;
@@ -482,39 +470,36 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         int score;
         PVLine child_pv = {0};
 
-        // log based reduction trigger at moves_searched >= 2 
-        if (moves_searched >= 2 && depth >= 3 && !in_check && !is_cap && !is_promo)
+        if (moves_searched >= 4 && depth >= 3 && !in_check && !is_cap)
         {
-            int reduction = (int)(0.75f + logf((float)depth) * logf((float)(moves_searched + 1)) / 2.25f);
-
-            if (history[piece_idx][to] < 0)    reduction++;
-            if (history[piece_idx][to] > 5000) reduction--;
-            if (is_killer)                     reduction--;
-
-            if (reduction < 1)         reduction = 1;
-            if (reduction > depth - 1) reduction = depth - 1;
-
+            int reduction = 1 + (moves_searched >= 8) + (depth >= 6);
             score = -search(&copy, depth - 1 - reduction, ply + 1,
-                            -alpha - 1, -alpha, stop, NULL).score;
+                            -alpha - 1, -alpha, stop, NULL)
+                         .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL).score;
+                                -alpha - 1, -alpha, stop, NULL)
+                             .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -beta, -alpha, stop, &child_pv).score;
+                                -beta, -alpha, stop, &child_pv)
+                             .score;
         }
         else if (moves_searched > 0)
         {
             score = -search(&copy, depth - 1, ply + 1,
-                            -alpha - 1, -alpha, stop, NULL).score;
+                            -alpha - 1, -alpha, stop, NULL)
+                         .score;
             if (!stop->stop && score > alpha)
                 score = -search(&copy, depth - 1, ply + 1,
-                                -beta, -alpha, stop, &child_pv).score;
+                                -beta, -alpha, stop, &child_pv)
+                             .score;
         }
         else
         {
             score = -search(&copy, depth - 1, ply + 1,
-                            -beta, -alpha, stop, &child_pv).score;
+                            -beta, -alpha, stop, &child_pv)
+                         .score;
         }
 
         history_ply--;
@@ -547,28 +532,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!is_cap)
             {
                 store_killer(move, ply);
+                int piece_idx = (piece >= 1 && piece <= 6) ? piece - 1 : 0;
                 history[piece_idx][to] += depth * depth;
                 if (history[piece_idx][to] > 1000000)
                     scale_history();
-
-                /* History malus: penalise quiets searched before the cutoff move */
-                for (int j = 0; j < i; j++)
-                {
-                    uint16_t prev       = move_list.movelist[j];
-                    int      prev_to    = prev & 0x3F;
-                    int      prev_from  = (prev >> 6) & 0x3F;
-                    int      prev_flag  = (prev >> 12) & 0xF;
-                    int      prev_vic   = board->mailbox[prev_to];
-                    int      prev_cap   = (prev_vic != 0 && prev_vic != 6);
-                    int      prev_promo = (prev_flag >= 5 && prev_flag <= 8);
-
-                    if (!prev_cap && !prev_promo)
-                    {
-                        int prev_piece = board->mailbox[prev_from];
-                        int prev_idx   = (prev_piece >= 1 && prev_piece <= 6) ? prev_piece - 1 : 0;
-                        history[prev_idx][prev_to] -= depth * depth;
-                    }
-                }
             }
             break;
         }
