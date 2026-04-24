@@ -137,7 +137,7 @@ int bench_movegen() {
         Position temp_board = board;
         
         clock_t start = clock();
-        unsigned long long nodes = perft(&temp_board, depth);
+        unsigned long long nodes = perft(&temp_board, depth,0);
         clock_t end = clock();
         
         double time_spent = (double)(end - start) / CLOCKS_PER_SEC;

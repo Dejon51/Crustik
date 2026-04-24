@@ -751,7 +751,7 @@ void makeMove(Position *board, MoveList *list, int move)
     // en passant capture
     if (moving_piece == 0 && to == old_epsquare && old_epsquare != -1)
     {
-        int captured_sq = to - (direction << 3);
+        int captured_sq = to - (direction * 8);
         uint64_t capBB = 1ULL << captured_sq;
 
         board->pieces[0] &= ~capBB;
@@ -791,7 +791,7 @@ void makeMove(Position *board, MoveList *list, int move)
         int to_y = to >> 3;
 
         if (abs1(to_y - from_y) == 2)
-            board->epsquare = from + (direction << 3);
+            board->epsquare = from + (direction * 8);
     }
 
     // XOR IN new EP and Castling rights
@@ -919,7 +919,7 @@ void captureMoves(Position *board, MoveList *list, bool color)
 //     board->turn ^= 1;
 // }
 
-uint64_t perft(Position *board, int depth)
+uint64_t perft(Position *board, int depth, int divide)
 {
     if (depth == 0)
         return 1;
@@ -938,36 +938,37 @@ uint64_t perft(Position *board, int depth)
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
-        uint64_t move_nodes = perft(&copy, depth - 1);
+        uint64_t move_nodes = perft(&copy, depth - 1,divide);
         nodes += move_nodes;
+            
+            if (depth == divide && divide != 0)
+            {
+                int from = (move_list.movelist[i] >> 6) & 0x3F;
+                int to = move_list.movelist[i] & 0x3F;
+                int flag = (move_list.movelist[i] >> 12) & 0xF;
 
-        //     if (depth == 5)
-        //     {
-        //         int from = (move_list.movelist[i] >> 6) & 0x3F;
-        //         int to = move_list.movelist[i] & 0x3F;
-        //         int flag = (move_list.movelist[i] >> 12) & 0xF;
+                int x1 = from % 8;
+                int y1 = 8 - (from / 8);
+                int x2 = to % 8;
+                int y2 = 8 - (to / 8);
 
-        //         int x1 = from % 8;
-        //         int y1 = 8 - (from / 8);
-        //         int x2 = to % 8;
-        //         int y2 = 8 - (to / 8);
+                char promotion = 0;
+                if (flag == 5)
+                    promotion = 'b';
+                else if (flag == 6)
+                    promotion = 'n';
+                else if (flag == 7)
+                    promotion = 'r';
+                else if (flag == 8)
+                    promotion = 'q';
 
-        //         char promotion = 0;
-        //         if (flag == 5)
-        //             promotion = 'b';
-        //         else if (flag == 6)
-        //             promotion = 'n';
-        //         else if (flag == 7)
-        //             promotion = 'r';
-        //         else if (flag == 8)
-        //             promotion = 'q';
-
-        //         if (promotion)
-        //             printf("%c%i%c%i%c - %llu\n", 'a' + x1, y1, 'a' + x2, y2, promotion, move_nodes);
-        //         else
-        //             printf("%c%i%c%i - %llu\n", 'a' + x1, y1, 'a' + x2, y2, move_nodes);
-        //     }
-        // }
+                if (promotion){
+                    printf("%c%i%c%i%c - %lu\n", 'a' + x1, y1, 'a' + x2, y2, promotion, move_nodes);
+                }
+                else{
+                    printf("%c%i%c%i - %lu\n", 'a' + x1, y1, 'a' + x2, y2, move_nodes);
+                }
+            }
     }
     return nodes;
 }

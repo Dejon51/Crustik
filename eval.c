@@ -264,7 +264,7 @@ int assessSquare(int ind, Position *board)
     return val;
 }
 
-int eval(Position *board, int nodes)
+int eval(Position *board)
 {
     int mg[2] = {0, 0};
     int eg[2] = {0, 0};
@@ -305,8 +305,7 @@ int eval(Position *board, int nodes)
 
     if (gamePhase > 24) gamePhase = 24; // cap in case of promotions
     int egPhase = 24 - gamePhase;
-    int random = nodes % 16 - 15; 
     int base_eval = (mgScore * gamePhase + egScore * egPhase) / 24;
-    int noise = ((nodes & 15) - 8);
-    return base_eval + noise;
+
+    return base_eval;
 }

@@ -16,7 +16,7 @@ int assessSquare(int ind, Position *board);
 
 void init_tables();
 
-int eval(Position *board,int nodes);
+int eval(Position *board);
 
 
 #endif

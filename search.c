@@ -255,14 +255,14 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     if (ply > stop->seldepth)
         stop->seldepth = ply;
 
-    int static_eval = eval(board, stop->nodes);
+    int static_eval = eval(board);
 
     if (static_eval >= beta)
         return static_eval;
     if (static_eval > alpha)
         alpha = static_eval;
 
-    MoveList move_list = {};
+    MoveList move_list = {0};
     captureMoves(board, &move_list, board->turn);
     move_list = ordermoves(board, &move_list, 0, 0);
 
@@ -431,7 +431,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     uint16_t best_move = 0;
     int moves_searched = 0;
 
-    int static_eval = eval(board, stop->nodes);
+    int static_eval = eval(board);
 
     for (int i = 0; i < move_list.offset; i++)
     {

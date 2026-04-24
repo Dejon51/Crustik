@@ -164,8 +164,8 @@ char uciStart(void)
 
     fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq",
             "-", "0", "1");
-    
-char line[20000];
+
+    char line[20000];
 
     char *tokens[8850];
     while (run)
@@ -229,7 +229,7 @@ char line[20000];
             }
             else if (strcmp(tokens[1], "fen") == 0)
             {
-                fenRead(&board, tokens[2], tokens[3], tokens[4], tokens[5], tokens[6],tokens[7]);
+                fenRead(&board, tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7]);
 
                 int i = 8;
                 if (tokens[i] && strcmp(tokens[i], "moves") == 0)
@@ -368,7 +368,7 @@ char line[20000];
 
                     struct timespec start, stop;
                     searchOutput result =
-                        search(&board, depth, 0, -32000, 32000, &stopcon,NULL);
+                        search(&board, depth, 0, -32000, 32000, &stopcon, NULL);
 
                     if (result.move == 0)
                     {
@@ -391,28 +391,38 @@ char line[20000];
             }
             else if (strcmp(tokens[1], "perft") == 0)
             {
-                if (tokens[2] == NULL)
+                if (!tokens[2])
                 {
                     printf("go perft: missing depth value\n");
                 }
                 else
                 {
+                    int divide = 0;
+
+                    if (tokens[3] && strcmp(tokens[3], "divide") == 0)
+                    {
+                        divide = 1;
+                    }
+
                     int depth = 0;
                     for (int i = 0; tokens[2][i] != '\0'; i++)
                         depth = depth * 10 + (tokens[2][i] - '0');
 
                     struct timespec start, stop;
+
 #ifdef __linux__
                     clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-                    uint64_t total_nodes = perft(&board, depth);
+                    uint64_t total_nodes = perft(&board, depth, divide);
                     clock_gettime(CLOCK_MONOTONIC_RAW, &stop);
 #else
                     clock_gettime(CLOCK_MONOTONIC, &start);
-                    uint64_t total_nodes = perft(&board, depth);
+                    uint64_t total_nodes = perft(&board, depth, divide);
                     clock_gettime(CLOCK_MONOTONIC, &stop);
 #endif
+
                     long sec = stop.tv_sec - start.tv_sec;
                     long nsec = stop.tv_nsec - start.tv_nsec;
+
                     if (nsec < 0)
                     {
                         sec -= 1;
@@ -420,9 +430,12 @@ char line[20000];
                     }
 
                     double elapsed_ms = (double)sec * 1000.0 + (double)nsec / 1000000.0;
-                    double nps = total_nodes / (elapsed_ms / 1000.0);
+
+                    double seconds = elapsed_ms / 1000.0;
+                    double nps = (seconds > 0.0) ? (double)total_nodes / seconds : 0.0;
+
                     printf("Total Nodes: %llu\n", (unsigned long long)total_nodes);
-                    printf("Elapsed time: %lf ms\n", elapsed_ms);
+                    printf("Elapsed time: %.3f ms\n", elapsed_ms);
                     printf("N/S: %.0f\n", nps);
                 }
             }
