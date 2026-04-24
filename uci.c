@@ -399,14 +399,34 @@ char uciStart(void)
                 {
                     int divide = 0;
 
-                    if (tokens[3] && strcmp(tokens[3], "divide") == 0)
+
+                    if (tokens[3] && strcmp(tokens[3], "divide") == 0 && tokens[4])
                     {
-                        divide = 1;
+                        divide = 0;
+
+                        for (int i = 0; tokens[4][i] != '\0'; i++)
+                        {
+                            if (tokens[4][i] < '0' || tokens[4][i] > '9')
+                            {
+                                printf("Invalid divide value\n");
+                                divide = 0;
+                                break;
+                            }
+                            divide = divide * 10 + (tokens[4][i] - '0');
+                        }
                     }
 
                     int depth = 0;
                     for (int i = 0; tokens[2][i] != '\0'; i++)
+                    {
+                        if (tokens[2][i] < '0' || tokens[2][i] > '9')
+                        {
+                            printf("Invalid depth value\n");
+                            depth = 0;
+                            break;
+                        }
                         depth = depth * 10 + (tokens[2][i] - '0');
+                    }
 
                     struct timespec start, stop;
 
@@ -429,10 +449,9 @@ char uciStart(void)
                         nsec += 1000000000L;
                     }
 
-                    double elapsed_ms = (double)sec * 1000.0 + (double)nsec / 1000000.0;
-
-                    double seconds = elapsed_ms / 1000.0;
+                    double seconds = (double)sec + (double)nsec / 1000000000.0;
                     double nps = (seconds > 0.0) ? (double)total_nodes / seconds : 0.0;
+                    double elapsed_ms = seconds * 1000.0;
 
                     printf("Total Nodes: %llu\n", (unsigned long long)total_nodes);
                     printf("Elapsed time: %.3f ms\n", elapsed_ms);
