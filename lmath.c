@@ -213,14 +213,12 @@ int matoi(const char *str)
 #define SQRT2 1.41421356237f
 
 float my_logf(float x) {
-    // 1. Edge Case Handling
     if (x <= 0.0f) return -1.0f / 0.0f;
     
     union { float f; unsigned int i; } conv;
     conv.f = x;
     unsigned int ix = conv.i;
 
-    // Bias for float is 127
     int exp = (int)(ix >> 23) - 127;
     
     conv.i = (ix & 0x7FFFFF) | 0x3F800000;
