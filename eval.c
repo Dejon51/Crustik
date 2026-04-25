@@ -3,6 +3,9 @@
 #include "stdio.h"
 #include "play.h"
 #include <stdio.h>
+#include "precomputed.h"
+#include "rook_table.h"
+#include "bishop_table.h"
 
 // #define ILLEGALMOVE 42 // Answer to the universe
 
@@ -24,6 +27,7 @@ typedef enum
 
 #define FLIP(sq) ((sq)^56)
 #define OTHER(side) ((side)^ 1)
+
 
 int mg_value[6] = { 82, 337, 365, 477, 1025,  0};
 int eg_value[6] = { 94, 281, 297, 512,  936,  0};
@@ -160,6 +164,9 @@ int eg_king_table[64] = {
     -53, -34, -21, -11, -28, -14, -24, -43
 };
 
+int mobility_mg[6] = {0, 4, 4, 2, 1, 0};
+int mobility_eg[6] = {0, 2, 3, 2, 1, 0};
+
 int* mg_pesto_table[6] =
 {
     mg_pawn_table,
@@ -184,6 +191,8 @@ int gamephaseInc[12] = {0,0,1,1,1,1,2,2,4,4,0,0};
 int mg_table[12][64];
 int eg_table[12][64];
 
+
+
 void init_tables()
 {
     int pc, p, sq;
@@ -197,71 +206,42 @@ void init_tables()
     }
 }
 
-
-int assessSquare(int ind, Position *board)
+int getMobility(Position *board, int piece, int sq, int side)
 {
+    uint64_t occ = board->color[0] | board->color[1];
+    uint64_t own = board->color[side];
 
-    if (ind > 63 || ind < 0)
+    switch (piece)
     {
-        return ILLEGALMOVE; // Random Value for invalid move
-    }
+        case 2: { // knight
+            uint64_t attacks = knighttable[sq] & ~own;
+            return __builtin_popcountll(attacks);
+        }
 
-    int val = 0;
-    if ((board->color[0] >> ind) & 1)
-    {
-        if ((board->pieces[0] >> ind) & 1)
-        {
-            return PAWNVAL;
+        case 1: { // bishop
+            uint64_t attacks = getbishopAttacks(sq, occ) & ~own;
+            return __builtin_popcountll(attacks);
         }
-        if ((board->pieces[1] >> ind) & 1)
-        {
-            return BISHOPVAL;
+
+        case 3: { // rook
+            uint64_t attacks = getrookAttacks(sq, occ) & ~own;
+            return __builtin_popcountll(attacks);
         }
-        if ((board->pieces[2] >> ind) & 1)
-        {
-            return KNIGHTVAL;
+
+        case 4: { // queen
+            uint64_t attacks =
+                (getbishopAttacks(sq, occ) |
+                 getrookAttacks(sq, occ)) & ~own;
+
+            int mob = __builtin_popcountll(attacks);
+
+            // prevent eval explosion
+            return mob > 14 ? 14 : mob;
         }
-        if ((board->pieces[3] >> ind) & 1)
-        {
-            return ROOKVAL;
-        }
-        if ((board->pieces[4] >> ind) & 1)
-        {
-            return QUEENVAL;
-        }
-        if ((board->pieces[5] >> ind) & 1)
-        {
-            return KINGVAL;
-        }
+
+        default:
+            return 0;
     }
-    else
-    {
-        if ((board->pieces[0] >> ind) & 1)
-        {
-            return -PAWNVAL;
-        }
-        if ((board->pieces[1] >> ind) & 1)
-        {
-            return -BISHOPVAL;
-        }
-        if ((board->pieces[2] >> ind) & 1)
-        {
-            return -KNIGHTVAL;
-        }
-        if ((board->pieces[3] >> ind) & 1)
-        {
-            return -ROOKVAL;
-        }
-        if ((board->pieces[4] >> ind) & 1)
-        {
-            return -QUEENVAL;
-        }
-        if ((board->pieces[5] >> ind) & 1)
-        {
-            return -KINGVAL;
-        }
-    }
-    return val;
 }
 
 int eval(Position *board)
@@ -280,6 +260,9 @@ int eval(Position *board)
             bb &= bb - 1;
 
             int pc = 2*piece + 0;
+            int mob = getMobility(board, piece, sq, 0);
+            mg[0] += mob * mobility_mg[piece];
+            eg[0] += mob * mobility_eg[piece];
             mg[0] += mg_table[pc][sq];
             eg[0] += eg_table[pc][sq];
             gamePhase += gamephaseInc[pc];
@@ -293,6 +276,9 @@ int eval(Position *board)
             bb &= bb - 1;
 
             int pc = 2*piece + 1;
+            int mob = getMobility(board, piece, sq, 1);
+            mg[1] += mob * mobility_mg[piece];
+            eg[1] += mob * mobility_eg[piece];
             mg[1] += mg_table[pc][sq];
             eg[1] += eg_table[pc][sq];
             gamePhase += gamephaseInc[pc];

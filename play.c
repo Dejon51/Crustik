@@ -360,7 +360,7 @@ void rookMoves(Position *board, MoveList *list, bool color)
 
 bool squareAttacked_custom(Position *b, int sq, int enemy, uint64_t custom_occ)
 {
-    uint64_t enemyPieces = b->color[enemy];
+    uint64_t enemyPieces = b->color[enemy] & custom_occ; 
 
     if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
         (b->pieces[0] & enemyPieces))
@@ -382,7 +382,6 @@ bool squareAttacked_custom(Position *b, int sq, int enemy, uint64_t custom_occ)
 
     return false;
 }
-
 void kingMoves(Position *board, MoveList *list, bool color, int check_count)
 {
     int us = color;
@@ -563,14 +562,24 @@ void legalMoveGen(Position *board, MoveList *list)
                 continue;
         }
 
-        if (!(to_bb & check_mask))
-            continue;
-
+        // --- EN PASSANT LOGIC ---
         if (board->mailbox[from] == 0 && (to == board->epsquare && board->epsquare != -1))
         {
             int cap_sq = to + (us == 0 ? 8 : -8);
+            
+            // If in check, the EP move must resolve it either by moving to the check mask OR capturing the checker
+            if (check_count == 1 && !(to_bb & check_mask) && !((1ULL << cap_sq) & check_mask))
+                continue;
+
             uint64_t occ_after_ep = occ & ~from_bb & ~(1ULL << cap_sq) | to_bb;
             if (squareAttacked_custom(board, king_sq, them, occ_after_ep))
+                continue;
+        }
+        else
+        {
+            // --- NORMAL MOVES ---
+            // Must obey the check mask
+            if (!(to_bb & check_mask))
                 continue;
         }
 
