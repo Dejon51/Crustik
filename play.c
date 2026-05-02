@@ -68,13 +68,11 @@ Bitboard bishopMask(Position *board, bool color)
 
     uint64_t sliding = (board->pieces[1] | board->pieces[4]) & board->color[color];
 
-    uint64_t occupancy = board->color[0] | board->color[1];
-
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
 
-        uint64_t attacks = getbishopAttacks(ind, occupancy);
+        uint64_t attacks = getbishopAttacks(ind, board->color[2]);
 
         attacks &= ~board->color[color];
 
@@ -90,13 +88,12 @@ Bitboard rookMask(Position *board, bool color)
 
     uint64_t sliding = (board->pieces[3] | board->pieces[4]) & board->color[color];
 
-    uint64_t occupancy = board->color[0] | board->color[1];
 
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
 
-        uint64_t attacks = getrookAttacks(ind, occupancy);
+        uint64_t attacks = getrookAttacks(ind, board->color[2]);
 
         attacks &= ~board->color[color];
 
@@ -116,184 +113,203 @@ Bitboard kingMask(Position *board, bool color)
     return kingtable[__builtin_ctzll(kingscolor)];
 }
 
-void pawnMoves(Position *board, MoveList *list, bool color)
+// Optimized: Separate white pawn moves (no color branching)
+void pawnMovesWhite(Position *board, MoveList *list)
 {
-    uint64_t pawns = board->pieces[0] & board->color[color];
+    uint64_t pawns = board->pieces[0] & board->color[0];
     if (!pawns)
         return;
 
-    uint64_t empty = ~(board->color[0] | board->color[1]);
-    uint64_t enemies = board->color[!color];
+    uint64_t empty = ~(board->color[2]);
+    uint64_t enemies = board->color[1];
 
     if (board->epsquare != -1)
     {
-        int cap_sq = board->epsquare + (color == 0 ? 8 : -8);
-        if ((board->pieces[0] & board->color[!color]) & (1ULL << cap_sq))
+        int cap_sq = board->epsquare + 8;
+        if ((board->pieces[0] & board->color[1]) & (1ULL << cap_sq))
         {
             enemies |= (1ULL << board->epsquare);
         }
     }
 
-    // Bitboard constants for bounds checking and rank masks
     const uint64_t FILE_A = 0x0101010101010101ULL;
     const uint64_t FILE_H = 0x8080808080808080ULL;
     const uint64_t RANK_7 = 0x000000000000FF00ULL;
-    const uint64_t RANK_6 = 0x0000000000FF0000ULL;
     const uint64_t RANK_3 = 0x0000FF0000000000ULL;
-    const uint64_t RANK_2 = 0x00FF000000000000ULL;
 
-    if (color == 0)
+    uint64_t norm_pawns = pawns & ~RANK_7;
+    uint64_t prom_pawns = pawns & RANK_7;
+
+    uint64_t single_push = (norm_pawns >> 8) & empty;
+    uint64_t double_push = ((single_push & RANK_3) >> 8) & empty;
+    uint64_t capture_l = ((norm_pawns & ~FILE_A) >> 9) & enemies;
+    uint64_t capture_r = ((norm_pawns & ~FILE_H) >> 7) & enemies;
+
+    while (single_push)
     {
-        uint64_t norm_pawns = pawns & ~RANK_7;
-        uint64_t prom_pawns = pawns & RANK_7;
-
-        uint64_t single_push = (norm_pawns >> 8) & empty;
-        uint64_t double_push = ((single_push & RANK_3) >> 8) & empty;
-        uint64_t capture_l = ((norm_pawns & ~FILE_A) >> 9) & enemies;
-        uint64_t capture_r = ((norm_pawns & ~FILE_H) >> 7) & enemies;
-
-        while (single_push)
-        {
-            int to = pop_lsb(&single_push);
-            int from = to + 8;
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
-        }
-
-        while (double_push)
-        {
-            int to = pop_lsb(&double_push);
-            int from = to + 16;
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
-        }
-
-        while (capture_l)
-        {
-            int to = pop_lsb(&capture_l);
-            int from = to + 9;
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
-        }
-
-        while (capture_r)
-        {
-            int to = pop_lsb(&capture_r);
-            int from = to + 7;
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
-        }
-
-        // Promotions
-        if (prom_pawns)
-        {
-            uint64_t prom_single = (prom_pawns >> 8) & empty;
-            uint64_t prom_capture_l = ((prom_pawns & ~FILE_A) >> 9) & enemies;
-            uint64_t prom_capture_r = ((prom_pawns & ~FILE_H) >> 7) & enemies;
-
-            while (prom_single)
-            {
-                int to = pop_lsb(&prom_single);
-                int from = to + 8;
-                list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
-            }
-
-            while (prom_capture_l)
-            {
-                int to = pop_lsb(&prom_capture_l);
-                int from = to + 9;
-                list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
-            }
-
-            while (prom_capture_r)
-            {
-                int to = pop_lsb(&prom_capture_r);
-                int from = to + 7;
-                list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
-            }
-        }
+        int to = pop_lsb(&single_push);
+        int from = to + 8;
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
     }
-    else
+
+    while (double_push)
     {
-        uint64_t norm_pawns = pawns & ~RANK_2;
-        uint64_t prom_pawns = pawns & RANK_2;
+        int to = pop_lsb(&double_push);
+        int from = to + 16;
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+    }
 
-        uint64_t single_push = (norm_pawns << 8) & empty;
-        uint64_t double_push = ((single_push & RANK_6) << 8) & empty;
-        uint64_t capture_l = ((norm_pawns & ~FILE_A) << 7) & enemies;
-        uint64_t capture_r = ((norm_pawns & ~FILE_H) << 9) & enemies;
+    while (capture_l)
+    {
+        int to = pop_lsb(&capture_l);
+        int from = to + 9;
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+    }
 
-        while (single_push)
+    while (capture_r)
+    {
+        int to = pop_lsb(&capture_r);
+        int from = to + 7;
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+    }
+
+    // Promotions
+    if (prom_pawns)
+    {
+        uint64_t prom_single = (prom_pawns >> 8) & empty;
+        uint64_t prom_capture_l = ((prom_pawns & ~FILE_A) >> 9) & enemies;
+        uint64_t prom_capture_r = ((prom_pawns & ~FILE_H) >> 7) & enemies;
+
+        while (prom_single)
         {
-            int to = pop_lsb(&single_push);
-            int from = to - 8;
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+            int to = pop_lsb(&prom_single);
+            int from = to + 8;
+            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
         }
 
-        while (double_push)
+        while (prom_capture_l)
         {
-            int to = pop_lsb(&double_push);
-            int from = to - 16;
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+            int to = pop_lsb(&prom_capture_l);
+            int from = to + 9;
+            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
         }
 
-        while (capture_l)
+        while (prom_capture_r)
         {
-            int to = pop_lsb(&capture_l);
-            int from = to - 7;
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
-        }
-
-        while (capture_r)
-        {
-            int to = pop_lsb(&capture_r);
-            int from = to - 9;
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
-        }
-
-        if (prom_pawns)
-        {
-            uint64_t prom_single = (prom_pawns << 8) & empty;
-            uint64_t prom_capture_l = ((prom_pawns & ~FILE_A) << 7) & enemies;
-            uint64_t prom_capture_r = ((prom_pawns & ~FILE_H) << 9) & enemies;
-
-            while (prom_single)
-            {
-                int to = pop_lsb(&prom_single);
-                int from = to - 8;
-                list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
-            }
-
-            while (prom_capture_l)
-            {
-                int to = pop_lsb(&prom_capture_l);
-                int from = to - 7;
-                list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
-            }
-
-            while (prom_capture_r)
-            {
-                int to = pop_lsb(&prom_capture_r);
-                int from = to - 9;
-                list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-                list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
-            }
+            int to = pop_lsb(&prom_capture_r);
+            int from = to + 7;
+            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
         }
     }
 }
+
+// Optimized: Separate black pawn moves (no color branching)
+void pawnMovesBlack(Position *board, MoveList *list)
+{
+    uint64_t pawns = board->pieces[0] & board->color[1];
+    if (!pawns)
+        return;
+
+    uint64_t empty = ~(board->color[2]);
+    uint64_t enemies = board->color[0];
+
+    if (board->epsquare != -1)
+    {
+        int cap_sq = board->epsquare - 8;
+        if ((board->pieces[0] & board->color[0]) & (1ULL << cap_sq))
+        {
+            enemies |= (1ULL << board->epsquare);
+        }
+    }
+
+    const uint64_t FILE_A = 0x0101010101010101ULL;
+    const uint64_t FILE_H = 0x8080808080808080ULL;
+    const uint64_t RANK_2 = 0x00FF000000000000ULL;
+    const uint64_t RANK_6 = 0x0000000000FF0000ULL;
+
+    uint64_t norm_pawns = pawns & ~RANK_2;
+    uint64_t prom_pawns = pawns & RANK_2;
+
+    uint64_t single_push = (norm_pawns << 8) & empty;
+    uint64_t double_push = ((single_push & RANK_6) << 8) & empty;
+    uint64_t capture_l = ((norm_pawns & ~FILE_A) << 7) & enemies;
+    uint64_t capture_r = ((norm_pawns & ~FILE_H) << 9) & enemies;
+
+    while (single_push)
+    {
+        int to = pop_lsb(&single_push);
+        int from = to - 8;
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+    }
+
+    while (double_push)
+    {
+        int to = pop_lsb(&double_push);
+        int from = to - 16;
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+    }
+
+    while (capture_l)
+    {
+        int to = pop_lsb(&capture_l);
+        int from = to - 7;
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+    }
+
+    while (capture_r)
+    {
+        int to = pop_lsb(&capture_r);
+        int from = to - 9;
+        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+    }
+
+    if (prom_pawns)
+    {
+        uint64_t prom_single = (prom_pawns << 8) & empty;
+        uint64_t prom_capture_l = ((prom_pawns & ~FILE_A) << 7) & enemies;
+        uint64_t prom_capture_r = ((prom_pawns & ~FILE_H) << 9) & enemies;
+
+        while (prom_single)
+        {
+            int to = pop_lsb(&prom_single);
+            int from = to - 8;
+            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+        }
+
+        while (prom_capture_l)
+        {
+            int to = pop_lsb(&prom_capture_l);
+            int from = to - 7;
+            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+        }
+
+        while (prom_capture_r)
+        {
+            int to = pop_lsb(&prom_capture_r);
+            int from = to - 9;
+            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+        }
+    }
+}
+
 void horseMoves(Position *board, MoveList *list, bool color)
 {
     uint64_t knights = board->pieces[2] & board->color[color];
@@ -318,13 +334,12 @@ void bishopMoves(Position *board, MoveList *list, bool color)
 {
     uint64_t sliding = (board->pieces[1] | board->pieces[4]) & board->color[color];
 
-    uint64_t occupancy = board->color[0] | board->color[1];
 
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
 
-        uint64_t attacks = getbishopAttacks(ind, occupancy);
+        uint64_t attacks = getbishopAttacks(ind, board->color[2]);
 
         attacks &= ~board->color[color];
 
@@ -340,13 +355,11 @@ void rookMoves(Position *board, MoveList *list, bool color)
 {
     uint64_t sliding = (board->pieces[3] | board->pieces[4]) & board->color[color];
 
-    uint64_t occupancy = board->color[0] | board->color[1];
-
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
 
-        uint64_t attacks = getrookAttacks(ind, occupancy);
+        uint64_t attacks = getrookAttacks(ind, board->color[2]);
 
         attacks &= ~board->color[color];
 
@@ -382,16 +395,15 @@ bool squareAttacked_custom(Position *b, int sq, int enemy, uint64_t custom_occ)
 
     return false;
 }
+
 void kingMoves(Position *board, MoveList *list, bool color, int check_count)
 {
     int us = color;
     int them = !color;
     uint64_t kings = board->pieces[5] & board->color[us];
-    if (!kings)
-        return;
 
     int from = __builtin_ctzll(kings);
-    uint64_t occupancy = board->color[0] | board->color[1];
+    uint64_t occupancy = board->color[2];
 
     uint64_t attacks = kingtable[from];
     attacks &= ~board->color[us];
@@ -455,11 +467,11 @@ void kingMoves(Position *board, MoveList *list, bool color, int check_count)
             }
         }
     }
-} // x+y*8
+}
 
 uint64_t get_checkers(Position *board, int sq, int enemy_color)
 {
-    uint64_t occ = board->color[0] | board->color[1];
+    uint64_t occ = board->color[2]; 
     uint64_t checkers = 0;
 
     checkers |= (enemy_color == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
@@ -481,6 +493,7 @@ uint64_t get_potential_pinners(Position *board, int king_sq, int enemy_color)
 
 void legalMoveGen(Position *board, MoveList *list)
 {
+    board->color[2] = board->color[0] | board->color[1];
     int us = board->turn;
     int them = !us;
     uint64_t king_bb = board->pieces[5] & board->color[us];
@@ -488,7 +501,7 @@ void legalMoveGen(Position *board, MoveList *list)
         return;
 
     int king_sq = __builtin_ctzll(king_bb);
-    uint64_t occ = board->color[0] | board->color[1];
+    uint64_t occ = board->color[2];
 
     uint64_t checkers = get_checkers(board, king_sq, them);
     int check_count = __builtin_popcountll(checkers);
@@ -531,7 +544,11 @@ void legalMoveGen(Position *board, MoveList *list)
 
     if (check_count < 2)
     {
-        pawnMoves(board, &pseudo, us);
+        if (us == 0)
+            pawnMovesWhite(board, &pseudo);
+        else
+            pawnMovesBlack(board, &pseudo);
+            
         horseMoves(board, &pseudo, us);
         bishopMoves(board, &pseudo, us);
         rookMoves(board, &pseudo, us);
@@ -562,12 +579,10 @@ void legalMoveGen(Position *board, MoveList *list)
                 continue;
         }
 
-        // --- EN PASSANT LOGIC ---
         if (board->mailbox[from] == 0 && (to == board->epsquare && board->epsquare != -1))
         {
             int cap_sq = to + (us == 0 ? 8 : -8);
             
-            // If in check, the EP move must resolve it either by moving to the check mask OR capturing the checker
             if (check_count == 1 && !(to_bb & check_mask) && !((1ULL << cap_sq) & check_mask))
                 continue;
 
@@ -577,16 +592,16 @@ void legalMoveGen(Position *board, MoveList *list)
         }
         else
         {
-            // --- NORMAL MOVES ---
             // Must obey the check mask
             if (!(to_bb & check_mask))
                 continue;
         }
 
-        // Move is verified legal!
+        // Move is verified legal
         list->movelist[list->offset++] = move;
     }
 }
+
 void makeMove(Position *board, MoveList *list, int move)
 {
     int direction = (board->turn == 0) ? -1 : 1;
@@ -819,6 +834,7 @@ void makeMove(Position *board, MoveList *list, int move)
 
     board->turn ^= 1;
 }
+
 void moveint(Position *board, uint16_t move)
 {
     MoveList tmp;
@@ -829,7 +845,7 @@ void moveint(Position *board, uint16_t move)
 void captureMoves(Position *board, MoveList *list, bool color)
 {
     Bitboard enemies = board->color[!color];
-    Bitboard occ = board->color[0] | board->color[1];
+    Bitboard occ = board->color[2];  // Optimized: Use precomputed occupancy
 
     Bitboard pawn_caps = pawnMask(board, color) & enemies;
     while (pawn_caps)
@@ -893,40 +909,6 @@ void captureMoves(Position *board, MoveList *list, bool color)
         }
     }
 }
-// void unmakeMove(Position *board, MoveList *list, int move)
-// {
-//     int direction = (board->turn == 0) ? -1 : 1;
-
-//     int to = list->movelist[move] & 0x3F;
-//     int from = (list->movelist[move] >> 6) & 0x3F;
-//     int flag = (list->movelist[move] >> 12) & 0xF;
-//     // printf("From %i To %i Index %i\n",from,to,list->offset);
-//     uint64_t frombb = 1ULL << from;
-//     uint64_t tobb = 1ULL << to;
-
-//     // get moving piece
-//     int piece = 6;
-//     piece = board->mailbox[to];
-//     board->mailbox[to] = 6;
-
-//     // remove piece from from
-//     board->pieces[piece] &= ~tobb;
-//     board->color[!board->turn] &= ~tobb;
-//     board->mailbox[to] = piece;
-
-//     // clear destination piece
-//     for (int i = 0; i < 6; i++)
-//         board->pieces[i] &= ~frombb;
-
-//     board->color[board->turn] &= ~tobb;
-
-//     // replace destination piece with other piece causing capture
-//     board->pieces[piece] |= frombb;
-//     board->color[!board->turn] |= frombb;
-//     board->mailbox[from] = 6;
-
-//     board->turn ^= 1;
-// }
 
 uint64_t perft(Position *board, int depth, int divide)
 {
@@ -936,7 +918,8 @@ uint64_t perft(Position *board, int depth, int divide)
     MoveList move_list;
     move_list.offset = 0;
     legalMoveGen(board, &move_list);
-    // if (depth==1)
+    
+    // if (depth == 1)
     // {
     //     return move_list.offset;
     // }
@@ -944,40 +927,40 @@ uint64_t perft(Position *board, int depth, int divide)
     uint64_t nodes = 0;
     for (int i = 0; i < move_list.offset; i++)
     {
-        Position copy = *board;
+        Position copy = *board;  // Stack allocation
         makeMove(&copy, &move_list, i);
 
-        uint64_t move_nodes = perft(&copy, depth - 1,divide);
+        uint64_t move_nodes = perft(&copy, depth - 1, divide);
         nodes += move_nodes;
             
-            if (depth == divide && divide != 0)
-            {
-                int from = (move_list.movelist[i] >> 6) & 0x3F;
-                int to = move_list.movelist[i] & 0x3F;
-                int flag = (move_list.movelist[i] >> 12) & 0xF;
+        if (depth == divide && divide != 0)
+        {
+            int from = (move_list.movelist[i] >> 6) & 0x3F;
+            int to = move_list.movelist[i] & 0x3F;
+            int flag = (move_list.movelist[i] >> 12) & 0xF;
 
-                int x1 = from % 8;
-                int y1 = 8 - (from / 8);
-                int x2 = to % 8;
-                int y2 = 8 - (to / 8);
+            int x1 = from % 8;
+            int y1 = 8 - (from / 8);
+            int x2 = to % 8;
+            int y2 = 8 - (to / 8);
 
-                char promotion = 0;
-                if (flag == 5)
-                    promotion = 'b';
-                else if (flag == 6)
-                    promotion = 'n';
-                else if (flag == 7)
-                    promotion = 'r';
-                else if (flag == 8)
-                    promotion = 'q';
+            char promotion = 0;
+            if (flag == 5)
+                promotion = 'b';
+            else if (flag == 6)
+                promotion = 'n';
+            else if (flag == 7)
+                promotion = 'r';
+            else if (flag == 8)
+                promotion = 'q';
 
-                if (promotion){
-                    printf("%c%i%c%i%c - %lu\n", 'a' + x1, y1, 'a' + x2, y2, promotion, move_nodes);
-                }
-                else{
-                    printf("%c%i%c%i - %lu\n", 'a' + x1, y1, 'a' + x2, y2, move_nodes);
-                }
+            if (promotion){
+                printf("%c%i%c%i%c - %lu\n", 'a' + x1, y1, 'a' + x2, y2, promotion, move_nodes);
             }
+            else{
+                printf("%c%i%c%i - %lu\n", 'a' + x1, y1, 'a' + x2, y2, move_nodes);
+            }
+        }
     }
     return nodes;
 }

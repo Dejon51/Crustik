@@ -314,12 +314,9 @@ char uciStart(void)
                     if (movetime <= 0)
                         movetime = 100;
 
-                    stopConditions stop = {};
+                    stopConditions stop = {0};
                     stop.start_time = get_time_ms();
                     stop.max_time = movetime;
-                    stop.max_nodes = 0;
-                    stop.nodes = 0;
-                    stop.stop = 0;
 
                     uint16_t result = iterative_deepening(&board, &stop);
 
@@ -355,26 +352,18 @@ char uciStart(void)
                 else
                 {
                     int depth = 0;
-                    for (int i = 0; tokens[2][i] != '\0'; i++)
-                    {
-                        depth = depth * 10 + (tokens[2][i] - '0');
-                    }
-                    stopConditions stopcon = {};
-                    stopcon.start_time = 0;
-                    stopcon.max_time = 0;
-                    stopcon.max_nodes = 0;
-                    stopcon.nodes = 0;
-                    stopcon.stop = 0;
+                    for (int i = 0; tokens[2][i] != '\0'; i++) depth = depth * 10 + (tokens[2][i] - '0');
 
-                    struct timespec start, stop;
-                    searchOutput result =
-                        search(&board, depth, 0, -32000, 32000, &stopcon, NULL);
+                    stopConditions stop = {0};
+                    stop.depth = depth;
+                    
 
-                    if (result.move == 0)
+                    uint16_t result = iterative_deepening(&board, &stop);
+
+                    if (result == 0)
                     {
                         uint64_t king_bb = board.pieces[5] & board.color[board.turn];
-                        if (!king_bb)
-                            break;
+                        if (!king_bb) break;
                         int king_pos = __builtin_ctzll(king_bb);
                         if (squareAttacked(&board, king_pos, !board.turn))
                         {
@@ -385,9 +374,11 @@ char uciStart(void)
                             printf("Stalemate\n");
                         }
                     }
-                    movestring(result.move);
-                    // d(&board);
-                }
+                    else
+                    {
+                        movestring(result);
+                    }
+            }
             }
             else if (strcmp(tokens[1], "perft") == 0)
             {

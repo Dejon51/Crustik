@@ -26,7 +26,7 @@ typedef struct {
     // rook 3
     // queen 4
     // king 5
-    Bitboard color[2];
+    Bitboard color[3];
     Bitboard pieces[6];
     int8_t epsquare;
     int8_t castling;

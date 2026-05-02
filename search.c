@@ -321,6 +321,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (ply > stop->seldepth)
         stop->seldepth = ply;
+        
 
     if (stop->start_time && (stop->nodes & 2047) == 0 &&
         get_time_ms() - stop->start_time >= stop->max_time)
@@ -575,6 +576,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
+        if (stop->depth > 0 && depth > stop->depth)
+            break;
         stop->seldepth = 0;
         int window = 50;
 
