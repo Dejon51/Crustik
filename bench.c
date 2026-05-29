@@ -5,6 +5,7 @@
 #include "play.h"
 #include "fen.h"
 #include "search.h"
+#include "inttypes.h"
 
 
 const char *fens[] = {
@@ -65,16 +66,13 @@ const char *fens[] = {
 int bench() {
     Position boards[FEN_COUNT];
     int depth = 6;
-    unsigned long long total_nodes = 0;
-    
-    printf("Starting Benchmark (Depth %d)...\n", depth);
-    printf("Parsing FENs...\n");
-    
+    uint64_t total_nodes = 0;
+
     // Parse all FENs before timing
-    for (unsigned long int i = 0; i < FEN_COUNT; i++) {
+    for (uint64_t i = 0; i < FEN_COUNT; i++) {
         char temp_fen[256];
         strcpy(temp_fen, fens[i]);
-        
+
         char *tokens[10];
         int t = 0;
         char *tok = strtok(temp_fen, " ");
@@ -83,38 +81,30 @@ int bench() {
             tok = strtok(NULL, " ");
         }
 
-        fenRead(&boards[i], tokens[0], tokens[1], tokens[2], tokens[3], tokens[4], tokens[5]);
+        fenRead(&boards[i],
+                tokens[0], tokens[1], tokens[2],
+                tokens[3], tokens[4], tokens[5]);
     }
-    
-    printf("Starting search...\n");
-    
-    // Start Timer
-    clock_t start = clock();
 
-    for (unsigned long int i = 0; i < FEN_COUNT; i++) {
+    long long start = get_time_ms();
+
+    for (uint64_t i = 0; i < FEN_COUNT; i++) {
         stopConditions stop = {0};
-        stop.start_time = 0;
-        stop.max_time = 0;
-        stop.max_nodes = 0;
-        stop.nodes = 0;
-        stop.stop = 0;
 
-        search(&boards[i], depth, 0, -32000, 32000, &stop,NULL);
+        search(&boards[i], depth, 0, -32000, 32000, &stop, NULL);
         total_nodes += stop.nodes;
-        
-        printf("FEN %2ld/%lu complete.\r", i + 1, (unsigned long)FEN_COUNT);
-        fflush(stdout);
     }
 
-    clock_t end = clock();
-    double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
+    long long end = get_time_ms();
 
-    double nps = (time_spent > 0) ? (total_nodes / time_spent) : 0;
+    long long time_ms = end - start;
+    double time_sec = time_ms / 1000.0;
+    double nps = (time_sec > 0) ? ((double)total_nodes / time_sec) : 0.0;
 
-    printf("\n--- Benchmark Results ---\n");
-    printf("Total Nodes: %llu\n", total_nodes);
-    printf("Total Time:  %.3f seconds\n", time_spent);
-    printf("Nodes/sec:   %.0f\n", nps);
+    printf("--- Benchmark Results ---\n");
+    printf("Total time (ms):  %lld\n", time_ms);
+    printf("Nodes searched: %" PRIu64 "\n", total_nodes);
+    printf("Nodes/second:   %.0f\n", nps);
     printf("-------------------------\n");
 
     return 0;
@@ -123,32 +113,38 @@ int bench() {
 int bench_movegen() {
     Position board = {0};
     int max_depth = 6;
-    
+
     printf("Starting Move Generation Benchmark on Starting Position\n");
     printf("Testing depths 1-%d...\n\n", max_depth);
-    
-    // Parse starting position
-    fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "0", "1");
-    
-    printf("Depth | Nodes          | Time (s) | Nodes/sec\n");
-    printf("------|----------------|----------|-------------\n");
-    
+
+    fenRead(&board,
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR",
+            "w", "KQkq", "-", "0", "1");
+
+    printf("%-5s | %-14s | %-10s | %-13s\n",
+           "Depth", "Nodes", "Time(ms)", "Nodes/sec");
+
+    printf("------ | -------------- | ---------- | -------------\n");
+
     for (int depth = 1; depth <= max_depth; depth++) {
         Position temp_board = board;
-        
-        clock_t start = clock();
-        unsigned long long nodes = perft(&temp_board, depth,0);
-        clock_t end = clock();
-        
-        double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
-        double nps = (time_spent > 0) ? (nodes / time_spent) : 0;
-        
-        printf("  %d   | %14llu | %8.3f | %13.0f\n", 
-               depth, nodes, time_spent, nps);
+
+        long long start = get_time_ms();
+
+        uint64_t nodes = perft(&temp_board, depth, 0);
+
+        long long end = get_time_ms();
+
+        long long time_ms = end - start;
+        double time_sec = time_ms / 1000.0;
+        double nps = (time_sec > 0) ? ((double)nodes / time_sec) : 0.0;
+
+        printf("%-5d | %-14" PRIu64 " | %-10lld | %-13.0f\n",
+               depth, nodes, time_ms, nps);
+
         fflush(stdout);
     }
-    
+
     printf("\n");
- 
     return 0;
 }
