@@ -97,7 +97,7 @@ enum {
 
 typedef struct {
     uint16_t movelist[256];
-    unsigned offset;
+    unsigned int offset;
 } MoveList;
 
 uint64_t get_time_ms();

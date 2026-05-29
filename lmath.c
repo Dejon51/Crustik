@@ -117,50 +117,6 @@ char abs1(int num)
     return num;
 }
 
-int findMaxValue(int arr[], int size)
-{
-    if (size <= 0)
-    {
-        // Handle empty or invalid array size
-        return -1;
-    }
-
-    int max_value = arr[0];
-    int max_index = 0;
-
-    for (int i = 1; i < size; i++)
-    {
-        if (arr[i] > max_value)
-        {
-            max_value = arr[i];
-            max_index = i;
-        }
-    }
-
-    return max_value;
-}
-int findMinValue(int arr[], int size)
-{
-    if (size <= 0)
-    {
-        // Handle empty or invalid array size
-        return -1;
-    }
-
-    int min_value = arr[0];
-    int min_index = 0;
-
-    for (int i = 1; i < size; i++)
-    {
-        if (arr[i] < min_value)
-        {
-            min_value = arr[i];
-            min_index = i;
-        }
-    }
-    return min_value;
-}
-
 void itoa(int value, char *buf) {
     char tmp[20];
     int i = 0, j, neg = 0;
@@ -209,30 +165,30 @@ int matoi(const char *str)
     return result * sign;
 }
 
-#define LN2 0.69314718056f
-#define SQRT2 1.41421356237f
+// #define LN2 0.69314718056f
+// #define SQRT2 1.41421356237f
 
-float my_logf(float x) {
-    if (x <= 0.0f) return -1.0f / 0.0f;
+// float my_logf(float x) {
+//     if (x <= 0.0f) return -1.0f / 0.0f;
     
-    union { float f; unsigned int i; } conv;
-    conv.f = x;
-    unsigned int ix = conv.i;
+//     union { float f; unsigned int i; } conv;
+//     conv.f = x;
+//     unsigned int ix = conv.i;
 
-    int exp = (int)(ix >> 23) - 127;
+//     int exp = (int)(ix >> 23) - 127;
     
-    conv.i = (ix & 0x7FFFFF) | 0x3F800000;
-    float m = conv.f;
-    if (m > SQRT2) {
-        m *= 0.5f;
-        exp++;
-    }
+//     conv.i = (ix & 0x7FFFFF) | 0x3F800000;
+//     float m = conv.f;
+//     if (m > SQRT2) {
+//         m *= 0.5f;
+//         exp++;
+//     }
 
-    float f = m - 1.0f;
-    float f2 = f * f;
-    float f3 = f2 * f;
-    float poly = f  * (1.0000000f + f * (-0.4999999f + f * (0.3333330f + 
-                 f * (-0.2500068f + f * (0.1999468f + f * (-0.1652093f))))));
+//     float f = m - 1.0f;
+//     float f2 = f * f;
+//     float f3 = f2 * f;
+//     float poly = f  * (1.0000000f + f * (-0.4999999f + f * (0.3333330f + 
+//                  f * (-0.2500068f + f * (0.1999468f + f * (-0.1652093f))))));
 
-    return poly + (float)exp * LN2;
-}
+//     return poly + (float)exp * LN2;
+// }

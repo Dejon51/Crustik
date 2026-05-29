@@ -117,7 +117,7 @@ void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, cha
     board->castling = 0;
     if (arg2[0] != '-')
     {
-        for (int d = 0; d < strlen(arg2); d++)
+        for (size_t d = 0; d < strlen(arg2); d++)
         {
             switch (arg2[d])
             {

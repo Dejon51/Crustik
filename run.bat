@@ -1,3 +1,3 @@
 @echo off
 
-gcc main.c play.c lmath.c eval.c uci.c fen.c search.c zobrist.c tt.c bench.c text.c -O3 -flto -march=native -o crustik
+gcc main.c play.c lmath.c eval.c uci.c fen.c search.c zobrist.c tt.c bench.c text.c -DNDEBUG -O3 -flto -march=native -Wall -Wextra -Wshadow  -o crustik

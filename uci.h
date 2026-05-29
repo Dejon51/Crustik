@@ -3,7 +3,7 @@
 
 void d(Position *board);
 
-char uciStart(void);
+void uciStart();
 
 
 #endif

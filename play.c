@@ -554,12 +554,11 @@ void legalMoveGen(Position *board, MoveList *list)
         rookMoves(board, &pseudo, us);
     }
 
-    for (int i = 0; i < pseudo.offset; i++)
+    for (uint16_t i = 0; i < pseudo.offset; i++)
     {
         uint16_t move = pseudo.movelist[i];
         int from = (move >> 6) & 0x3F;
         int to = move & 0x3F;
-        int flag = (move >> 12) & 0xF;
         uint64_t from_bb = 1ULL << from;
         uint64_t to_bb = 1ULL << to;
 
@@ -586,7 +585,7 @@ void legalMoveGen(Position *board, MoveList *list)
             if (check_count == 1 && !(to_bb & check_mask) && !((1ULL << cap_sq) & check_mask))
                 continue;
 
-            uint64_t occ_after_ep = occ & ~from_bb & ~(1ULL << cap_sq) | to_bb;
+            uint64_t occ_after_ep = (occ & ~from_bb & ~(1ULL << cap_sq)) | to_bb;
             if (squareAttacked_custom(board, king_sq, them, occ_after_ep))
                 continue;
         }
@@ -925,7 +924,7 @@ uint64_t perft(Position *board, int depth, int divide)
     // }
 
     uint64_t nodes = 0;
-    for (int i = 0; i < move_list.offset; i++)
+    for (unsigned int i = 0; i < move_list.offset; i++)
     {
         Position copy = *board;  // Stack allocation
         makeMove(&copy, &move_list, i);

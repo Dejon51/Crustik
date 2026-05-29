@@ -44,14 +44,6 @@ static void scale_history(void)
             history[p][sq] /= 2;
 }
 
-static int mvv_lva[] = {
-    105, 205, 305, 405, 505, 605,
-    104, 204, 304, 404, 504, 604,
-    103, 203, 303, 403, 503, 603,
-    102, 202, 302, 402, 502, 602,
-    101, 201, 301, 401, 501, 601,
-    100, 200, 300, 400, 500, 600};
-
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = (move >> 6) & 0x3F;
@@ -93,7 +85,7 @@ int SEE(Position *pos, uint16_t move)
     int from = (move >> 6) & 0x3F;
     int to = move & 0x3F;
 
-    int gain[32];
+    int gain[64];
     int depth = 0;
 
     uint64_t occ = pos->color[0] | pos->color[1];
@@ -169,7 +161,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
     int scores[218] = {0};
 
-    for (int i = 0; i < move_list->offset; i++)
+    for (unsigned int i = 0; i < move_list->offset; i++)
     {
         uint16_t move = move_list->movelist[i];
         int to = move & 0x3F;
@@ -230,7 +222,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         scores[i] = history[piece_idx][to];
     }
 
-    for (int i = 1; i < move_list->offset; i++)
+    for (unsigned int i = 1; i < move_list->offset; i++)
     {
         int score = scores[i];
         uint16_t move = scored_list.movelist[i];
@@ -268,16 +260,13 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     int best_score = static_eval;
 
-    for (int i = 0; i < move_list.offset; i++)
+    for (unsigned int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
 
         int to = move & 0x3F;
-        int from = (move >> 6) & 0x3F;
 
         int victim = board->mailbox[to];
-        int piece = board->mailbox[from];
-
         int is_cap = (victim != 6);
 
         Position copy = *board;
@@ -434,7 +423,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     int static_eval = eval(board);
 
-    for (int i = 0; i < move_list.offset; i++)
+    for (unsigned int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
         int to = move & 0x3F;

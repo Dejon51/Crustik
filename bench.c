@@ -71,7 +71,7 @@ int bench() {
     printf("Parsing FENs...\n");
     
     // Parse all FENs before timing
-    for (int i = 0; i < FEN_COUNT; i++) {
+    for (unsigned long int i = 0; i < FEN_COUNT; i++) {
         char temp_fen[256];
         strcpy(temp_fen, fens[i]);
         
@@ -91,7 +91,7 @@ int bench() {
     // Start Timer
     clock_t start = clock();
 
-    for (int i = 0; i < FEN_COUNT; i++) {
+    for (unsigned long int i = 0; i < FEN_COUNT; i++) {
         stopConditions stop = {0};
         stop.start_time = 0;
         stop.max_time = 0;
@@ -99,10 +99,10 @@ int bench() {
         stop.nodes = 0;
         stop.stop = 0;
 
-        searchOutput result = search(&boards[i], depth, 0, -32000, 32000, &stop,NULL);
+        search(&boards[i], depth, 0, -32000, 32000, &stop,NULL);
         total_nodes += stop.nodes;
         
-        printf("FEN %2d/%lu complete.\r", i + 1, (unsigned long)FEN_COUNT);
+        printf("FEN %2ld/%lu complete.\r", i + 1, (unsigned long)FEN_COUNT);
         fflush(stdout);
     }
 

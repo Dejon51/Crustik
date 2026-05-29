@@ -154,13 +154,12 @@ void d(Position *board) // Displays board or something
     printf("\n");
 }
 
-char uciStart(void)
+void uciStart()
 {
     Position board = {0};
     Position copyboard = {0};
 
     char run = 1;
-    char uciok = 0;
 
     fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq",
             "-", "0", "1");
@@ -173,7 +172,7 @@ char uciStart(void)
         if (fgets(line, sizeof(line), stdin) == NULL)
         {
             printf("Bye\n");
-            return 1;
+            return;
         }
         line[strcspn(line, "\n")] = '\0';
 
@@ -194,7 +193,6 @@ char uciStart(void)
         else if (strcmp(tokens[0], "uci") == 0)
         {
             printf("uciok\n");
-            uciok = 1;
         }
         else if (strcmp(tokens[0], "isready") == 0)
         {
