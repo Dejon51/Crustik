@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <inttypes.h>
 #include "text.h"
 
 void movestring(uint16_t move)
@@ -150,8 +151,7 @@ void d(Position *board) // Displays board or something
         }
         printf("\n");
     }
-    printf("HASH: 0x%lx", board->hash);
-    printf("\n");
+    printf("HASH: 0x%" PRIx64 "\n", board->hash);
 }
 
 void uciStart()
@@ -442,7 +442,7 @@ void uciStart()
                     double nps = (seconds > 0.0) ? (double)total_nodes / seconds : 0.0;
                     double elapsed_ms = seconds * 1000.0;
 
-                    printf("Total Nodes: %llu\n", (unsigned long long)total_nodes);
+                    printf("Total Nodes: %" PRIu64 "\n", total_nodes);
                     printf("Elapsed time: %.3f ms\n", elapsed_ms);
                     printf("N/S: %.0f\n", nps);
                 }

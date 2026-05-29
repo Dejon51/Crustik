@@ -41,39 +41,6 @@ char mstrcmp(const char *s1, const char *s2) {
     return *s1 - *s2;        
 }
 
-uint64_t simple_rand(void)
-{
-    static unsigned long state = 0;
-
-    if (state == 0)
-    { // initialize state on first call
-        int x, y;
-        unsigned long seed = (unsigned long)&x;
-        seed ^= ((unsigned long)&y << (sizeof(unsigned long) * 4)); // shift half of word size
-        seed *= 2654435761UL;                                       // golden ratio multiplier
-        seed ^= (seed >> 16);                                       // mix bits
-        if (seed == 0)
-            seed = 1; // avoid zero
-        state = seed;
-    }
-
-    // LCG step (constants fit 32-bit and up; fast on 16-bit too)
-    state = state * 1664525UL + 1013904223UL;
-
-    return state;
-}
-
-unsigned int rand_between(unsigned int min, unsigned int max)
-{
-    if (max < min)
-    { // swap if reversed
-        unsigned long tmp = min;
-        min = max;
-        max = tmp;
-    }
-    unsigned long range = max - min + 1;
-    return (simple_rand() % range) + min;
-}
 
 int normalize_sign(int num)
 {

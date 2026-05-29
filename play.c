@@ -7,6 +7,7 @@
 #include "bishop_table.h"
 #include "zobrist.h"
 #include "uci.h"
+#include "inttypes.h"
 
 bool squareAttacked(Position *b, int sq, int enemy)
 {
@@ -87,7 +88,6 @@ Bitboard rookMask(Position *board, bool color)
     Bitboard rookmask = 0ULL;
 
     uint64_t sliding = (board->pieces[3] | board->pieces[4]) & board->color[color];
-
 
     while (sliding)
     {
@@ -334,7 +334,6 @@ void bishopMoves(Position *board, MoveList *list, bool color)
 {
     uint64_t sliding = (board->pieces[1] | board->pieces[4]) & board->color[color];
 
-
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
@@ -373,7 +372,7 @@ void rookMoves(Position *board, MoveList *list, bool color)
 
 bool squareAttacked_custom(Position *b, int sq, int enemy, uint64_t custom_occ)
 {
-    uint64_t enemyPieces = b->color[enemy] & custom_occ; 
+    uint64_t enemyPieces = b->color[enemy] & custom_occ;
 
     if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
         (b->pieces[0] & enemyPieces))
@@ -471,7 +470,7 @@ void kingMoves(Position *board, MoveList *list, bool color, int check_count)
 
 uint64_t get_checkers(Position *board, int sq, int enemy_color)
 {
-    uint64_t occ = board->color[2]; 
+    uint64_t occ = board->color[2];
     uint64_t checkers = 0;
 
     checkers |= (enemy_color == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
@@ -548,7 +547,7 @@ void legalMoveGen(Position *board, MoveList *list)
             pawnMovesWhite(board, &pseudo);
         else
             pawnMovesBlack(board, &pseudo);
-            
+
         horseMoves(board, &pseudo, us);
         bishopMoves(board, &pseudo, us);
         rookMoves(board, &pseudo, us);
@@ -581,7 +580,7 @@ void legalMoveGen(Position *board, MoveList *list)
         if (board->mailbox[from] == 0 && (to == board->epsquare && board->epsquare != -1))
         {
             int cap_sq = to + (us == 0 ? 8 : -8);
-            
+
             if (check_count == 1 && !(to_bb & check_mask) && !((1ULL << cap_sq) & check_mask))
                 continue;
 
@@ -844,7 +843,7 @@ void moveint(Position *board, uint16_t move)
 void captureMoves(Position *board, MoveList *list, bool color)
 {
     Bitboard enemies = board->color[!color];
-    Bitboard occ = board->color[2];  // Optimized: Use precomputed occupancy
+    Bitboard occ = board->color[2]; // Optimized: Use precomputed occupancy
 
     Bitboard pawn_caps = pawnMask(board, color) & enemies;
     while (pawn_caps)
@@ -917,7 +916,7 @@ uint64_t perft(Position *board, int depth, int divide)
     MoveList move_list;
     move_list.offset = 0;
     legalMoveGen(board, &move_list);
-    
+
     // if (depth == 1)
     // {
     //     return move_list.offset;
@@ -926,12 +925,12 @@ uint64_t perft(Position *board, int depth, int divide)
     uint64_t nodes = 0;
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
-        Position copy = *board;  // Stack allocation
+        Position copy = *board; // Stack allocation
         makeMove(&copy, &move_list, i);
 
         uint64_t move_nodes = perft(&copy, depth - 1, divide);
         nodes += move_nodes;
-            
+
         if (depth == divide && divide != 0)
         {
             int from = (move_list.movelist[i] >> 6) & 0x3F;
@@ -953,11 +952,20 @@ uint64_t perft(Position *board, int depth, int divide)
             else if (flag == 8)
                 promotion = 'q';
 
-            if (promotion){
-                printf("%c%i%c%i%c - %lu\n", 'a' + x1, y1, 'a' + x2, y2, promotion, move_nodes);
+            if (promotion)
+            {
+                printf("%c%i%c%i%c - %" PRIu64 "\n",
+                       'a' + x1, y1,
+                       'a' + x2, y2,
+                       promotion,
+                       move_nodes);
             }
-            else{
-                printf("%c%i%c%i - %lu\n", 'a' + x1, y1, 'a' + x2, y2, move_nodes);
+            else
+            {
+                printf("%c%i%c%i - %" PRIu64 "\n",
+                       'a' + x1, y1,
+                       'a' + x2, y2,
+                       move_nodes);
             }
         }
     }
