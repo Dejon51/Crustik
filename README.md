@@ -5,7 +5,7 @@
 ### Crustik Chess Engine
 
 #### Plays like a human
-###### Doesnt yet
+###### Won't ever
 
 
 ##### Summary
