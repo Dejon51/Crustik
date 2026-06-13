@@ -507,7 +507,7 @@ void legalMoveGen(Position *board, MoveList *list)
 
     uint64_t check_mask = 0xFFFFFFFFFFFFFFFFULL;
     uint64_t pinned_pieces = 0;
-    uint64_t pinner_ray[64] = {0};
+    uint64_t pinner_ray[64];
 
     if (check_count == 1)
     {
@@ -538,7 +538,8 @@ void legalMoveGen(Position *board, MoveList *list)
         }
     }
 
-    MoveList pseudo = {0};
+    MoveList pseudo;
+    pseudo.offset = 0;
     kingMoves(board, &pseudo, us, check_count);
 
     if (check_count < 2)
@@ -794,8 +795,8 @@ void makeMove(Position *board, MoveList *list, int move)
         board->castling &= ~(1U << BLACK_QUEENSIDE);
 
     // clear destination square
-    for (int i = 0; i < 6; i++)
-        board->pieces[i] &= ~tobb;
+    if (victim != 6) board->pieces[victim] &= ~tobb;
+ 
 
     board->color[!board->turn] &= ~tobb;
 
