@@ -430,6 +430,7 @@ void uciStart()
                     clock_gettime(CLOCK_MONOTONIC, &stop);
 #endif
 
+
                     long sec = stop.tv_sec - start.tv_sec;
                     long nsec = stop.tv_nsec - start.tv_nsec;
 
