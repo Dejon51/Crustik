@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include "play.h"
 #include "lmath.h"
 #include "eval.h"
@@ -15,6 +16,12 @@
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
 
+#define HISTORY_SCORE_CAP 16384
+
+// Pawn history table size must be power of two.
+#define PAWN_HISTORY_SIZE 4096
+#define PAWN_HISTORY_MASK (PAWN_HISTORY_SIZE - 1)
+
 uint64_t position_history[MAX_GAME_PLY];
 int history_ply = 0;
 
@@ -22,10 +29,13 @@ static uint16_t killers[MAX_DEPTH][2];
 static uint16_t counter_moves[64][64];
 static uint16_t search_stack_moves[MAX_DEPTH + 1];
 static int static_eval_stack[MAX_DEPTH + 1];
+
 static int history[2][64][64];
 static int capture_history[2][64][64];
 
-#define HISTORY_SCORE_CAP 16384
+// NEW: pawn-history heuristic.
+// Indexed by side, pawn-structure bucket, moving piece type, destination square.
+static int pawn_history[2][PAWN_HISTORY_SIZE][6][64];
 
 static int clamp_int(int v, int lo, int hi)
 {
@@ -36,6 +46,25 @@ static int clamp_int(int v, int lo, int hi)
     return v;
 }
 
+static uint64_t mix_u64(uint64_t x)
+{
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return x;
+}
+
+static int pawn_history_index(Position *board)
+{
+    uint64_t white_pawns = board->pieces[0] & board->color[0];
+    uint64_t black_pawns = board->pieces[0] & board->color[1];
+
+    uint64_t key = mix_u64(white_pawns) ^ (mix_u64(black_pawns) >> 1);
+    return (int)(key & PAWN_HISTORY_MASK);
+}
+
 static void clear_ordering_tables(void)
 {
     memset(killers, 0, sizeof(killers));
@@ -44,6 +73,7 @@ static void clear_ordering_tables(void)
     memset(static_eval_stack, 0, sizeof(static_eval_stack));
     memset(history, 0, sizeof(history));
     memset(capture_history, 0, sizeof(capture_history));
+    memset(pawn_history, 0, sizeof(pawn_history));
 }
 
 static void store_killer(uint16_t move, int ply)
@@ -72,13 +102,27 @@ static int capture_history_score(Position *board, uint16_t move)
     return capture_history[board->turn & 1][from][to];
 }
 
+static int pawn_history_score(Position *board, uint16_t move)
+{
+    int from = (move >> 6) & 0x3F;
+    int to = move & 0x3F;
+    int piece = board->mailbox[from];
+
+    if (piece < 0 || piece >= 6)
+        return 0;
+
+    int side = board->turn & 1;
+    int idx = pawn_history_index(board);
+
+    return pawn_history[side][idx][piece][to];
+}
+
 static void update_quiet_history(Position *board, uint16_t move, int bonus)
 {
     int from = (move >> 6) & 0x3F;
     int to = move & 0x3F;
     int *entry = &history[board->turn & 1][from][to];
 
-    // Gravity update: grows useful moves quickly, but naturally saturates.
     *entry += bonus - ((*entry * abs(bonus)) / HISTORY_SCORE_CAP);
     *entry = clamp_int(*entry, -HISTORY_SCORE_CAP, HISTORY_SCORE_CAP);
 }
@@ -88,6 +132,23 @@ static void update_capture_history(Position *board, uint16_t move, int bonus)
     int from = (move >> 6) & 0x3F;
     int to = move & 0x3F;
     int *entry = &capture_history[board->turn & 1][from][to];
+
+    *entry += bonus - ((*entry * abs(bonus)) / HISTORY_SCORE_CAP);
+    *entry = clamp_int(*entry, -HISTORY_SCORE_CAP, HISTORY_SCORE_CAP);
+}
+
+static void update_pawn_history(Position *board, uint16_t move, int bonus)
+{
+    int from = (move >> 6) & 0x3F;
+    int to = move & 0x3F;
+    int piece = board->mailbox[from];
+
+    if (piece < 0 || piece >= 6)
+        return;
+
+    int side = board->turn & 1;
+    int idx = pawn_history_index(board);
+    int *entry = &pawn_history[side][idx][piece][to];
 
     *entry += bonus - ((*entry * abs(bonus)) / HISTORY_SCORE_CAP);
     *entry = clamp_int(*entry, -HISTORY_SCORE_CAP, HISTORY_SCORE_CAP);
@@ -210,7 +271,7 @@ int SEE(Position *pos, uint16_t move)
     gain[0] = SEE_VAL[target];
     occ ^= (1ULL << from);
 
-    int stm = pos->turn ^ 1; // opponent recaptures first
+    int stm = pos->turn ^ 1;
     int next_victim = SEE_VAL[attacker_piece];
 
     while (1)
@@ -235,12 +296,12 @@ int SEE(Position *pos, uint16_t move)
 
         gain[depth] = next_victim - gain[depth - 1];
 
-        if (-gain[depth] > gain[depth - 1]) // early cutoff
+        if (-gain[depth] > gain[depth - 1])
             break;
 
-        // pick least valuable attacker
         int best_sq = -1;
         int piece_type = -1;
+
         for (int pt = 0; pt < 6; pt++)
         {
             uint64_t bb = attackers & pos->pieces[pt] & pos->color[stm];
@@ -257,7 +318,6 @@ int SEE(Position *pos, uint16_t move)
         stm ^= 1;
     }
 
-    // backpropagation
     while (--depth >= 0)
         gain[depth] = -(gain[depth + 1] > -gain[depth] ? gain[depth + 1] : -gain[depth]);
 
@@ -267,6 +327,7 @@ int SEE(Position *pos, uint16_t move)
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList scored_list = *move_list;
+
     if (move_list->offset == 0)
         return scored_list;
 
@@ -290,16 +351,19 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
             scores[i] = 950000;
             continue;
         }
+
         if (flag == 7)
         {
             scores[i] = 930000;
             continue;
         }
+
         if (flag == 5)
         {
             scores[i] = 920000;
             continue;
         }
+
         if (flag == 6)
         {
             scores[i] = 910000;
@@ -310,10 +374,12 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         {
             int see = SEE(board, move);
             int cap_hist = capture_history_score(board, move);
+
             if (see >= 0)
                 scores[i] = 800000 + see * 8 + cap_hist;
             else
                 scores[i] = 50000 + see * 8 + cap_hist;
+
             continue;
         }
 
@@ -322,6 +388,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
             scores[i] = 700000;
             continue;
         }
+
         if (ply >= 0 && ply < MAX_DEPTH && move == killers[ply][1])
         {
             scores[i] = 690000;
@@ -334,7 +401,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
             continue;
         }
 
-        scores[i] = 100000 + quiet_history_score(board, move);
+        scores[i] = 100000 + quiet_history_score(board, move) + pawn_history_score(board, move);
     }
 
     for (unsigned int i = 1; i < move_list->offset; i++)
@@ -342,12 +409,14 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         int score = scores[i];
         uint16_t move = scored_list.movelist[i];
         int j = i - 1;
+
         while (j >= 0 && scores[j] < score)
         {
             scores[j + 1] = scores[j];
             scored_list.movelist[j + 1] = scored_list.movelist[j];
             j--;
         }
+
         scores[j + 1] = score;
         scored_list.movelist[j + 1] = move;
     }
@@ -425,7 +494,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (ply > stop->seldepth)
         stop->seldepth = ply;
-        
 
     if (stop->start_time && (stop->nodes & 2047) == 0 &&
         get_time_ms() - stop->start_time >= stop->max_time)
@@ -710,12 +778,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 store_killer(move, ply);
                 store_counter_move(move, ply);
+
                 update_quiet_history(board, move, bonus);
+                update_pawn_history(board, move, bonus);
 
                 for (int q = 0; q < quiet_count; q++)
                 {
                     if (quiets_searched[q] != move)
+                    {
                         update_quiet_history(board, quiets_searched[q], -bonus / 2);
+                        update_pawn_history(board, quiets_searched[q], -bonus / 2);
+                    }
                 }
             }
             else if (is_cap)
