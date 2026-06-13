@@ -65,7 +65,7 @@ static int pawn_history_index(Position *board)
     return (int)(key & PAWN_HISTORY_MASK);
 }
 
-static void clear_ordering_tables(void)
+void clear_ordering_tables(void)
 {
     memset(killers, 0, sizeof(killers));
     memset(counter_moves, 0, sizeof(counter_moves));
@@ -74,6 +74,31 @@ static void clear_ordering_tables(void)
     memset(history, 0, sizeof(history));
     memset(capture_history, 0, sizeof(capture_history));
     memset(pawn_history, 0, sizeof(pawn_history));
+}
+
+static int is_threefold_repetition(Position *board, uint64_t hash)
+{
+    // The current position counts as one occurrence. A draw by repetition
+    // requires two earlier matching positions with the same side to move.
+    if (board->halfmoves < 4)
+        return 0;
+
+    int occurrences = 1;
+    int limit = history_ply - board->halfmoves;
+    if (limit < 0)
+        limit = 0;
+
+    for (int i = history_ply - 2; i >= limit; i -= 2)
+    {
+        if (position_history[i] == hash)
+        {
+            occurrences++;
+            if (occurrences >= 3)
+                return 1;
+        }
+    }
+
+    return 0;
 }
 
 static void store_killer(uint16_t move, int ply)
@@ -511,12 +536,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (board->halfmoves >= 100)
             return (searchOutput){.score = 0, .move = 0};
 
-        int limit = history_ply - board->halfmoves;
-        if (limit < 0)
-            limit = 0;
-        for (int i = history_ply - 2; i >= limit; i -= 2)
-            if (position_history[i] == hash)
-                return (searchOutput){.score = 0, .move = 0};
+        if (is_threefold_repetition(board, hash))
+            return (searchOutput){.score = 0, .move = 0};
     }
 
     uint16_t tt_move = 0;
@@ -610,12 +631,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 copy.epsquare = -1;
             }
 
-            if (history_ply < MAX_GAME_PLY)
-                position_history[history_ply++] = copy.hash;
             int score = -search(&copy, depth - 1 - NULL_MOVE_REDUCTION,
                                 ply + 1, -beta, -beta + 1, stop, NULL)
                              .score;
-            history_ply--;
 
             if (stop->stop)
                 return (searchOutput){0};
@@ -693,8 +711,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             fflush(stdout);
         }
 
+        int pushed_history = 0;
         if (history_ply < MAX_GAME_PLY)
+        {
             position_history[history_ply++] = hash;
+            pushed_history = 1;
+        }
 
         if (ply <= MAX_DEPTH)
             search_stack_moves[ply] = move;
@@ -740,7 +762,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                          .score;
         }
 
-        history_ply--;
+        if (pushed_history)
+            history_ply--;
         moves_searched++;
 
         if (stop->stop)
@@ -825,7 +848,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
-    clear_ordering_tables();
     int prev_score = 0;
     uint16_t best_move_so_far = 0;
     PVLine best_pv = {0};
