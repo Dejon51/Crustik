@@ -169,8 +169,8 @@ int mobility_eg[6] = {0, 2, 3, 2, 1, 0};
 int* mg_pesto_table[6] =
 {
     mg_pawn_table,
-    mg_knight_table,
     mg_bishop_table,
+    mg_knight_table,
     mg_rook_table,
     mg_queen_table,
     mg_king_table
@@ -179,13 +179,12 @@ int* mg_pesto_table[6] =
 int* eg_pesto_table[6] =
 {
     eg_pawn_table,
-    eg_knight_table,
     eg_bishop_table,
+    eg_knight_table,
     eg_rook_table,
     eg_queen_table,
     eg_king_table
 };
-
 int gamephaseInc[12] = {0,0,1,1,1,1,2,2,4,4,0,0};
 int mg_table[12][64];
 int eg_table[12][64];
