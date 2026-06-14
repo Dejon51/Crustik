@@ -27,7 +27,6 @@ typedef struct {
     int length;
 } PVLine;
 
-void clear_ordering_tables(void);
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 
