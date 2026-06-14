@@ -482,8 +482,10 @@ int SEE(Position *pos, uint16_t move)
         stm ^= 1;
     }
 
-    while (--depth >= 0)
-        gain[depth] = -(gain[depth + 1] > -gain[depth] ? gain[depth + 1] : -gain[depth]);
+    while (--depth > 0)
+    gain[depth - 1] = -(gain[depth] > -gain[depth - 1]
+                        ? gain[depth]
+                        : -gain[depth - 1]);
 
     return gain[0];
 }
