@@ -13,7 +13,7 @@
 #include "bishop_table.h"
 
 #define MATE_SCORE 32000
-#define MAX_DEPTH 200
+#define MAX_DEPTH 400
 #define MAX_GAME_PLY 2048
 
 #define REPETITION_AVOID_SCORE 32
