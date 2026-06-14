@@ -34,6 +34,7 @@ OPT := -O3 -DNDEBUG -flto -march=native -mtune=native
 CFLAGS := $(STD) $(DEFS) $(WARN) $(OPT)
 LDFLAGS := -flto
 
+
 # Default target
 all: $(EXE)
 
