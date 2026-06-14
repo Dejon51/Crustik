@@ -14,7 +14,6 @@ SRCS := \
 	play.c \
 	search.c \
 	text.c \
-	tt.c \
 	uci.c \
 	zobrist.c
 
