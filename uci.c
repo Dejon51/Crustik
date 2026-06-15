@@ -200,8 +200,8 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "ucinewgame") == 0)
         {
-            void clearTT(void);
-            
+            clearTT();
+
             fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w",
                     "KQkq", "-", "0", "1");
         }
