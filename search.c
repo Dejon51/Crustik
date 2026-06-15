@@ -5,6 +5,7 @@
 #include "lmath.h"
 #include "eval.h"
 #include "search.h"
+#include "tt.h"
 
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
@@ -22,20 +23,33 @@ static void move_to_uci(uint16_t move, char *buf)
 
     switch (flag)
     {
-    case 5: buf[4] = 'b'; buf[5] = '\0'; return;
-    case 6: buf[4] = 'n'; buf[5] = '\0'; return;
-    case 7: buf[4] = 'r'; buf[5] = '\0'; return;
-    case 8: buf[4] = 'q'; buf[5] = '\0'; return;
-    default: buf[4] = '\0'; return;
+    case 5:
+        buf[4] = 'b';
+        buf[5] = '\0';
+        return;
+    case 6:
+        buf[4] = 'n';
+        buf[5] = '\0';
+        return;
+    case 7:
+        buf[4] = 'r';
+        buf[5] = '\0';
+        return;
+    case 8:
+        buf[4] = 'q';
+        buf[5] = '\0';
+        return;
+    default:
+        buf[4] = '\0';
+        return;
     }
 }
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     stopConditions *stop, PVLine *pv)
 {
-    searchOutput output = {0};
-    output.score = -MATE_SCORE;
-    output.move = 0;
+    searchOutput output = {.score = -MATE_SCORE, .move = 0};
+    int original_alpha = alpha;
 
     stop->nodes++;
 
@@ -58,9 +72,36 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (board->halfmoves >= 100)
         return (searchOutput){.score = 0, .move = 0};
 
+    uint64_t hash = board->hash;
+    uint16_t tt_move = 0;
+
+    TTEntry *entry = probeTT(hash);
+    if (entry)
+    {
+        tt_move = entry->move;
+
+        if (entry->depth >= depth)
+        {
+            int tt_score = entry->score;
+
+            if (tt_score > 31000)
+                tt_score -= ply;
+            else if (tt_score < -31000)
+                tt_score += ply;
+
+            if (entry->flag == TT_EXACT)
+                return (searchOutput){.score = tt_score, .move = tt_move};
+
+            if (entry->flag == TT_UPPERBOUND && tt_score <= alpha)
+                return (searchOutput){.score = tt_score, .move = tt_move};
+
+            if (entry->flag == TT_LOWERBOUND && tt_score >= beta)
+                return (searchOutput){.score = tt_score, .move = tt_move};
+        }
+    }
+
     uint64_t king_bb = board->pieces[5] & board->color[board->turn];
-    int in_check = (!king_bb ||
-                    squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
+    int in_check = (!king_bb || squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
 
     if (depth <= 0)
         return (searchOutput){.score = eval(board), .move = 0};
@@ -72,6 +113,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
         if (in_check)
             return (searchOutput){.score = -MATE_SCORE + ply, .move = 0};
+
         return (searchOutput){.score = 0, .move = 0};
     }
 
@@ -81,12 +123,15 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
+
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
         PVLine child_pv = {0};
+
         int score = -search(&copy, depth - 1, ply + 1,
-                            -beta, -alpha, stop, &child_pv).score;
+                            -beta, -alpha, stop, &child_pv)
+                         .score;
 
         if (stop->stop)
             break;
@@ -104,8 +149,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (pv && child_pv.length + 1 <= MAX_PV_LENGTH)
             {
                 pv->moves[0] = move;
-                memcpy(pv->moves + 1, child_pv.moves,
+                memcpy(pv->moves + 1,
+                       child_pv.moves,
                        child_pv.length * sizeof(uint16_t));
+
                 pv->length = child_pv.length + 1;
             }
         }
@@ -114,11 +161,31 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             break;
     }
 
+    if (!stop->stop)
+    {
+        TTFlag flag;
+
+        if (best_score <= original_alpha)
+            flag = TT_UPPERBOUND;
+        else if (best_score >= beta)
+            flag = TT_LOWERBOUND;
+        else
+            flag = TT_EXACT;
+
+        int store_score = best_score;
+
+        if (store_score > 31000)
+            store_score += ply;
+        else if (store_score < -31000)
+            store_score -= ply;
+
+        storeTTEntry(hash,(int16_t)store_score,best_move,(uint16_t)depth,flag);
+    }
+
     output.score = best_score;
     output.move = best_move;
     return output;
 }
-
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
     uint16_t best_move_so_far = 0;

@@ -13,6 +13,7 @@ SRCS := \
 	lmath.c \
 	play.c \
 	search.c \
+	tt.c \
 	text.c \
 	uci.c \
 	zobrist.c

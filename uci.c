@@ -8,6 +8,7 @@
 #include <time.h>
 #include <inttypes.h>
 #include "text.h"
+#include "tt.h"
 
 void movestring(uint16_t move)
 {
@@ -240,6 +241,45 @@ void uciStart()
             else
             {
                 printf("position: unknown argument '%s'\n", tokens[1]);
+            }
+        }
+        else if (strcmp(tokens[0], "setoption") == 0)
+        {
+            if (tokens[1] == NULL || strcmp(tokens[1], "name") != 0) {
+                printf("setoption: expected name\n");
+                continue;
+            }
+
+            if (tokens[2] == NULL) {
+                printf("setoption: missing option name\n");
+                continue;
+            }
+
+            if (strcmp(tokens[2], "Hash") == 0) {
+                if (tokens[3] == NULL || strcmp(tokens[3], "value") != 0) {
+                    printf("Hash: expected value\n");
+                    continue;
+                }
+
+                if (tokens[4] == NULL) {
+                    printf("Hash: missing size in MB\n");
+                    continue;
+                }
+
+                int mb = matoi(tokens[4]);
+
+                if (mb <= 0) {
+                    printf("Hash: invalid size\n");
+                    continue;
+                }
+
+                setTTSizeMB((size_t)mb);
+            }
+            else if (strcmp(tokens[2], "Clear") == 0) {
+                clearTT();
+            }
+            else {
+                printf("setoption: unknown option\n");
             }
         }
         else if (strcmp(tokens[0], "go") == 0)
