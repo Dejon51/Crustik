@@ -85,7 +85,7 @@ TTEntry *probeTT(uint64_t hash)
 
     size_t index = hash % table_size;
 
-    if (table[index].hash == hash)
+    if (table[index].hash == hash && table[index].flag != TT_NONE)
         return &table[index];
 
     return NULL;

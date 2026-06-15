@@ -5,9 +5,10 @@
 #include <stddef.h>
 
 typedef enum {
-    TT_EXACT,
-    TT_LOWERBOUND,
-    TT_UPPERBOUND
+    TT_NONE = 0,
+    TT_EXACT = 1,
+    TT_LOWERBOUND = 2,
+    TT_UPPERBOUND = 3
 } TTFlag;
 
 typedef struct {
