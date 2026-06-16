@@ -7,7 +7,7 @@
 #define TT_MASK (TT_SIZE - 1)
 
 #define TT_EXACT 0
-#define TT_ALPHA 1 
+#define TT_ALPHA 1
 #define TT_BETA  2
 
 typedef struct {
@@ -18,7 +18,11 @@ typedef struct {
     uint8_t  flag;
 } TTEntry;
 
-extern TTEntry tt[TT_SIZE];
+/* malloc-based transposition table */
+extern TTEntry *tt;
+
+int tt_init(void);
+void tt_free(void);
 
 void tt_clear(void);
 void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag);
