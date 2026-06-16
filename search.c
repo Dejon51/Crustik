@@ -55,6 +55,15 @@ static int score_from_tt(int score, int ply)
     return score;
 }
 
+static int score_to_tt(int score, int ply)
+{
+    if (score > 31000)
+        return score + ply;
+    if (score < -31000)
+        return score - ply;
+    return score;
+}
+
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     stopConditions *stop, PVLine *pv)
 {
@@ -107,6 +116,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
+    move_list = ordermoves(board, &move_list, ply, tt_move);
 
     if (move_list.offset == 0)
     {
