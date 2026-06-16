@@ -2,6 +2,7 @@
 #define TT_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define TT_SIZE (1 << 22)
 #define TT_MASK (TT_SIZE - 1)
@@ -18,10 +19,9 @@ typedef struct {
     uint8_t  flag;
 } TTEntry;
 
-/* malloc-based transposition table */
 extern TTEntry *tt;
 
-int tt_init(void);
+int tt_init(size_t size);
 void tt_free(void);
 
 void tt_clear(void);

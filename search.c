@@ -12,10 +12,6 @@
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
 
-void clear_ordering_tables(void)
-{
-}
-
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = (move >> 6) & 0x3F;
@@ -57,49 +53,6 @@ static int score_from_tt(int score, int ply)
     if (score < -31000)
         return score + ply;
     return score;
-}
-
-static int score_to_tt(int score, int ply)
-{
-    if (score > 31000)
-        return score + ply;
-    if (score < -31000)
-        return score - ply;
-    return score;
-}
-
-MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
-{
-    (void)board;
-    (void)ply;
-
-    MoveList ordered = *move_list;
-
-    if (!tt_move)
-        return ordered;
-
-    for (unsigned int i = 0; i < ordered.offset; i++)
-    {
-        if (ordered.movelist[i] == tt_move)
-        {
-            uint16_t tmp = ordered.movelist[0];
-            ordered.movelist[0] = ordered.movelist[i];
-            ordered.movelist[i] = tmp;
-            break;
-        }
-    }
-
-    return ordered;
-}
-
-// Compatibility stub. Basic negamax evaluates leaves directly.
-int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
-{
-    (void)alpha;
-    (void)beta;
-    (void)ply;
-    (void)stop;
-    return eval(board);
 }
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
@@ -154,7 +107,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
-    move_list = ordermoves(board, &move_list, ply, tt_move);
 
     if (move_list.offset == 0)
     {
