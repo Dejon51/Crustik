@@ -10,9 +10,7 @@
 int main(int argc, char **argv)
 {
     init_tables();
-    if (!tt_init()) {
-        return 1;
-    }
+
     if (argc > 1 && strcmp(argv[1], "bench") == 0)
     {
         bench();
@@ -24,7 +22,6 @@ int main(int argc, char **argv)
     }
 
     uciStart();
-    tt_free();
     printf("\n");
     
     return 0;

@@ -19,10 +19,6 @@ typedef struct {
     uint8_t  flag;
 } TTEntry;
 
-extern TTEntry *tt;
-
-int tt_init(void);
-void tt_free(void);
 
 void tt_clear(void);
 void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag);
