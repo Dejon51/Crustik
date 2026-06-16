@@ -21,7 +21,7 @@ typedef struct {
 
 extern TTEntry *tt;
 
-int tt_init(size_t size);
+int tt_init(void);
 void tt_free(void);
 
 void tt_clear(void);

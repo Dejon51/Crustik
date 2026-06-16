@@ -10,7 +10,7 @@
 int main(int argc, char **argv)
 {
     init_tables();
-    if (!tt_init(1<<19)) {
+    if (!tt_init()) {
         return 1;
     }
     if (argc > 1 && strcmp(argv[1], "bench") == 0)
