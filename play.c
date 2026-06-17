@@ -538,6 +538,36 @@ void legalMoveGen(Position *board, MoveList *list)
         }
     }
 
+    if (check_count == 0 && pinned_pieces == 0 && board->epsquare == -1)
+    {
+        MoveList king_pseudo;
+        king_pseudo.offset = 0;
+        kingMoves(board, &king_pseudo, us, 0);
+
+        for (uint16_t i = 0; i < king_pseudo.offset; i++)
+        {
+            uint16_t move = king_pseudo.movelist[i];
+            int from = (move >> 6) & 0x3F;
+            int to = move & 0x3F;
+            uint64_t from_bb = 1ULL << from;
+            uint64_t to_bb = 1ULL << to;
+            uint64_t occ_without_king = occ & ~from_bb;
+
+            if (!squareAttacked_custom(board, to, them, occ_without_king | to_bb))
+                list->movelist[list->offset++] = move;
+        }
+
+        if (us == 0)
+            pawnMovesWhite(board, list);
+        else
+            pawnMovesBlack(board, list);
+
+        horseMoves(board, list, us);
+        bishopMoves(board, list, us);
+        rookMoves(board, list, us);
+        return;
+    }
+
     MoveList pseudo;
     pseudo.offset = 0;
     kingMoves(board, &pseudo, us, check_count);
