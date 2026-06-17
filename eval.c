@@ -1,35 +1,41 @@
 #include "eval.h"
 #include "lmath.h"
-#include "stdio.h"
 #include "play.h"
-#include <stdio.h>
 #include "precomputed.h"
 #include "rook_table.h"
 #include "bishop_table.h"
 
-// #define ILLEGALMOVE 42 // Answer to the universe
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
 
-// static uint8_t penaltymap[64] = {1, 2, 3, 4, 4, 3, 2, 1, 2, 3, 4, 5, 5, 4, 3, 2, 3, 4, 5, 6, 6, 5, 4, 3, 4, 5, 6, 7, 7, 6, 5, 4, 4, 5, 6, 7, 7, 6, 5, 4, 3, 4, 5, 6, 6, 5, 4, 3, 2, 3, 4, 5, 5, 4, 3, 2, 1, 2, 3, 4, 4, 3, 2, 1};
+// Position piece order:
+// pawn   0
+// bishop 1
+// horse  2
+// rook   3
+// queen  4
+// king   5
 
+enum {
+    PAWN   = 0,
+    BISHOP = 1,
+    HORSE  = 2,
+    ROOK   = 3,
+    QUEEN  = 4,
+    KING   = 5
+};
 
-typedef enum
-{
-    PAWNVAL = 1,
-    BISHOPVAL = 3,
-    KNIGHTVAL = 3,
-    ROOKVAL = 5,
-    QUEENVAL = 9,
-    KINGVAL = 11,
-} pieceVal;
+#define FLIP(sq) ((sq) ^ 56)
+#define OTHER(side) ((side) ^ 1)
 
-#define PCOLOR(p) ((p)&1)
+#define FILE_A 0x0101010101010101ULL
+#define FILE_H 0x8080808080808080ULL
 
-#define FLIP(sq) ((sq)^56)
-#define OTHER(side) ((side)^ 1)
-
-
-int mg_value[6] = { 82, 337, 365, 477, 1025,  0};
-int eg_value[6] = { 94, 281, 297, 512,  936,  0};
+// Correct order for your engine:
+// pawn, bishop, horse, rook, queen, king
+int mg_value[6] = { 82, 365, 337, 477, 1025, 0 };
+int eg_value[6] = { 94, 297, 281, 512,  936, 0 };
 
 int mg_pawn_table[64] = {
       0,   0,   0,   0,   0,   0,  0,   0,
@@ -163,8 +169,8 @@ int eg_king_table[64] = {
     -53, -34, -21, -11, -28, -14, -24, -43
 };
 
-int mobility_mg[6] = {0, 4, 4, 2, 1, 0};
-int mobility_eg[6] = {0, 2, 3, 2, 1, 0};
+int mobility_mg[6] = { 0, 4, 4, 2, 1, 0 };
+int mobility_eg[6] = { 0, 3, 2, 2, 1, 0 };
 
 int* mg_pesto_table[6] =
 {
@@ -185,55 +191,313 @@ int* eg_pesto_table[6] =
     eg_queen_table,
     eg_king_table
 };
-int gamephaseInc[12] = {0,0,1,1,1,1,2,2,4,4,0,0};
+
+// Indexed by pc = 2 * piece + color.
+// pawn, bishop, horse, rook, queen, king.
+int gamephaseInc[12] = {
+    0, 0,
+    1, 1,
+    1, 1,
+    2, 2,
+    4, 4,
+    0, 0
+};
+
 int mg_table[12][64];
 int eg_table[12][64];
 
+static inline int file_of(int sq)
+{
+    return sq & 7;
+}
 
+static inline int rank_of(int sq)
+{
+    return sq >> 3;
+}
+
+static inline uint64_t file_mask(int file)
+{
+    return FILE_A << file;
+}
+
+static inline uint64_t pawn_attacks_bb(uint64_t pawns, int side)
+{
+    if (side == 0)
+    {
+        return ((pawns & ~FILE_A) << 7) |
+               ((pawns & ~FILE_H) << 9);
+    }
+    else
+    {
+        return ((pawns & ~FILE_H) >> 7) |
+               ((pawns & ~FILE_A) >> 9);
+    }
+}
 
 void init_tables()
 {
     int pc, p, sq;
-    for (p = 0, pc = 0; p <= 5; pc += 2, p++) {
-        for (sq = 0; sq < 64; sq++) {
-            mg_table[pc]  [sq] = mg_value[p] + mg_pesto_table[p][sq];
-            eg_table[pc]  [sq] = eg_value[p] + eg_pesto_table[p][sq];
-            mg_table[pc+1][sq] = mg_value[p] + mg_pesto_table[p][FLIP(sq)];
-            eg_table[pc+1][sq] = eg_value[p] + eg_pesto_table[p][FLIP(sq)];
+
+    for (p = 0, pc = 0; p <= 5; pc += 2, p++)
+    {
+        for (sq = 0; sq < 64; sq++)
+        {
+            mg_table[pc][sq]     = mg_value[p] + mg_pesto_table[p][sq];
+            eg_table[pc][sq]     = eg_value[p] + eg_pesto_table[p][sq];
+
+            mg_table[pc + 1][sq] = mg_value[p] + mg_pesto_table[p][FLIP(sq)];
+            eg_table[pc + 1][sq] = eg_value[p] + eg_pesto_table[p][FLIP(sq)];
         }
     }
 }
 
-int getMobility(Position *board, int piece, int sq, int side)
+static int is_passed_pawn(Position *board, int sq, int side)
+{
+    int f = file_of(sq);
+    int r = rank_of(sq);
+
+    uint64_t enemy_pawns = board->pieces[PAWN] & board->color[OTHER(side)];
+
+    for (int df = -1; df <= 1; df++)
+    {
+        int nf = f + df;
+
+        if (nf < 0 || nf > 7)
+            continue;
+
+        uint64_t pawns = enemy_pawns & file_mask(nf);
+
+        while (pawns)
+        {
+            int esq = __builtin_ctzll(pawns);
+            pawns &= pawns - 1;
+
+            int er = rank_of(esq);
+
+            if (side == 0)
+            {
+                if (er > r)
+                    return 0;
+            }
+            else
+            {
+                if (er < r)
+                    return 0;
+            }
+        }
+    }
+
+    return 1;
+}
+
+static void eval_pawn_structure(Position *board, int side, int *mg, int *eg)
+{
+    static const int passed_mg[8] = { 0, 5, 12, 25, 45, 80, 130, 0 };
+    static const int passed_eg[8] = { 0, 10, 25, 50, 85, 140, 220, 0 };
+
+    uint64_t pawns = board->pieces[PAWN] & board->color[side];
+    uint64_t original_pawns = pawns;
+
+    int file_count[8] = {0};
+
+    uint64_t temp = pawns;
+
+    while (temp)
+    {
+        int sq = __builtin_ctzll(temp);
+        temp &= temp - 1;
+
+        file_count[file_of(sq)]++;
+    }
+
+    for (int f = 0; f < 8; f++)
+    {
+        if (file_count[f] > 1)
+        {
+            int extra = file_count[f] - 1;
+
+            *mg -= 10 * extra;
+            *eg -= 18 * extra;
+        }
+    }
+
+    uint64_t own_pawn_attacks = pawn_attacks_bb(original_pawns, side);
+
+    while (pawns)
+    {
+        int sq = __builtin_ctzll(pawns);
+        pawns &= pawns - 1;
+
+        int f = file_of(sq);
+        int r = rank_of(sq);
+        int rel_rank = side == 0 ? r : 7 - r;
+
+        int has_neighbor =
+            (f > 0 && file_count[f - 1] > 0) ||
+            (f < 7 && file_count[f + 1] > 0);
+
+        if (!has_neighbor)
+        {
+            *mg -= 12;
+            *eg -= 18;
+        }
+
+        if (is_passed_pawn(board, sq, side))
+        {
+            int mg_bonus = passed_mg[rel_rank];
+            int eg_bonus = passed_eg[rel_rank];
+
+            if (own_pawn_attacks & (1ULL << sq))
+            {
+                mg_bonus += mg_bonus / 4;
+                eg_bonus += eg_bonus / 4;
+            }
+
+            *mg += mg_bonus;
+            *eg += eg_bonus;
+        }
+    }
+}
+
+static void eval_bishop_pair(Position *board, int side, int *mg, int *eg)
+{
+    uint64_t bishops = board->pieces[BISHOP] & board->color[side];
+
+    if (__builtin_popcountll(bishops) >= 2)
+    {
+        *mg += 30;
+        *eg += 50;
+    }
+}
+
+static void eval_rook_files(Position *board, int side, int *mg, int *eg)
+{
+    uint64_t rooks = board->pieces[ROOK] & board->color[side];
+
+    uint64_t own_pawns = board->pieces[PAWN] & board->color[side];
+    uint64_t enemy_pawns = board->pieces[PAWN] & board->color[OTHER(side)];
+
+    while (rooks)
+    {
+        int sq = __builtin_ctzll(rooks);
+        rooks &= rooks - 1;
+
+        int f = file_of(sq);
+        int r = rank_of(sq);
+        int rel_rank = side == 0 ? r : 7 - r;
+
+        uint64_t fm = file_mask(f);
+
+        int own_pawn_on_file = !!(own_pawns & fm);
+        int enemy_pawn_on_file = !!(enemy_pawns & fm);
+
+        if (!own_pawn_on_file && !enemy_pawn_on_file)
+        {
+            *mg += 18;
+            *eg += 10;
+        }
+        else if (!own_pawn_on_file && enemy_pawn_on_file)
+        {
+            *mg += 10;
+            *eg += 6;
+        }
+
+        if (rel_rank == 6)
+        {
+            *mg += 15;
+            *eg += 25;
+        }
+    }
+}
+
+static void eval_king_safety(Position *board, int side, int *mg)
+{
+    uint64_t king_bb = board->pieces[KING] & board->color[side];
+
+    if (!king_bb)
+        return;
+
+    int king_sq = __builtin_ctzll(king_bb);
+
+    int kf = file_of(king_sq);
+    int kr = rank_of(king_sq);
+
+    uint64_t own_pawns = board->pieces[PAWN] & board->color[side];
+
+    int dir = side == 0 ? 1 : -1;
+
+    int shield = 0;
+    int penalty = 0;
+
+    for (int df = -1; df <= 1; df++)
+    {
+        int f = kf + df;
+
+        if (f < 0 || f > 7)
+            continue;
+
+        if (!(own_pawns & file_mask(f)))
+            penalty += 10;
+
+        for (int dist = 1; dist <= 2; dist++)
+        {
+            int r = kr + dir * dist;
+
+            if (r < 0 || r > 7)
+                continue;
+
+            int sq = r * 8 + f;
+
+            if (own_pawns & (1ULL << sq))
+            {
+                shield += dist == 1 ? 12 : 5;
+                break;
+            }
+
+            if (dist == 1)
+                penalty += 4;
+        }
+    }
+
+    *mg += shield - penalty;
+}
+
+int getMobility(Position *board, int piece, int sq, int side, uint64_t enemy_pawn_attacks)
 {
     uint64_t occ = board->color[0] | board->color[1];
     uint64_t own = board->color[side];
 
+    uint64_t allowed = ~own & ~enemy_pawn_attacks;
+
     switch (piece)
     {
-        case 2: { // knight
-            uint64_t attacks = knighttable[sq] & ~own;
+        case HORSE:
+        {
+            uint64_t attacks = knighttable[sq] & allowed;
             return __builtin_popcountll(attacks);
         }
 
-        case 1: { // bishop
-            uint64_t attacks = getbishopAttacks(sq, occ) & ~own;
+        case BISHOP:
+        {
+            uint64_t attacks = getbishopAttacks(sq, occ) & allowed;
             return __builtin_popcountll(attacks);
         }
 
-        case 3: { // rook
-            uint64_t attacks = getrookAttacks(sq, occ) & ~own;
+        case ROOK:
+        {
+            uint64_t attacks = getrookAttacks(sq, occ) & allowed;
             return __builtin_popcountll(attacks);
         }
 
-        case 4: { // queen
+        case QUEEN:
+        {
             uint64_t attacks =
                 (getbishopAttacks(sq, occ) |
-                 getrookAttacks(sq, occ)) & ~own;
+                 getrookAttacks(sq, occ)) & allowed;
 
             int mob = __builtin_popcountll(attacks);
 
-            // prevent eval explosion
             return mob > 14 ? 14 : mob;
         }
 
@@ -246,50 +510,79 @@ int eval(Position *board)
 {
     int mg[2] = {0, 0};
     int eg[2] = {0, 0};
+
     int gamePhase = 0;
+
+    uint64_t white_pawns = board->pieces[PAWN] & board->color[0];
+    uint64_t black_pawns = board->pieces[PAWN] & board->color[1];
+
+    uint64_t pawn_attacks[2];
+
+    pawn_attacks[0] = pawn_attacks_bb(white_pawns, 0);
+    pawn_attacks[1] = pawn_attacks_bb(black_pawns, 1);
 
     for (int piece = 0; piece < 6; piece++)
     {
-        // white pieces
         uint64_t bb = board->pieces[piece] & board->color[0];
+
         while (bb)
         {
             int sq = __builtin_ctzll(bb);
             bb &= bb - 1;
 
-            int pc = 2*piece + 0;
-            int mob = getMobility(board, piece, sq, 0);
-            mg[0] += mob * mobility_mg[piece];
-            eg[0] += mob * mobility_eg[piece];
+            int pc = 2 * piece;
+
+            int mob = getMobility(board, piece, sq, 0, pawn_attacks[1]);
+
             mg[0] += mg_table[pc][sq];
             eg[0] += eg_table[pc][sq];
+
+            mg[0] += mob * mobility_mg[piece];
+            eg[0] += mob * mobility_eg[piece];
+
             gamePhase += gamephaseInc[pc];
         }
 
-        // black pieces
         bb = board->pieces[piece] & board->color[1];
+
         while (bb)
         {
             int sq = __builtin_ctzll(bb);
             bb &= bb - 1;
 
-            int pc = 2*piece + 1;
-            int mob = getMobility(board, piece, sq, 1);
-            mg[1] += mob * mobility_mg[piece];
-            eg[1] += mob * mobility_eg[piece];
+            int pc = 2 * piece + 1;
+
+            int mob = getMobility(board, piece, sq, 1, pawn_attacks[0]);
+
             mg[1] += mg_table[pc][sq];
             eg[1] += eg_table[pc][sq];
+
+            mg[1] += mob * mobility_mg[piece];
+            eg[1] += mob * mobility_eg[piece];
+
             gamePhase += gamephaseInc[pc];
         }
     }
 
-    // Tapered eval 
-    int mgScore = mg[board->turn] - mg[!board->turn];
-    int egScore = eg[board->turn] - eg[!board->turn];
+    for (int side = 0; side < 2; side++)
+    {
+        eval_pawn_structure(board, side, &mg[side], &eg[side]);
+        eval_bishop_pair(board, side, &mg[side], &eg[side]);
+        eval_rook_files(board, side, &mg[side], &eg[side]);
+        eval_king_safety(board, side, &mg[side]);
+    }
 
-    if (gamePhase > 24) gamePhase = 24; // cap in case of promotions
+    if (gamePhase > 24)
+        gamePhase = 24;
+
     int egPhase = 24 - gamePhase;
-    int base_eval = (mgScore * gamePhase + egScore * egPhase) / 24;
 
-    return base_eval;
+    // Side-to-move relative eval.
+    // This is correct for negamax.
+    int mgScore = mg[board->turn] - mg[OTHER(board->turn)];
+    int egScore = eg[board->turn] - eg[OTHER(board->turn)];
+
+    int score = (mgScore * gamePhase + egScore * egPhase) / 24;
+
+    return score;
 }
