@@ -23,6 +23,25 @@ typedef enum
 #define FLIP(sq) ((sq)^56)
 #define OTHER(side) ((side)^1)
 
+// =============================
+// Eval feature switches
+// =============================
+
+// Original eval parts
+#define USE_BASE_PESTO      1
+#define USE_MOBILITY        1
+#define USE_TAPERED_EVAL    1
+
+// Added features
+#define USE_BISHOP_PAIR     1
+#define USE_ISOLATED_PAWNS  1
+#define USE_DOUBLED_PAWNS   1
+#define USE_ROOK_FILES      1
+
+// =============================
+// Added feature values
+// =============================
+
 #define BISHOP_PAIR_MG 25
 #define BISHOP_PAIR_EG 35
 
@@ -200,10 +219,13 @@ int gamephaseInc[12] = {0,0,1,1,1,1,2,2,4,4,0,0};
 int mg_table[12][64];
 int eg_table[12][64];
 
+#if USE_ISOLATED_PAWNS || USE_DOUBLED_PAWNS || USE_ROOK_FILES
 static uint64_t eval_file_mask[8];
+#endif
 
-static void init_eval_masks()
+void init_tables()
 {
+#if USE_ISOLATED_PAWNS || USE_DOUBLED_PAWNS || USE_ROOK_FILES
     for (int file = 0; file < 8; file++) {
         eval_file_mask[file] = 0ULL;
 
@@ -212,73 +234,7 @@ static void init_eval_masks()
             eval_file_mask[file] |= 1ULL << sq;
         }
     }
-}
-
-static void addBishopPair(Position *board, int side, int *mgScore, int *egScore)
-{
-    uint64_t bishops = board->pieces[1] & board->color[side];
-
-    if (__builtin_popcountll(bishops) >= 2) {
-        *mgScore += BISHOP_PAIR_MG;
-        *egScore += BISHOP_PAIR_EG;
-    }
-}
-
-static void addPawnStructure(Position *board, int side, int *mgScore, int *egScore)
-{
-    uint64_t pawns = board->pieces[0] & board->color[side];
-    uint64_t allPawns = pawns;
-
-    while (pawns)
-    {
-        int sq = __builtin_ctzll(pawns);
-        pawns &= pawns - 1;
-
-        int file = sq & 7;
-
-        uint64_t sameFile = eval_file_mask[file];
-        uint64_t adjacentFiles = 0ULL;
-
-        if (file > 0)
-            adjacentFiles |= eval_file_mask[file - 1];
-
-        if (file < 7)
-            adjacentFiles |= eval_file_mask[file + 1];
-
-        if ((allPawns & adjacentFiles) == 0) {
-            *mgScore -= ISOLATED_PAWN_MG;
-            *egScore -= ISOLATED_PAWN_EG;
-        }
-
-        if (__builtin_popcountll(allPawns & sameFile) > 1) {
-            *mgScore -= DOUBLED_PAWN_MG;
-            *egScore -= DOUBLED_PAWN_EG;
-        }
-    }
-}
-
-static void addRookFileBonus(Position *board, int side, int sq, int *mgScore, int *egScore)
-{
-    int file = sq & 7;
-    uint64_t fileMask = eval_file_mask[file];
-
-    uint64_t ownPawns = board->pieces[0] & board->color[side];
-    uint64_t enemyPawns = board->pieces[0] & board->color[OTHER(side)];
-
-    if ((ownPawns & fileMask) == 0) {
-        if ((enemyPawns & fileMask) == 0) {
-            *mgScore += ROOK_OPEN_FILE_MG;
-            *egScore += ROOK_OPEN_FILE_EG;
-        } else {
-            *mgScore += ROOK_SEMI_OPEN_FILE_MG;
-            *egScore += ROOK_SEMI_OPEN_FILE_EG;
-        }
-    }
-}
-
-void init_tables()
-{
-    init_eval_masks();
+#endif
 
     int pc, p, sq;
     for (p = 0, pc = 0; p <= 5; pc += 2, p++) {
@@ -329,6 +285,106 @@ int getMobility(Position *board, int piece, int sq, int side)
     }
 }
 
+static void addBishopPair(Position *board, int side, int *mgScore, int *egScore)
+{
+#if USE_BISHOP_PAIR
+    uint64_t bishops = board->pieces[1] & board->color[side];
+
+    if (__builtin_popcountll(bishops) >= 2) {
+        *mgScore += BISHOP_PAIR_MG;
+        *egScore += BISHOP_PAIR_EG;
+    }
+#else
+    (void)board;
+    (void)side;
+    (void)mgScore;
+    (void)egScore;
+#endif
+}
+
+static void addIsolatedPawns(Position *board, int side, int *mgScore, int *egScore)
+{
+#if USE_ISOLATED_PAWNS
+    uint64_t pawns = board->pieces[0] & board->color[side];
+    uint64_t allPawns = pawns;
+
+    while (pawns)
+    {
+        int sq = __builtin_ctzll(pawns);
+        pawns &= pawns - 1;
+
+        int file = sq & 7;
+        uint64_t adjacentFiles = 0ULL;
+
+        if (file > 0)
+            adjacentFiles |= eval_file_mask[file - 1];
+
+        if (file < 7)
+            adjacentFiles |= eval_file_mask[file + 1];
+
+        if ((allPawns & adjacentFiles) == 0) {
+            *mgScore -= ISOLATED_PAWN_MG;
+            *egScore -= ISOLATED_PAWN_EG;
+        }
+    }
+#else
+    (void)board;
+    (void)side;
+    (void)mgScore;
+    (void)egScore;
+#endif
+}
+
+static void addDoubledPawns(Position *board, int side, int *mgScore, int *egScore)
+{
+#if USE_DOUBLED_PAWNS
+    uint64_t pawns = board->pieces[0] & board->color[side];
+
+    for (int file = 0; file < 8; file++) {
+        int count = __builtin_popcountll(pawns & eval_file_mask[file]);
+
+        if (count > 1) {
+            int extraPawns = count - 1;
+
+            *mgScore -= DOUBLED_PAWN_MG * extraPawns;
+            *egScore -= DOUBLED_PAWN_EG * extraPawns;
+        }
+    }
+#else
+    (void)board;
+    (void)side;
+    (void)mgScore;
+    (void)egScore;
+#endif
+}
+
+static void addRookFileBonus(Position *board, int side, int sq, int *mgScore, int *egScore)
+{
+#if USE_ROOK_FILES
+    int file = sq & 7;
+    uint64_t fileMask = eval_file_mask[file];
+
+    uint64_t ownPawns = board->pieces[0] & board->color[side];
+    uint64_t enemyPawns = board->pieces[0] & board->color[OTHER(side)];
+
+    if ((ownPawns & fileMask) == 0) {
+        if ((enemyPawns & fileMask) == 0) {
+            *mgScore += ROOK_OPEN_FILE_MG;
+            *egScore += ROOK_OPEN_FILE_EG;
+        } else {
+            *mgScore += ROOK_SEMI_OPEN_FILE_MG;
+            *egScore += ROOK_SEMI_OPEN_FILE_EG;
+        }
+    }
+#else
+    (void)board;
+    (void)side;
+    (void)sq;
+    (void)mgScore;
+    (void)egScore;
+#endif
+}
+
 int eval(Position *board)
 {
     int mg[2] = {0, 0};
@@ -337,6 +393,7 @@ int eval(Position *board)
 
     for (int piece = 0; piece < 6; piece++)
     {
+        // White pieces
         uint64_t bb = board->pieces[piece] & board->color[0];
 
         while (bb)
@@ -345,21 +402,29 @@ int eval(Position *board)
             bb &= bb - 1;
 
             int pc = 2 * piece + 0;
+
+#if USE_MOBILITY
             int mob = getMobility(board, piece, sq, 0);
 
             mg[0] += mob * mobility_mg[piece];
             eg[0] += mob * mobility_eg[piece];
+#endif
 
+#if USE_BASE_PESTO
             mg[0] += mg_table[pc][sq];
             eg[0] += eg_table[pc][sq];
+#endif
 
+#if USE_ROOK_FILES
             if (piece == 3) {
                 addRookFileBonus(board, 0, sq, &mg[0], &eg[0]);
             }
+#endif
 
             gamePhase += gamephaseInc[pc];
         }
 
+        // Black pieces
         bb = board->pieces[piece] & board->color[1];
 
         while (bb)
@@ -368,31 +433,48 @@ int eval(Position *board)
             bb &= bb - 1;
 
             int pc = 2 * piece + 1;
+
+#if USE_MOBILITY
             int mob = getMobility(board, piece, sq, 1);
 
             mg[1] += mob * mobility_mg[piece];
             eg[1] += mob * mobility_eg[piece];
+#endif
 
+#if USE_BASE_PESTO
             mg[1] += mg_table[pc][sq];
             eg[1] += eg_table[pc][sq];
+#endif
 
+#if USE_ROOK_FILES
             if (piece == 3) {
                 addRookFileBonus(board, 1, sq, &mg[1], &eg[1]);
             }
+#endif
 
             gamePhase += gamephaseInc[pc];
         }
     }
 
-    addPawnStructure(board, 0, &mg[0], &eg[0]);
-    addPawnStructure(board, 1, &mg[1], &eg[1]);
+#if USE_ISOLATED_PAWNS
+    addIsolatedPawns(board, 0, &mg[0], &eg[0]);
+    addIsolatedPawns(board, 1, &mg[1], &eg[1]);
+#endif
 
+#if USE_DOUBLED_PAWNS
+    addDoubledPawns(board, 0, &mg[0], &eg[0]);
+    addDoubledPawns(board, 1, &mg[1], &eg[1]);
+#endif
+
+#if USE_BISHOP_PAIR
     addBishopPair(board, 0, &mg[0], &eg[0]);
     addBishopPair(board, 1, &mg[1], &eg[1]);
+#endif
 
     int mgScore = mg[board->turn] - mg[OTHER(board->turn)];
     int egScore = eg[board->turn] - eg[OTHER(board->turn)];
 
+#if USE_TAPERED_EVAL
     if (gamePhase > 24)
         gamePhase = 24;
 
@@ -400,4 +482,7 @@ int eval(Position *board)
     int base_eval = (mgScore * gamePhase + egScore * egPhase) / 24;
 
     return base_eval;
+#else
+    return mgScore;
+#endif
 }
