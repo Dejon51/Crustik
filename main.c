@@ -1,19 +1,27 @@
 #include <stdio.h>
+#include <string.h>
 #include "play.h"
 #include "lmath.h"
 #include "uci.h"
-#include "lmath.h"
+#include "bench.h"
 #include "eval.h"
 
-
-int main()
+int main(int argc, char **argv)
 {
-    // MoveList* list = {0};
-    // legalMoveGen(list);
     init_tables();
-    uciStart();
-    // makeMove(board,0);// 0 white black 1
-    printf("\n");
 
-    return 1;
+    if (argc > 1 && strcmp(argv[1], "bench") == 0)
+    {
+        bench();
+        return 0;
+    }
+    else if (argc > 1 && strcmp(argv[1], "movegen") == 0){
+        bench_movegen();
+        return 0;
+    }
+
+    uciStart();
+
+    printf("\n");
+    return 0;
 }
