@@ -23,33 +23,23 @@ typedef enum
 #define FLIP(sq) ((sq)^56)
 #define OTHER(side) ((side)^1)
 
-#define EVAL_FILE_A 0x0101010101010101ULL
-#define EVAL_FILE_H 0x8080808080808080ULL
-#define EVAL_NOT_FILE_A (~EVAL_FILE_A)
-#define EVAL_NOT_FILE_H (~EVAL_FILE_H)
-
-#define TEMPO_BONUS 10
-
-#define BISHOP_PAIR_MG 30
+#define BISHOP_PAIR_MG 25
 #define BISHOP_PAIR_EG 35
 
-#define ISOLATED_PAWN_MG 12
-#define ISOLATED_PAWN_EG 16
+#define ISOLATED_PAWN_MG 8
+#define ISOLATED_PAWN_EG 12
 
-#define DOUBLED_PAWN_MG 10
-#define DOUBLED_PAWN_EG 18
+#define DOUBLED_PAWN_MG 8
+#define DOUBLED_PAWN_EG 14
 
-#define CONNECTED_PAWN_MG 8
-#define CONNECTED_PAWN_EG 12
+#define ROOK_OPEN_FILE_MG 18
+#define ROOK_OPEN_FILE_EG 12
 
-#define ROOK_OPEN_FILE_MG 25
-#define ROOK_OPEN_FILE_EG 20
+#define ROOK_SEMI_OPEN_FILE_MG 8
+#define ROOK_SEMI_OPEN_FILE_EG 6
 
-#define ROOK_SEMI_OPEN_FILE_MG 12
-#define ROOK_SEMI_OPEN_FILE_EG 10
-
-int mg_value[6] = {82, 337, 365, 477, 1025, 0};
-int eg_value[6] = {94, 281, 297, 512, 936, 0};
+int mg_value[6] = { 82, 337, 365, 477, 1025,  0};
+int eg_value[6] = { 94, 281, 297, 512,  936,  0};
 
 int mg_pawn_table[64] = {
       0,   0,   0,   0,   0,   0,  0,   0,
@@ -183,6 +173,9 @@ int eg_king_table[64] = {
     -53, -34, -21, -11, -28, -14, -24, -43
 };
 
+int mobility_mg[6] = {0, 4, 4, 2, 1, 0};
+int mobility_eg[6] = {0, 2, 3, 2, 1, 0};
+
 int* mg_pesto_table[6] =
 {
     mg_pawn_table,
@@ -208,73 +201,6 @@ int mg_table[12][64];
 int eg_table[12][64];
 
 static uint64_t eval_file_mask[8];
-static uint64_t passed_mask_white[64];
-static uint64_t passed_mask_black[64];
-
-static int knightMobMg[9] = {
-    -40, -25, -15, -5, 5, 12, 18, 22, 25
-};
-
-static int knightMobEg[9] = {
-    -30, -18, -10, -2, 5, 10, 14, 17, 20
-};
-
-static int bishopMobMg[14] = {
-    -30, -20, -12, -5, 4, 10, 16, 21, 25, 28, 30, 32, 33, 34
-};
-
-static int bishopMobEg[14] = {
-    -25, -16, -8, -2, 5, 11, 16, 20, 23, 25, 27, 28, 29, 30
-};
-
-static int rookMobMg[15] = {
-    -20, -15, -10, -5, 0, 5, 9, 13, 16, 19, 21, 23, 24, 25, 26
-};
-
-static int rookMobEg[15] = {
-    -15, -10, -6, -2, 2, 6, 10, 13, 16, 18, 20, 21, 22, 23, 24
-};
-
-static int queenMobMg[28] = {
-    -10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 12, 14, 15,
-     16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 25, 25, 25, 25
-};
-
-static int queenMobEg[28] = {
-    -8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 12, 13, 14, 15,
-    16, 17, 18, 19, 20, 21, 21, 22, 22, 23, 23, 24, 24, 24
-};
-
-static int max_int(int a, int b)
-{
-    return a > b ? a : b;
-}
-
-static int abs_int(int x)
-{
-    return x < 0 ? -x : x;
-}
-
-static int kingDistance(int a, int b)
-{
-    int af = a & 7;
-    int ar = a >> 3;
-
-    int bf = b & 7;
-    int br = b >> 3;
-
-    return max_int(abs_int(af - bf), abs_int(ar - br));
-}
-
-static int getKingSq(Position *board, int side)
-{
-    uint64_t king = board->pieces[5] & board->color[side];
-
-    if (!king)
-        return -1;
-
-    return __builtin_ctzll(king);
-}
 
 static void init_eval_masks()
 {
@@ -286,113 +212,22 @@ static void init_eval_masks()
             eval_file_mask[file] |= 1ULL << sq;
         }
     }
-
-    for (int sq = 0; sq < 64; sq++) {
-        int file = sq & 7;
-        int rank = sq >> 3;
-
-        passed_mask_white[sq] = 0ULL;
-        passed_mask_black[sq] = 0ULL;
-
-        for (int df = -1; df <= 1; df++) {
-            int f = file + df;
-
-            if (f < 0 || f > 7)
-                continue;
-
-            for (int r = rank + 1; r < 8; r++)
-                passed_mask_white[sq] |= 1ULL << (r * 8 + f);
-
-            for (int r = rank - 1; r >= 0; r--)
-                passed_mask_black[sq] |= 1ULL << (r * 8 + f);
-        }
-    }
 }
 
-static uint64_t pawnAttacksBySide(uint64_t pawns, int side)
-{
-    if (side == 0) {
-        return ((pawns << 7) & EVAL_NOT_FILE_H) |
-               ((pawns << 9) & EVAL_NOT_FILE_A);
-    } else {
-        return ((pawns >> 7) & EVAL_NOT_FILE_A) |
-               ((pawns >> 9) & EVAL_NOT_FILE_H);
-    }
-}
-
-static uint64_t enemyPawnAttacks(Position *board, int side)
-{
-    uint64_t enemyPawns = board->pieces[0] & board->color[OTHER(side)];
-    return pawnAttacksBySide(enemyPawns, OTHER(side));
-}
-
-static int mobilityBonusMg(int piece, int mob)
-{
-    switch (piece) {
-        case 2:
-            if (mob > 8) mob = 8;
-            return knightMobMg[mob];
-
-        case 1:
-            if (mob > 13) mob = 13;
-            return bishopMobMg[mob];
-
-        case 3:
-            if (mob > 14) mob = 14;
-            return rookMobMg[mob];
-
-        case 4:
-            if (mob > 27) mob = 27;
-            return queenMobMg[mob];
-
-        default:
-            return 0;
-    }
-}
-
-static int mobilityBonusEg(int piece, int mob)
-{
-    switch (piece) {
-        case 2:
-            if (mob > 8) mob = 8;
-            return knightMobEg[mob];
-
-        case 1:
-            if (mob > 13) mob = 13;
-            return bishopMobEg[mob];
-
-        case 3:
-            if (mob > 14) mob = 14;
-            return rookMobEg[mob];
-
-        case 4:
-            if (mob > 27) mob = 27;
-            return queenMobEg[mob];
-
-        default:
-            return 0;
-    }
-}
-
-static int bishopPair(Position *board, int side, int endgame)
+static void addBishopPair(Position *board, int side, int *mgScore, int *egScore)
 {
     uint64_t bishops = board->pieces[1] & board->color[side];
 
-    if (__builtin_popcountll(bishops) >= 2)
-        return endgame ? BISHOP_PAIR_EG : BISHOP_PAIR_MG;
-
-    return 0;
+    if (__builtin_popcountll(bishops) >= 2) {
+        *mgScore += BISHOP_PAIR_MG;
+        *egScore += BISHOP_PAIR_EG;
+    }
 }
 
-static void pawnStructure(Position *board, int side, int *mgScore, int *egScore)
+static void addPawnStructure(Position *board, int side, int *mgScore, int *egScore)
 {
     uint64_t pawns = board->pieces[0] & board->color[side];
-    uint64_t enemyPawns = board->pieces[0] & board->color[OTHER(side)];
-    uint64_t friendlyPawns = pawns;
-    uint64_t friendlyPawnAttacks = pawnAttacksBySide(friendlyPawns, side);
-
-    int friendlyKing = getKingSq(board, side);
-    int enemyKing = getKingSq(board, OTHER(side));
+    uint64_t allPawns = pawns;
 
     while (pawns)
     {
@@ -400,8 +235,6 @@ static void pawnStructure(Position *board, int side, int *mgScore, int *egScore)
         pawns &= pawns - 1;
 
         int file = sq & 7;
-        int rank = sq >> 3;
-        int relativeRank = side == 0 ? rank : 7 - rank;
 
         uint64_t sameFile = eval_file_mask[file];
         uint64_t adjacentFiles = 0ULL;
@@ -412,52 +245,19 @@ static void pawnStructure(Position *board, int side, int *mgScore, int *egScore)
         if (file < 7)
             adjacentFiles |= eval_file_mask[file + 1];
 
-        if ((friendlyPawns & adjacentFiles) == 0) {
+        if ((allPawns & adjacentFiles) == 0) {
             *mgScore -= ISOLATED_PAWN_MG;
             *egScore -= ISOLATED_PAWN_EG;
         }
 
-        if (__builtin_popcountll(friendlyPawns & sameFile) > 1) {
+        if (__builtin_popcountll(allPawns & sameFile) > 1) {
             *mgScore -= DOUBLED_PAWN_MG;
             *egScore -= DOUBLED_PAWN_EG;
-        }
-
-        if (friendlyPawnAttacks & (1ULL << sq)) {
-            *mgScore += CONNECTED_PAWN_MG;
-            *egScore += CONNECTED_PAWN_EG;
-        }
-
-        uint64_t passMask = side == 0 ? passed_mask_white[sq] : passed_mask_black[sq];
-
-        if ((enemyPawns & passMask) == 0) {
-            int passedMg = 8 + relativeRank * relativeRank * 2;
-            int passedEg = 15 + relativeRank * relativeRank * 5;
-
-            int forwardSq = side == 0 ? sq + 8 : sq - 8;
-            uint64_t occ = board->color[0] | board->color[1];
-
-            if (forwardSq >= 0 && forwardSq < 64) {
-                if (occ & (1ULL << forwardSq)) {
-                    passedMg -= 10;
-                    passedEg -= 20;
-                }
-            }
-
-            if (friendlyKing != -1 && enemyKing != -1) {
-                int friendlyDist = kingDistance(friendlyKing, sq);
-                int enemyDist = kingDistance(enemyKing, sq);
-
-                passedEg += enemyDist * 4;
-                passedEg -= friendlyDist * 2;
-            }
-
-            *mgScore += passedMg;
-            *egScore += passedEg;
         }
     }
 }
 
-static void rookFileBonus(Position *board, int side, int sq, int *mgScore, int *egScore)
+static void addRookFileBonus(Position *board, int side, int sq, int *mgScore, int *egScore)
 {
     int file = sq & 7;
     uint64_t fileMask = eval_file_mask[file];
@@ -474,40 +274,6 @@ static void rookFileBonus(Position *board, int side, int sq, int *mgScore, int *
             *egScore += ROOK_SEMI_OPEN_FILE_EG;
         }
     }
-}
-
-static int kingShield(Position *board, int side)
-{
-    uint64_t king = board->pieces[5] & board->color[side];
-
-    if (!king)
-        return 0;
-
-    int ksq = __builtin_ctzll(king);
-    int file = ksq & 7;
-    int rank = ksq >> 3;
-
-    uint64_t pawns = board->pieces[0] & board->color[side];
-
-    int score = 0;
-    int forward = side == 0 ? 1 : -1;
-
-    for (int df = -1; df <= 1; df++) {
-        int f = file + df;
-        int r = rank + forward;
-
-        if (f < 0 || f > 7 || r < 0 || r > 7)
-            continue;
-
-        int sq = r * 8 + f;
-
-        if (pawns & (1ULL << sq))
-            score += 10;
-        else
-            score -= 8;
-    }
-
-    return score;
 }
 
 void init_tables()
@@ -530,25 +296,21 @@ int getMobility(Position *board, int piece, int sq, int side)
 {
     uint64_t occ = board->color[0] | board->color[1];
     uint64_t own = board->color[side];
-    uint64_t unsafe = enemyPawnAttacks(board, side);
 
     switch (piece)
     {
         case 2: { // knight
             uint64_t attacks = knighttable[sq] & ~own;
-            attacks &= ~unsafe;
             return __builtin_popcountll(attacks);
         }
 
         case 1: { // bishop
             uint64_t attacks = getbishopAttacks(sq, occ) & ~own;
-            attacks &= ~unsafe;
             return __builtin_popcountll(attacks);
         }
 
         case 3: { // rook
             uint64_t attacks = getrookAttacks(sq, occ) & ~own;
-            attacks &= ~unsafe;
             return __builtin_popcountll(attacks);
         }
 
@@ -557,11 +319,9 @@ int getMobility(Position *board, int piece, int sq, int side)
                 (getbishopAttacks(sq, occ) |
                  getrookAttacks(sq, occ)) & ~own;
 
-            attacks &= ~unsafe;
-
             int mob = __builtin_popcountll(attacks);
 
-            return mob > 27 ? 27 : mob;
+            return mob > 14 ? 14 : mob;
         }
 
         default:
@@ -575,42 +335,60 @@ int eval(Position *board)
     int eg[2] = {0, 0};
     int gamePhase = 0;
 
-    for (int side = 0; side < 2; side++)
+    for (int piece = 0; piece < 6; piece++)
     {
-        for (int piece = 0; piece < 6; piece++)
+        uint64_t bb = board->pieces[piece] & board->color[0];
+
+        while (bb)
         {
-            uint64_t bb = board->pieces[piece] & board->color[side];
+            int sq = __builtin_ctzll(bb);
+            bb &= bb - 1;
 
-            while (bb)
-            {
-                int sq = __builtin_ctzll(bb);
-                bb &= bb - 1;
+            int pc = 2 * piece + 0;
+            int mob = getMobility(board, piece, sq, 0);
 
-                int pc = 2 * piece + side;
+            mg[0] += mob * mobility_mg[piece];
+            eg[0] += mob * mobility_eg[piece];
 
-                int mob = getMobility(board, piece, sq, side);
+            mg[0] += mg_table[pc][sq];
+            eg[0] += eg_table[pc][sq];
 
-                mg[side] += mg_table[pc][sq];
-                eg[side] += eg_table[pc][sq];
-
-                mg[side] += mobilityBonusMg(piece, mob);
-                eg[side] += mobilityBonusEg(piece, mob);
-
-                if (piece == 3) {
-                    rookFileBonus(board, side, sq, &mg[side], &eg[side]);
-                }
-
-                gamePhase += gamephaseInc[pc];
+            if (piece == 3) {
+                addRookFileBonus(board, 0, sq, &mg[0], &eg[0]);
             }
+
+            gamePhase += gamephaseInc[pc];
         }
 
-        pawnStructure(board, side, &mg[side], &eg[side]);
+        bb = board->pieces[piece] & board->color[1];
 
-        mg[side] += bishopPair(board, side, 0);
-        eg[side] += bishopPair(board, side, 1);
+        while (bb)
+        {
+            int sq = __builtin_ctzll(bb);
+            bb &= bb - 1;
 
-        mg[side] += kingShield(board, side);
+            int pc = 2 * piece + 1;
+            int mob = getMobility(board, piece, sq, 1);
+
+            mg[1] += mob * mobility_mg[piece];
+            eg[1] += mob * mobility_eg[piece];
+
+            mg[1] += mg_table[pc][sq];
+            eg[1] += eg_table[pc][sq];
+
+            if (piece == 3) {
+                addRookFileBonus(board, 1, sq, &mg[1], &eg[1]);
+            }
+
+            gamePhase += gamephaseInc[pc];
+        }
     }
+
+    addPawnStructure(board, 0, &mg[0], &eg[0]);
+    addPawnStructure(board, 1, &mg[1], &eg[1]);
+
+    addBishopPair(board, 0, &mg[0], &eg[0]);
+    addBishopPair(board, 1, &mg[1], &eg[1]);
 
     int mgScore = mg[board->turn] - mg[OTHER(board->turn)];
     int egScore = eg[board->turn] - eg[OTHER(board->turn)];
@@ -619,10 +397,7 @@ int eval(Position *board)
         gamePhase = 24;
 
     int egPhase = 24 - gamePhase;
-
     int base_eval = (mgScore * gamePhase + egScore * egPhase) / 24;
-
-    base_eval += TEMPO_BONUS;
 
     return base_eval;
 }
