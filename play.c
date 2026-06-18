@@ -9,6 +9,54 @@
 #include "uci.h"
 #include "inttypes.h"
 
+typedef struct {
+    uint64_t pawns;
+    uint64_t knights;
+    uint64_t bishopsQueens;
+    uint64_t rooksQueens;
+    uint64_t king;
+} AttackSet;
+
+static inline AttackSet buildAttackSet(Position *b, int enemy)
+{
+    uint64_t enemyPieces = b->color[enemy];
+
+    AttackSet a;
+    a.pawns = b->pieces[PAWNNUMBER] & enemyPieces;
+    a.knights = b->pieces[HORSENUMBER] & enemyPieces;
+    a.bishopsQueens = (b->pieces[BISHOPNUMBER] | b->pieces[QUEENNUMBER]) & enemyPieces;
+    a.rooksQueens = (b->pieces[ROOKNUMBER] | b->pieces[QUEENNUMBER]) & enemyPieces;
+    a.king = b->pieces[KINGNUMBER] & enemyPieces;
+
+    return a;
+}
+
+static inline bool squareAttacked_fast(int sq, int enemy, uint64_t occ, const AttackSet *a)
+{
+    if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) & a->pawns)
+        return true;
+
+    if (knighttable[sq] & a->knights)
+        return true;
+
+    if (kingtable[sq] & a->king)
+        return true;
+
+    if (getbishopAttacks(sq, occ) & a->bishopsQueens)
+        return true;
+
+    if (getrookAttacks(sq, occ) & a->rooksQueens)
+        return true;
+
+    return false;
+}
+
+#define ADD_MOVE(list, from, to) \
+    ((list)->movelist[(list)->offset++] = ((uint16_t)(((from) << 6) | (to))))
+
+#define ADD_FLAG_MOVE(list, flag, from, to) \
+    ((list)->movelist[(list)->offset++] = ((uint16_t)(((flag) << 12) | ((from) << 6) | (to))))
+
 bool squareAttacked(Position *b, int sq, int enemy)
 {
 
@@ -149,28 +197,28 @@ void pawnMovesWhite(Position *board, MoveList *list)
     {
         int to = pop_lsb(&single_push);
         int from = to + 8;
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     while (double_push)
     {
         int to = pop_lsb(&double_push);
         int from = to + 16;
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     while (capture_l)
     {
         int to = pop_lsb(&capture_l);
         int from = to + 9;
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     while (capture_r)
     {
         int to = pop_lsb(&capture_r);
         int from = to + 7;
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     // Promotions
@@ -184,30 +232,30 @@ void pawnMovesWhite(Position *board, MoveList *list)
         {
             int to = pop_lsb(&prom_single);
             int from = to + 8;
-            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (5U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (6U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (7U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (8U << 12) | (from << 6) | to;
         }
 
         while (prom_capture_l)
         {
             int to = pop_lsb(&prom_capture_l);
             int from = to + 9;
-            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (5U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (6U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (7U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (8U << 12) | (from << 6) | to;
         }
 
         while (prom_capture_r)
         {
             int to = pop_lsb(&prom_capture_r);
             int from = to + 7;
-            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (5U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (6U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (7U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (8U << 12) | (from << 6) | to;
         }
     }
 }
@@ -248,28 +296,28 @@ void pawnMovesBlack(Position *board, MoveList *list)
     {
         int to = pop_lsb(&single_push);
         int from = to - 8;
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     while (double_push)
     {
         int to = pop_lsb(&double_push);
         int from = to - 16;
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     while (capture_l)
     {
         int to = pop_lsb(&capture_l);
         int from = to - 7;
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     while (capture_r)
     {
         int to = pop_lsb(&capture_r);
         int from = to - 9;
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     if (prom_pawns)
@@ -282,30 +330,30 @@ void pawnMovesBlack(Position *board, MoveList *list)
         {
             int to = pop_lsb(&prom_single);
             int from = to - 8;
-            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (5U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (6U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (7U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (8U << 12) | (from << 6) | to;
         }
 
         while (prom_capture_l)
         {
             int to = pop_lsb(&prom_capture_l);
             int from = to - 7;
-            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (5U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (6U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (7U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (8U << 12) | (from << 6) | to;
         }
 
         while (prom_capture_r)
         {
             int to = pop_lsb(&prom_capture_r);
             int from = to - 9;
-            list->movelist[list->offset++] = (5U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (6U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (7U << 12) | ((from & 63) << 6) | (to & 63);
-            list->movelist[list->offset++] = (8U << 12) | ((from & 63) << 6) | (to & 63);
+            list->movelist[list->offset++] = (5U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (6U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (7U << 12) | (from << 6) | to;
+            list->movelist[list->offset++] = (8U << 12) | (from << 6) | to;
         }
     }
 }
@@ -325,7 +373,7 @@ void horseMoves(Position *board, MoveList *list, bool color)
         while (attacks)
         {
             int target = pop_lsb(&attacks);
-            list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
+            list->movelist[list->offset++] = (ind << 6) | target;
         }
     }
 }
@@ -345,7 +393,7 @@ void bishopMoves(Position *board, MoveList *list, bool color)
         while (attacks)
         {
             int target = pop_lsb(&attacks);
-            list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
+            list->movelist[list->offset++] = (ind << 6) | target;
         }
     }
 }
@@ -365,7 +413,7 @@ void rookMoves(Position *board, MoveList *list, bool color)
         while (attacks)
         {
             int target = pop_lsb(&attacks);
-            list->movelist[list->offset++] = ((ind & 63) << 6) | (target & 63);
+            list->movelist[list->offset++] = (ind << 6) | target;
         }
     }
 }
@@ -410,7 +458,7 @@ void kingMoves(Position *board, MoveList *list, bool color, int check_count)
     while (attacks)
     {
         int to = pop_lsb(&attacks);
-        list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+        list->movelist[list->offset++] = (from << 6) | to;
     }
 
     if (check_count == 0)
@@ -490,12 +538,483 @@ uint64_t get_potential_pinners(Position *board, int king_sq, int enemy_color)
     return pinners;
 }
 
+
+static inline void tryAddLegalMove(MoveList *list, int from, int to, int flag,
+                                   uint64_t check_mask,
+                                   uint64_t pinned_pieces,
+                                   const uint64_t pinner_ray[64])
+{
+    uint64_t from_bb = 1ULL << from;
+    uint64_t to_bb = 1ULL << to;
+
+    if (from_bb & pinned_pieces)
+    {
+        if (!(to_bb & pinner_ray[from]))
+            return;
+    }
+
+    if (!(to_bb & check_mask))
+        return;
+
+    if (flag)
+        ADD_FLAG_MOVE(list, flag, from, to);
+    else
+        ADD_MOVE(list, from, to);
+}
+
+static inline void tryAddLegalPawnMove(Position *board, MoveList *list,
+                                       int us, int them,
+                                       int from, int to, int flag,
+                                       uint64_t check_mask,
+                                       uint64_t pinned_pieces,
+                                       const uint64_t pinner_ray[64],
+                                       int check_count,
+                                       int king_sq,
+                                       uint64_t occ,
+                                       bool is_ep)
+{
+    uint64_t from_bb = 1ULL << from;
+    uint64_t to_bb = 1ULL << to;
+
+    if (from_bb & pinned_pieces)
+    {
+        if (!(to_bb & pinner_ray[from]))
+            return;
+    }
+
+    if (is_ep)
+    {
+        int cap_sq = to + (us == 0 ? 8 : -8);
+        uint64_t cap_bb = 1ULL << cap_sq;
+
+        if (check_count == 1 && !(to_bb & check_mask) && !(cap_bb & check_mask))
+            return;
+
+        uint64_t occ_after_ep = (occ & ~from_bb & ~cap_bb) | to_bb;
+        if (squareAttacked_custom(board, king_sq, them, occ_after_ep))
+            return;
+    }
+    else
+    {
+        if (!(to_bb & check_mask))
+            return;
+    }
+
+    if (flag)
+        ADD_FLAG_MOVE(list, flag, from, to);
+    else
+        ADD_MOVE(list, from, to);
+}
+
+static void pawnMovesWhiteLegal(Position *board, MoveList *list,
+                                uint64_t check_mask,
+                                uint64_t pinned_pieces,
+                                const uint64_t pinner_ray[64],
+                                int check_count,
+                                int king_sq,
+                                int them,
+                                uint64_t occ)
+{
+    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[0];
+    if (!pawns)
+        return;
+
+    uint64_t empty = ~board->color[2];
+    uint64_t enemies = board->color[1];
+
+    const uint64_t FILE_A = 0x0101010101010101ULL;
+    const uint64_t FILE_H = 0x8080808080808080ULL;
+    const uint64_t RANK_7 = 0x000000000000FF00ULL;
+    const uint64_t RANK_3 = 0x0000FF0000000000ULL;
+
+    uint64_t norm_pawns = pawns & ~RANK_7;
+    uint64_t prom_pawns = pawns & RANK_7;
+
+    uint64_t single_push = (norm_pawns >> 8) & empty;
+    uint64_t double_push = ((single_push & RANK_3) >> 8) & empty;
+    uint64_t capture_l = ((norm_pawns & ~FILE_A) >> 9) & enemies;
+    uint64_t capture_r = ((norm_pawns & ~FILE_H) >> 7) & enemies;
+
+    while (single_push)
+    {
+        int to = pop_lsb(&single_push);
+        int from = to + 8;
+        tryAddLegalPawnMove(board, list, 0, them, from, to, 0, check_mask,
+                            pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+    }
+
+    while (double_push)
+    {
+        int to = pop_lsb(&double_push);
+        int from = to + 16;
+        tryAddLegalPawnMove(board, list, 0, them, from, to, 0, check_mask,
+                            pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+    }
+
+    while (capture_l)
+    {
+        int to = pop_lsb(&capture_l);
+        int from = to + 9;
+        tryAddLegalPawnMove(board, list, 0, them, from, to, 0, check_mask,
+                            pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+    }
+
+    while (capture_r)
+    {
+        int to = pop_lsb(&capture_r);
+        int from = to + 7;
+        tryAddLegalPawnMove(board, list, 0, them, from, to, 0, check_mask,
+                            pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+    }
+
+    if (board->epsquare != -1)
+    {
+        int ep = board->epsquare;
+        int cap_sq = ep + 8;
+
+        if ((board->pieces[PAWNNUMBER] & board->color[1]) & (1ULL << cap_sq))
+        {
+            uint64_t ep_bb = 1ULL << ep;
+            uint64_t ep_l = ((norm_pawns & ~FILE_A) >> 9) & ep_bb;
+            uint64_t ep_r = ((norm_pawns & ~FILE_H) >> 7) & ep_bb;
+
+            if (ep_l)
+                tryAddLegalPawnMove(board, list, 0, them, ep + 9, ep, 0, check_mask,
+                                    pinned_pieces, pinner_ray, check_count, king_sq, occ, true);
+
+            if (ep_r)
+                tryAddLegalPawnMove(board, list, 0, them, ep + 7, ep, 0, check_mask,
+                                    pinned_pieces, pinner_ray, check_count, king_sq, occ, true);
+        }
+    }
+
+    if (prom_pawns)
+    {
+        uint64_t prom_single = (prom_pawns >> 8) & empty;
+        uint64_t prom_capture_l = ((prom_pawns & ~FILE_A) >> 9) & enemies;
+        uint64_t prom_capture_r = ((prom_pawns & ~FILE_H) >> 7) & enemies;
+
+        while (prom_single)
+        {
+            int to = pop_lsb(&prom_single);
+            int from = to + 8;
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 5, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 6, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 7, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 8, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+        }
+
+        while (prom_capture_l)
+        {
+            int to = pop_lsb(&prom_capture_l);
+            int from = to + 9;
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 5, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 6, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 7, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 8, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+        }
+
+        while (prom_capture_r)
+        {
+            int to = pop_lsb(&prom_capture_r);
+            int from = to + 7;
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 5, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 6, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 7, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 0, them, from, to, 8, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+        }
+    }
+}
+
+static void pawnMovesBlackLegal(Position *board, MoveList *list,
+                                uint64_t check_mask,
+                                uint64_t pinned_pieces,
+                                const uint64_t pinner_ray[64],
+                                int check_count,
+                                int king_sq,
+                                int them,
+                                uint64_t occ)
+{
+    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[1];
+    if (!pawns)
+        return;
+
+    uint64_t empty = ~board->color[2];
+    uint64_t enemies = board->color[0];
+
+    const uint64_t FILE_A = 0x0101010101010101ULL;
+    const uint64_t FILE_H = 0x8080808080808080ULL;
+    const uint64_t RANK_2 = 0x00FF000000000000ULL;
+    const uint64_t RANK_6 = 0x0000000000FF0000ULL;
+
+    uint64_t norm_pawns = pawns & ~RANK_2;
+    uint64_t prom_pawns = pawns & RANK_2;
+
+    uint64_t single_push = (norm_pawns << 8) & empty;
+    uint64_t double_push = ((single_push & RANK_6) << 8) & empty;
+    uint64_t capture_l = ((norm_pawns & ~FILE_A) << 7) & enemies;
+    uint64_t capture_r = ((norm_pawns & ~FILE_H) << 9) & enemies;
+
+    while (single_push)
+    {
+        int to = pop_lsb(&single_push);
+        int from = to - 8;
+        tryAddLegalPawnMove(board, list, 1, them, from, to, 0, check_mask,
+                            pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+    }
+
+    while (double_push)
+    {
+        int to = pop_lsb(&double_push);
+        int from = to - 16;
+        tryAddLegalPawnMove(board, list, 1, them, from, to, 0, check_mask,
+                            pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+    }
+
+    while (capture_l)
+    {
+        int to = pop_lsb(&capture_l);
+        int from = to - 7;
+        tryAddLegalPawnMove(board, list, 1, them, from, to, 0, check_mask,
+                            pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+    }
+
+    while (capture_r)
+    {
+        int to = pop_lsb(&capture_r);
+        int from = to - 9;
+        tryAddLegalPawnMove(board, list, 1, them, from, to, 0, check_mask,
+                            pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+    }
+
+    if (board->epsquare != -1)
+    {
+        int ep = board->epsquare;
+        int cap_sq = ep - 8;
+
+        if ((board->pieces[PAWNNUMBER] & board->color[0]) & (1ULL << cap_sq))
+        {
+            uint64_t ep_bb = 1ULL << ep;
+            uint64_t ep_l = ((norm_pawns & ~FILE_A) << 7) & ep_bb;
+            uint64_t ep_r = ((norm_pawns & ~FILE_H) << 9) & ep_bb;
+
+            if (ep_l)
+                tryAddLegalPawnMove(board, list, 1, them, ep - 7, ep, 0, check_mask,
+                                    pinned_pieces, pinner_ray, check_count, king_sq, occ, true);
+
+            if (ep_r)
+                tryAddLegalPawnMove(board, list, 1, them, ep - 9, ep, 0, check_mask,
+                                    pinned_pieces, pinner_ray, check_count, king_sq, occ, true);
+        }
+    }
+
+    if (prom_pawns)
+    {
+        uint64_t prom_single = (prom_pawns << 8) & empty;
+        uint64_t prom_capture_l = ((prom_pawns & ~FILE_A) << 7) & enemies;
+        uint64_t prom_capture_r = ((prom_pawns & ~FILE_H) << 9) & enemies;
+
+        while (prom_single)
+        {
+            int to = pop_lsb(&prom_single);
+            int from = to - 8;
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 5, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 6, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 7, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 8, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+        }
+
+        while (prom_capture_l)
+        {
+            int to = pop_lsb(&prom_capture_l);
+            int from = to - 7;
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 5, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 6, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 7, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 8, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+        }
+
+        while (prom_capture_r)
+        {
+            int to = pop_lsb(&prom_capture_r);
+            int from = to - 9;
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 5, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 6, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 7, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+            tryAddLegalPawnMove(board, list, 1, them, from, to, 8, check_mask, pinned_pieces, pinner_ray, check_count, king_sq, occ, false);
+        }
+    }
+}
+
+static void horseMovesLegal(Position *board, MoveList *list, bool color,
+                            uint64_t check_mask,
+                            uint64_t pinned_pieces)
+{
+    uint64_t own = board->color[color];
+
+    // Pinned knights cannot move legally.
+    uint64_t knights = board->pieces[HORSENUMBER] & own & ~pinned_pieces;
+
+    while (knights)
+    {
+        int from = pop_lsb(&knights);
+        uint64_t attacks = knighttable[from] & ~own & check_mask;
+
+        while (attacks)
+        {
+            int to = pop_lsb(&attacks);
+            ADD_MOVE(list, from, to);
+        }
+    }
+}
+
+static void bishopMovesLegal(Position *board, MoveList *list, bool color,
+                             uint64_t check_mask,
+                             uint64_t pinned_pieces,
+                             const uint64_t pinner_ray[64])
+{
+    uint64_t own = board->color[color];
+    uint64_t occ = board->color[2];
+    uint64_t sliding = (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & own;
+
+    while (sliding)
+    {
+        int from = pop_lsb(&sliding);
+        uint64_t attacks = getbishopAttacks(from, occ) & ~own & check_mask;
+
+        if ((1ULL << from) & pinned_pieces)
+            attacks &= pinner_ray[from];
+
+        while (attacks)
+        {
+            int to = pop_lsb(&attacks);
+            ADD_MOVE(list, from, to);
+        }
+    }
+}
+
+static void rookMovesLegal(Position *board, MoveList *list, bool color,
+                           uint64_t check_mask,
+                           uint64_t pinned_pieces,
+                           const uint64_t pinner_ray[64])
+{
+    uint64_t own = board->color[color];
+    uint64_t occ = board->color[2];
+    uint64_t sliding = (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & own;
+
+    while (sliding)
+    {
+        int from = pop_lsb(&sliding);
+        uint64_t attacks = getrookAttacks(from, occ) & ~own & check_mask;
+
+        if ((1ULL << from) & pinned_pieces)
+            attacks &= pinner_ray[from];
+
+        while (attacks)
+        {
+            int to = pop_lsb(&attacks);
+            ADD_MOVE(list, from, to);
+        }
+    }
+}
+
+static void kingMovesLegal(Position *board, MoveList *list, bool color,
+                           int check_count,
+                           const AttackSet *enemyAttacks)
+{
+    int us = color;
+    int them = !color;
+
+    uint64_t kings = board->pieces[KINGNUMBER] & board->color[us];
+    if (!kings)
+        return;
+
+    int from = __builtin_ctzll(kings);
+    uint64_t occupancy = board->color[2];
+    uint64_t from_bb = 1ULL << from;
+    uint64_t own_without_king = board->color[us] & ~from_bb;
+
+    uint64_t attacks = kingtable[from] & ~own_without_king;
+
+    while (attacks)
+    {
+        int to = pop_lsb(&attacks);
+        uint64_t to_bb = 1ULL << to;
+        uint64_t occ_after_king_move = (occupancy & ~from_bb) | to_bb;
+
+        if (!squareAttacked_fast(to, them, occ_after_king_move, enemyAttacks))
+            ADD_MOVE(list, from, to);
+    }
+
+    if (check_count == 0)
+    {
+        if (us == 0 && from == E1)
+        {
+            if (board->castling & (1U << WHITE_KINGSIDE))
+            {
+                if (!(occupancy & ((1ULL << F1) | (1ULL << G1))))
+                {
+                    uint64_t occ_g = (occupancy & ~from_bb) | (1ULL << G1);
+                    if (!squareAttacked_fast(F1, them, occupancy, enemyAttacks) &&
+                        !squareAttacked_fast(G1, them, occ_g, enemyAttacks))
+                    {
+                        ADD_FLAG_MOVE(list, 1U, from, G1);
+                    }
+                }
+            }
+
+            if (board->castling & (1U << WHITE_QUEENSIDE))
+            {
+                if (!(occupancy & ((1ULL << B1) | (1ULL << C1) | (1ULL << D1))))
+                {
+                    uint64_t occ_c = (occupancy & ~from_bb) | (1ULL << C1);
+                    if (!squareAttacked_fast(D1, them, occupancy, enemyAttacks) &&
+                        !squareAttacked_fast(C1, them, occ_c, enemyAttacks))
+                    {
+                        ADD_FLAG_MOVE(list, 2U, from, C1);
+                    }
+                }
+            }
+        }
+        else if (us == 1 && from == E8)
+        {
+            if (board->castling & (1U << BLACK_KINGSIDE))
+            {
+                if (!(occupancy & ((1ULL << F8) | (1ULL << G8))))
+                {
+                    uint64_t occ_g = (occupancy & ~from_bb) | (1ULL << G8);
+                    if (!squareAttacked_fast(F8, them, occupancy, enemyAttacks) &&
+                        !squareAttacked_fast(G8, them, occ_g, enemyAttacks))
+                    {
+                        ADD_FLAG_MOVE(list, 4U, from, G8);
+                    }
+                }
+            }
+
+            if (board->castling & (1U << BLACK_QUEENSIDE))
+            {
+                if (!(occupancy & ((1ULL << B8) | (1ULL << C8) | (1ULL << D8))))
+                {
+                    uint64_t occ_c = (occupancy & ~from_bb) | (1ULL << C8);
+                    if (!squareAttacked_fast(D8, them, occupancy, enemyAttacks) &&
+                        !squareAttacked_fast(C8, them, occ_c, enemyAttacks))
+                    {
+                        ADD_FLAG_MOVE(list, 3U, from, C8);
+                    }
+                }
+            }
+        }
+    }
+}
+
 void legalMoveGen(Position *board, MoveList *list)
 {
     board->color[2] = board->color[0] | board->color[1];
+
     int us = board->turn;
     int them = !us;
-    uint64_t king_bb = board->pieces[5] & board->color[us];
+
+    uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];
     if (!king_bb)
         return;
 
@@ -512,12 +1031,11 @@ void legalMoveGen(Position *board, MoveList *list)
     if (check_count == 1)
     {
         int checker_sq = __builtin_ctzll(checkers);
-
         check_mask = ray_between_table[king_sq * 64 + checker_sq] | (1ULL << checker_sq);
     }
     else if (check_count >= 2)
     {
-        check_mask = 0; // Only King moves allowed
+        check_mask = 0ULL;
     }
 
     uint64_t potential_pinners = get_potential_pinners(board, king_sq, them);
@@ -538,67 +1056,23 @@ void legalMoveGen(Position *board, MoveList *list)
         }
     }
 
-    MoveList pseudo;
-    pseudo.offset = 0;
-    kingMoves(board, &pseudo, us, check_count);
+    AttackSet enemyAttacks = buildAttackSet(board, them);
 
-    if (check_count < 2)
-    {
-        if (us == 0)
-            pawnMovesWhite(board, &pseudo);
-        else
-            pawnMovesBlack(board, &pseudo);
+    kingMovesLegal(board, list, us, check_count, &enemyAttacks);
 
-        horseMoves(board, &pseudo, us);
-        bishopMoves(board, &pseudo, us);
-        rookMoves(board, &pseudo, us);
-    }
+    if (check_count >= 2)
+        return;
 
-    for (uint16_t i = 0; i < pseudo.offset; i++)
-    {
-        uint16_t move = pseudo.movelist[i];
-        int from = (move >> 6) & 0x3F;
-        int to = move & 0x3F;
-        uint64_t from_bb = 1ULL << from;
-        uint64_t to_bb = 1ULL << to;
+    if (us == 0)
+        pawnMovesWhiteLegal(board, list, check_mask, pinned_pieces, pinner_ray,
+                            check_count, king_sq, them, occ);
+    else
+        pawnMovesBlackLegal(board, list, check_mask, pinned_pieces, pinner_ray,
+                            check_count, king_sq, them, occ);
 
-        if (from == king_sq)
-        {
-            uint64_t occ_without_king = occ & ~from_bb;
-            if (!squareAttacked_custom(board, to, them, (occ_without_king | to_bb)))
-            {
-                list->movelist[list->offset++] = move;
-            }
-            continue;
-        }
-
-        if (from_bb & pinned_pieces)
-        {
-            if (!(to_bb & pinner_ray[from]))
-                continue;
-        }
-
-        if (board->mailbox[from] == 0 && (to == board->epsquare && board->epsquare != -1))
-        {
-            int cap_sq = to + (us == 0 ? 8 : -8);
-
-            if (check_count == 1 && !(to_bb & check_mask) && !((1ULL << cap_sq) & check_mask))
-                continue;
-
-            uint64_t occ_after_ep = (occ & ~from_bb & ~(1ULL << cap_sq)) | to_bb;
-            if (squareAttacked_custom(board, king_sq, them, occ_after_ep))
-                continue;
-        }
-        else
-        {
-            // Must obey the check mask
-            if (!(to_bb & check_mask))
-                continue;
-        }
-
-        // Move is verified legal
-        list->movelist[list->offset++] = move;
-    }
+    horseMovesLegal(board, list, us, check_mask, pinned_pieces);
+    bishopMovesLegal(board, list, us, check_mask, pinned_pieces, pinner_ray);
+    rookMovesLegal(board, list, us, check_mask, pinned_pieces, pinner_ray);
 }
 
 void makeMove(Position *board, MoveList *list, int move)
@@ -843,68 +1317,99 @@ void moveint(Position *board, uint16_t move)
 
 void captureMoves(Position *board, MoveList *list, bool color)
 {
-    Bitboard enemies = board->color[!color];
-    Bitboard occ = board->color[2]; // Optimized: Use precomputed occupancy
+    uint64_t own = board->color[color];
+    uint64_t enemies = board->color[!color];
+    uint64_t occ = board->color[2];
 
-    Bitboard pawn_caps = pawnMask(board, color) & enemies;
-    while (pawn_caps)
+    const uint64_t FILE_A = 0x0101010101010101ULL;
+    const uint64_t FILE_H = 0x8080808080808080ULL;
+
+    uint64_t pawns = board->pieces[PAWNNUMBER] & own;
+
+    if (color == 0)
     {
-        int to = pop_lsb(&pawn_caps);
-        Bitboard pawns = board->pieces[0] & board->color[color];
-        while (pawns)
+        uint64_t cap_l = ((pawns & ~FILE_A) >> 9) & enemies;
+        uint64_t cap_r = ((pawns & ~FILE_H) >> 7) & enemies;
+
+        while (cap_l)
         {
-            int from = pop_lsb(&pawns);
-            Bitboard single = (color ? white_pawn_attacks[from] : black_pawn_attacks[from]);
-            if (single & (1ULL << to))
-                list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+            int to = pop_lsb(&cap_l);
+            int from = to + 9;
+            ADD_MOVE(list, from, to);
+        }
+
+        while (cap_r)
+        {
+            int to = pop_lsb(&cap_r);
+            int from = to + 7;
+            ADD_MOVE(list, from, to);
+        }
+    }
+    else
+    {
+        uint64_t cap_l = ((pawns & ~FILE_A) << 7) & enemies;
+        uint64_t cap_r = ((pawns & ~FILE_H) << 9) & enemies;
+
+        while (cap_l)
+        {
+            int to = pop_lsb(&cap_l);
+            int from = to - 7;
+            ADD_MOVE(list, from, to);
+        }
+
+        while (cap_r)
+        {
+            int to = pop_lsb(&cap_r);
+            int from = to - 9;
+            ADD_MOVE(list, from, to);
         }
     }
 
-    Bitboard knights = board->pieces[2] & board->color[color];
+    uint64_t knights = board->pieces[HORSENUMBER] & own;
     while (knights)
     {
         int from = pop_lsb(&knights);
-        Bitboard attacks = knighttable[from] & enemies;
+        uint64_t attacks = knighttable[from] & enemies;
         while (attacks)
         {
             int to = pop_lsb(&attacks);
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+            ADD_MOVE(list, from, to);
         }
     }
 
-    Bitboard bishops = (board->pieces[1] | board->pieces[4]) & board->color[color];
+    uint64_t bishops = (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & own;
     while (bishops)
     {
         int from = pop_lsb(&bishops);
-        Bitboard attacks = getbishopAttacks(from, occ) & enemies;
+        uint64_t attacks = getbishopAttacks(from, occ) & enemies;
         while (attacks)
         {
             int to = pop_lsb(&attacks);
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+            ADD_MOVE(list, from, to);
         }
     }
 
-    Bitboard rooks = (board->pieces[3] | board->pieces[4]) & board->color[color];
+    uint64_t rooks = (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & own;
     while (rooks)
     {
         int from = pop_lsb(&rooks);
-        Bitboard attacks = getrookAttacks(from, occ) & enemies;
+        uint64_t attacks = getrookAttacks(from, occ) & enemies;
         while (attacks)
         {
             int to = pop_lsb(&attacks);
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+            ADD_MOVE(list, from, to);
         }
     }
 
-    Bitboard kings = board->pieces[5] & board->color[color];
+    uint64_t kings = board->pieces[KINGNUMBER] & own;
     if (kings)
     {
         int from = __builtin_ctzll(kings);
-        Bitboard attacks = kingtable[from] & enemies;
+        uint64_t attacks = kingtable[from] & enemies;
         while (attacks)
         {
             int to = pop_lsb(&attacks);
-            list->movelist[list->offset++] = ((from & 63) << 6) | (to & 63);
+            ADD_MOVE(list, from, to);
         }
     }
 }
