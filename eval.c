@@ -33,10 +33,10 @@ typedef enum
 #define USE_TAPERED_EVAL    1
 
 // Added features
-#define USE_BISHOP_PAIR     1
+#define USE_BISHOP_PAIR     0
 #define USE_ISOLATED_PAWNS  1
 #define USE_DOUBLED_PAWNS   1
-#define USE_ROOK_FILES      1
+#define USE_ROOK_FILES      0
 
 // =============================
 // Added feature values
