@@ -601,8 +601,14 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     if (static_eval >= beta)
         return static_eval;
+
     if (static_eval > alpha)
         alpha = static_eval;
+
+    // Delta pruning.
+    // If even winning a queen cannot raise alpha, skip qsearch captures.
+    if (static_eval + 975 < alpha)
+        return alpha;
 
     MoveList move_list = {0};
     captureMoves(board, &move_list, board->turn);
