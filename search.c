@@ -345,41 +345,53 @@ static void store_counter_move(uint16_t move, int ply)
     int prev_to = prev & 0x3F;
     counter_moves[prev_from][prev_to] = move;
 }
-
 static int lmr_reduction(int depth, int moves_searched, int is_pv_node,
                          int in_check, int is_quiet, int improving,
-                         int hist_score, int is_counter)
+                         int hist_score, int is_counter, int gives_check)
 {
+    if (depth < 3 || moves_searched < 2)
+        return 0;
+
     int r = 1;
 
-    if (depth >= 5)
-        r++;
-    if (depth >= 8)
-        r++;
-    if (moves_searched >= 8)
-        r++;
-    if (moves_searched >= 16)
-        r++;
+    if (depth >= 4)  r++;
+    if (depth >= 6)  r++;
+    if (depth >= 9)  r++;
+    if (depth >= 13) r++;
 
-    if (is_pv_node)
-        r--;
-    if (in_check)
-        r--;
-    if (improving)
-        r--;
-    if (is_counter)
-        r--;
-    if (!is_quiet)
-        r--;
+    if (moves_searched >= 4)  r++;
+    if (moves_searched >= 8)  r++;
+    if (moves_searched >= 16) r++;
+    if (moves_searched >= 32) r++;
 
-    if (hist_score > 4096)
+    if (is_quiet)
+        r++;
+    else
+        r -= 2;
+
+    if (is_pv_node) r -= 2;
+    if (in_check)   r -= 2;
+    if (gives_check) r--;
+    if (improving)  r--;
+    if (is_counter) r--;
+
+    if (hist_score > 8192)
+        r -= 2;
+    else if (hist_score > 4096)
         r--;
+    else if (hist_score < -8192)
+        r += 2;
     else if (hist_score < -4096)
         r++;
 
-    return clamp_int(r, 0, depth - 2);
-}
+    int max_r = depth - 2;
+    if (is_pv_node)
+        max_r = depth - 3;
+    if (max_r < 0)
+        max_r = 0;
 
+    return clamp_int(r, 0, max_r);
+}
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = (move >> 6) & 0x3F;
@@ -664,8 +676,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (stop->start_time && (stop->nodes & 2047) == 0 &&
         get_time_ms() - stop->start_time >= stop->max_time)
         stop->stop = 1;
+
     if (stop->max_nodes && stop->nodes >= stop->max_nodes)
         stop->stop = 1;
+
     if (stop->stop)
         return (searchOutput){.score = 0, .move = 0};
 
@@ -683,6 +697,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     uint16_t tt_move = 0;
     TTEntry *entry = tt_probe(hash);
+
     if (entry)
     {
         tt_move = entry->move;
@@ -698,8 +713,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (entry->flag == TT_EXACT)
                 return (searchOutput){.score = tt_score, .move = tt_move};
+
             if (entry->flag == TT_ALPHA && tt_score <= alpha)
                 return (searchOutput){.score = tt_score, .move = tt_move};
+
             if (entry->flag == TT_BETA && tt_score >= beta)
                 return (searchOutput){.score = tt_score, .move = tt_move};
         }
@@ -709,18 +726,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int in_check = (!king_bb ||
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
 
-    // Mate distance pruning: once a mate is already proven, do not search
-    // lines that can only produce a worse mate distance.
+    // Mate distance pruning.
     if (ply > 0)
     {
         alpha = alpha > (-MATE_SCORE + ply) ? alpha : (-MATE_SCORE + ply);
         beta = beta < (MATE_SCORE - ply - 1) ? beta : (MATE_SCORE - ply - 1);
+
         if (alpha >= beta)
             return (searchOutput){.score = alpha, .move = 0};
     }
 
-    // Check extension. This keeps check evasions out of qsearch and gives the
-    // search one extra ply to resolve forcing positions.
+    // Check extension.
     if (in_check && depth < MAX_DEPTH)
         depth++;
 
@@ -731,6 +747,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     }
 
     int static_eval = eval(board);
+
     if (ply <= MAX_DEPTH)
         static_eval_stack[ply] = static_eval;
 
@@ -740,16 +757,15 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     int is_pv_node = (beta - alpha) > 1;
 
-    // Internal iterative reduction: if we have no hash move, move ordering is
-    // less reliable, so spend slightly less depth here and let the next ID
-    // iteration improve the TT entry.
+    // Internal iterative reduction.
     if (ply > 0 && depth >= 4 && !in_check && tt_move == 0 && !is_pv_node)
         depth--;
 
-    // Reverse futility pruning / fail-soft-ish return for obvious fail highs.
+    // Reverse futility pruning.
     if (ply > 0 && !is_pv_node && !in_check && depth <= 6 && abs(beta) < 31000)
     {
         int margin = 120 * depth - (improving ? 40 : 0);
+
         if (static_eval - margin >= beta)
             return (searchOutput){.score = beta + (static_eval - beta) / 3, .move = 0};
     }
@@ -778,6 +794,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (stop->stop)
                 return (searchOutput){0};
+
             if (score >= beta)
                 return (searchOutput){.score = beta, .move = 0};
         }
@@ -795,14 +812,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             output.score = -MATE_SCORE + ply;
         else
             output.score = 0;
+
         return output;
     }
 
     int best_score = -MATE_SCORE;
     uint16_t best_move = 0;
     int moves_searched = 0;
+
     uint16_t quiets_searched[218];
     int quiet_count = 0;
+
     int saw_history_dependent_repetition = 0;
     int root_non_threefold_moves = 0;
 
@@ -812,9 +832,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
+
         int to = move & 0x3F;
         int victim = board->mailbox[to];
         int flag = (move >> 12) & 0xF;
+
         int is_cap = (victim != 0 && victim != 6);
         int is_promo = (flag >= 5 && flag <= 8);
         int is_quiet = !is_cap && !is_promo;
@@ -822,31 +844,43 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         int move_is_counter = is_counter_move(move, ply);
         int hist_score = is_quiet ? quiet_history_score(board, move) : 0;
 
+        // Quiet futility pruning.
         if (!is_pv_node && depth <= 4 && !in_check && is_quiet && moves_searched > 0)
         {
             int margin = 100 * depth + (improving ? 50 : 0);
+
             if (static_eval + margin <= alpha)
                 continue;
         }
 
+        // Late move pruning.
         if (!is_pv_node && ply > 0 && depth <= 4 && !in_check && is_quiet)
         {
             int lmp_limit = 4 + depth * depth;
+
             if (improving)
                 lmp_limit *= 2;
+
             if (moves_searched >= lmp_limit)
                 continue;
         }
 
+        // SEE pruning for bad captures.
         if (!is_pv_node && !in_check && is_cap && depth <= 5 && moves_searched > 0)
         {
             int see_margin = -50 * depth;
+
             if (SEE(board, move) < see_margin)
                 continue;
         }
 
         Position copy = *board;
         makeMove(&copy, &move_list, i);
+
+        // Detect whether this move gives check after making it.
+        uint64_t checked_king_bb = copy.pieces[5] & copy.color[copy.turn];
+        int gives_check = checked_king_bb &&
+                          squareAttacked(&copy, __builtin_ctzll(checked_king_bb), !copy.turn);
 
         if (ply == 0 && root_non_threefold_moves > 0 &&
             repetition_count(&copy, copy.hash) >= 3)
@@ -859,12 +893,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             char mv[6];
             move_to_uci(move, mv);
+
             printf("info depth %d currmove %s currmovenumber %d\n",
                    depth, mv, i + 1);
             fflush(stdout);
         }
 
         int pushed_history = 0;
+
         if (history_ply < MAX_GAME_PLY)
         {
             position_history[history_ply++] = hash;
@@ -876,6 +912,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         int score;
         PVLine child_pv = {0};
+
         int rep_penalty = repetition_avoid_penalty(&copy, copy.hash);
 
         if (rep_penalty > 0)
@@ -883,39 +920,61 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             score = -rep_penalty;
             saw_history_dependent_repetition = 1;
         }
-        else if (moves_searched >= (is_pv_node ? 4 : 2) && depth >= 3 && !in_check && is_quiet)
+        else if (ply > 0 &&
+                 moves_searched >= (is_pv_node ? 4 : 2) &&
+                 depth >= 3 &&
+                 !in_check &&
+                 is_quiet)
         {
             int reduction = lmr_reduction(depth, moves_searched, is_pv_node,
                                           in_check, is_quiet, improving,
-                                          hist_score, move_is_counter);
+                                          hist_score, move_is_counter,
+                                          gives_check);
+
             int reduced_depth = depth - 1 - reduction;
+
             if (reduced_depth < 0)
                 reduced_depth = 0;
 
+            // First search reduced with a null window.
             score = -search(&copy, reduced_depth, ply + 1,
                             -alpha - 1, -alpha, stop, NULL)
                          .score;
+
+            // If reduced search looks interesting, re-search at full depth
+            // with a null window.
             if (!stop->stop && score > alpha && reduction > 0)
+            {
                 score = -search(&copy, depth - 1, ply + 1,
                                 -alpha - 1, -alpha, stop, NULL)
                              .score;
+            }
+
+            // If it still raises alpha, do the full PV search.
             if (!stop->stop && score > alpha)
+            {
                 score = -search(&copy, depth - 1, ply + 1,
                                 -beta, -alpha, stop, &child_pv)
                              .score;
+            }
         }
         else if (moves_searched > 0)
         {
+            // PVS null-window search.
             score = -search(&copy, depth - 1, ply + 1,
                             -alpha - 1, -alpha, stop, NULL)
                          .score;
+
             if (!stop->stop && score > alpha)
+            {
                 score = -search(&copy, depth - 1, ply + 1,
                                 -beta, -alpha, stop, &child_pv)
                              .score;
+            }
         }
         else
         {
+            // First move: full-window search.
             score = -search(&copy, depth - 1, ply + 1,
                             -beta, -alpha, stop, &child_pv)
                          .score;
@@ -923,13 +982,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (pushed_history)
             history_ply--;
+
         moves_searched++;
 
         if (stop->stop)
             break;
 
-        if (is_quiet && quiet_count < (int)(sizeof(quiets_searched) / sizeof(quiets_searched[0])))
+        if (is_quiet &&
+            quiet_count < (int)(sizeof(quiets_searched) / sizeof(quiets_searched[0])))
+        {
             quiets_searched[quiet_count++] = move;
+        }
 
         if (score > best_score)
         {
@@ -944,8 +1007,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (pv && child_pv.length + 1 <= MAX_PV_LENGTH)
             {
                 pv->moves[0] = move;
+
                 memcpy(pv->moves + 1, child_pv.moves,
                        child_pv.length * sizeof(uint16_t));
+
                 pv->length = child_pv.length + 1;
             }
         }
@@ -953,6 +1018,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (alpha >= beta)
         {
             int bonus = depth * depth;
+
             if (bonus > 4096)
                 bonus = 4096;
 
@@ -977,6 +1043,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 update_capture_history(board, move, bonus);
             }
+
             break;
         }
     }
@@ -984,6 +1051,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!stop->stop && !saw_history_dependent_repetition)
     {
         int flag;
+
         if (best_score <= alpha_orig)
             flag = TT_ALPHA;
         else if (best_score >= beta)
@@ -992,6 +1060,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             flag = TT_EXACT;
 
         int store_score = best_score;
+
         if (store_score > 31000)
             store_score += ply;
         else if (store_score < -31000)
@@ -1002,8 +1071,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     output.score = best_score;
     output.move = best_move;
+
     return output;
 }
+
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
