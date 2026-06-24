@@ -1053,6 +1053,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
 
         char score_str[32];
+        
         if (out.score > 31000)
             snprintf(score_str, sizeof(score_str), "mate %d",
                      (32000 - out.score + 1) / 2);
