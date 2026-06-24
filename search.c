@@ -25,6 +25,8 @@
 #define PAWN_HISTORY_SIZE 4096
 #define PAWN_HISTORY_MASK (PAWN_HISTORY_SIZE - 1)
 
+static int nmp_disabled_until_ply = 0;
+
 // Search-line history. This is pushed/popped inside search.
 uint64_t position_history[MAX_GAME_PLY];
 int history_ply = 0;
@@ -754,15 +756,26 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             return (searchOutput){.score = beta + (static_eval - beta) / 3, .move = 0};
     }
 
+    // Null move pruning with verification search.
     int NULL_MOVE_REDUCTION = 3 + (depth >= 6) + (static_eval >= beta + 200);
 
-    if (depth >= 3 && ply > 0 && !in_check && abs(beta) < 31000)
+    // Do not null move in PV nodes, check, root, mate-score windows,
+    // pawn-only endgames, or while verification has disabled NMP.
+    if (depth >= 3 &&
+        ply > 0 &&
+        !is_pv_node &&
+        !in_check &&
+        abs(beta) < 31000 &&
+        (nmp_disabled_until_ply == 0 || ply >= nmp_disabled_until_ply))
     {
+        // Need non-pawn material. This avoids many zugzwang endgame mistakes.
         if ((board->pieces[1] | board->pieces[2] |
              board->pieces[3] | board->pieces[4]) &
             board->color[board->turn])
         {
             Position copy = *board;
+
+            // Make null move manually.
             copy.turn ^= 1;
             copy.hash ^= zobrist_table[768];
 
@@ -772,14 +785,43 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 copy.epsquare = -1;
             }
 
-            int score = -search(&copy, depth - 1 - NULL_MOVE_REDUCTION,
+            int null_depth = depth - 1 - NULL_MOVE_REDUCTION;
+            if (null_depth < 0)
+                null_depth = 0;
+
+            int score = -search(&copy, null_depth,
                                 ply + 1, -beta, -beta + 1, stop, NULL)
                              .score;
 
             if (stop->stop)
                 return (searchOutput){0};
+
             if (score >= beta)
-                return (searchOutput){.score = beta, .move = 0};
+            {
+                // At shallow depth, trust the null-move cutoff.
+                if (depth <= 8)
+                    return (searchOutput){.score = beta, .move = 0};
+
+                // At deeper depth, verify on the real board, not the null board.
+                int old_nmp_disabled_until_ply = nmp_disabled_until_ply;
+                nmp_disabled_until_ply = ply + 1 + (NULL_MOVE_REDUCTION * 3) / 4;
+
+                int verify_depth = depth - 1 - NULL_MOVE_REDUCTION;
+                if (verify_depth < 0)
+                    verify_depth = 0;
+
+                int verify_score = search(board, verify_depth,
+                                          ply, beta - 1, beta, stop, NULL)
+                                       .score;
+
+                nmp_disabled_until_ply = old_nmp_disabled_until_ply;
+
+                if (stop->stop)
+                    return (searchOutput){0};
+
+                if (verify_score >= beta)
+                    return (searchOutput){.score = beta, .move = 0};
+            }
         }
     }
 
@@ -1026,16 +1068,19 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         int beta = prev_score + window;
 
         PVLine pv = {0};
+        nmp_disabled_until_ply = 0;
         searchOutput out = search(board, depth, 0, alpha, beta, stop, &pv);
 
         if (!stop->stop && out.score <= alpha)
         {
             pv = (PVLine){0};
+            nmp_disabled_until_ply = 0;
             out = search(board, depth, 0, -32000, beta, stop, &pv);
         }
         else if (!stop->stop && out.score >= beta)
         {
             pv = (PVLine){0};
+            nmp_disabled_until_ply = 0;
             out = search(board, depth, 0, alpha, 32000, stop, &pv);
         }
 
@@ -1053,7 +1098,6 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
 
         char score_str[32];
-        
         if (out.score > 31000)
             snprintf(score_str, sizeof(score_str), "mate %d",
                      (32000 - out.score + 1) / 2);
