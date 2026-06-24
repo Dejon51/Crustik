@@ -601,14 +601,8 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     if (static_eval >= beta)
         return static_eval;
-
     if (static_eval > alpha)
         alpha = static_eval;
-
-    // Delta pruning.
-    // If even winning a queen cannot raise alpha, skip qsearch captures.
-    if (static_eval + 975 < alpha)
-        return alpha;
 
     MoveList move_list = {0};
     captureMoves(board, &move_list, board->turn);
@@ -1059,7 +1053,6 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
 
         char score_str[32];
-        
         if (out.score > 31000)
             snprintf(score_str, sizeof(score_str), "mate %d",
                      (32000 - out.score + 1) / 2);
