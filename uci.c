@@ -192,6 +192,7 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "uci") == 0)
         {
+            printf("id name Crustik 0.2.0\nid author Dejon Eltahan\n");
             printf("uciok\n");
         }
         else if (strcmp(tokens[0], "isready") == 0)

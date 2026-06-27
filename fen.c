@@ -10,7 +10,11 @@
 void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, char *arg4, char *arg5)
 {
     memset(board, 0, sizeof(Position));
+    for (int i = 0; i < 64; i++){
+        board->mailbox[i] = 6;
+    }
     int square = 0;
+
 
     for (int i = 0; fen[i] != '\0'; i++)
     {

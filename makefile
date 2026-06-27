@@ -16,7 +16,8 @@ SRCS := \
 	text.c \
 	tt.c \
 	uci.c \
-	zobrist.c
+	zobrist.c \
+	datagen.c
 
 OBJS := $(SRCS:.c=.o)
 

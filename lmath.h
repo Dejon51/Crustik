@@ -26,6 +26,7 @@ typedef struct {
     // rook 3
     // queen 4
     // king 5
+    // 6 is empty square on mailbox
     Bitboard color[3];
     Bitboard pieces[6];
     int8_t epsquare;

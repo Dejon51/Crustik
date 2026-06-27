@@ -1,4 +1,3 @@
-- Transposition tables
-- PVS and move ordering
-- Null move pruning
-- Better eval
+- Nnue
+- qfsp
+- Faster movegen
