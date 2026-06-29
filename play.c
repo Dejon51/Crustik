@@ -1423,11 +1423,6 @@ uint64_t perft(Position *board, int depth, int divide)
     move_list.offset = 0;
     legalMoveGen(board, &move_list);
 
-    // if (depth == 1)
-    // {
-    //     return move_list.offset;
-    // }
-
     uint64_t nodes = 0;
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
@@ -1474,6 +1469,33 @@ uint64_t perft(Position *board, int depth, int divide)
                        move_nodes);
             }
         }
+    }
+    return nodes;
+}
+
+
+uint64_t perftbulk(Position *board, int depth)
+{
+    if (depth == 0)
+        return 1;
+
+    MoveList move_list;
+    move_list.offset = 0;
+    legalMoveGen(board, &move_list);
+
+    if (depth == 1)
+    {
+        return move_list.offset;
+    }
+
+    uint64_t nodes = 0;
+    for (unsigned int i = 0; i < move_list.offset; i++)
+    {
+        Position copy = *board; // Stack allocation
+        makeMove(&copy, &move_list, i);
+
+        uint64_t move_nodes = perftbulk(&copy, depth - 1);
+        nodes += move_nodes;
     }
     return nodes;
 }
