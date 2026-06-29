@@ -42,6 +42,11 @@ static int static_eval_stack[MAX_DEPTH + 1];
 static int history[2][64][64];
 static int capture_history[2][64][64];
 
+// Continuation history.
+// Indexed by side, previous move from-square, previous move to-square,
+// current moving piece type, current destination square.
+static int16_t continuation_history[2][64][64][6][64];
+
 // NEW: pawn-history heuristic.
 // Indexed by side, pawn-structure bucket, moving piece type, destination square.
 static int pawn_history[2][PAWN_HISTORY_SIZE][6][64];
@@ -82,6 +87,7 @@ void clear_ordering_tables(void)
     memset(static_eval_stack, 0, sizeof(static_eval_stack));
     memset(history, 0, sizeof(history));
     memset(capture_history, 0, sizeof(capture_history));
+    memset(continuation_history, 0, sizeof(continuation_history));
     memset(pawn_history, 0, sizeof(pawn_history));
 
     memset(position_history, 0, sizeof(position_history));
@@ -281,6 +287,29 @@ static int pawn_history_score(Position *board, uint16_t move)
     return pawn_history[side][idx][piece][to];
 }
 
+static int continuation_history_score(Position *board, uint16_t move, int ply)
+{
+    if (ply <= 0 || ply > MAX_DEPTH)
+        return 0;
+
+    uint16_t prev = search_stack_moves[ply - 1];
+    if (!prev)
+        return 0;
+
+    int from = (move >> 6) & 0x3F;
+    int to = move & 0x3F;
+    int piece = board->mailbox[from];
+
+    if (piece < 0 || piece >= 6)
+        return 0;
+
+    int side = board->turn & 1;
+    int prev_from = (prev >> 6) & 0x3F;
+    int prev_to = prev & 0x3F;
+
+    return continuation_history[side][prev_from][prev_to][piece][to];
+}
+
 static void update_quiet_history(Position *board, uint16_t move, int bonus)
 {
     int from = (move >> 6) & 0x3F;
@@ -316,6 +345,33 @@ static void update_pawn_history(Position *board, uint16_t move, int bonus)
 
     *entry += bonus - ((*entry * abs(bonus)) / HISTORY_SCORE_CAP);
     *entry = clamp_int(*entry, -HISTORY_SCORE_CAP, HISTORY_SCORE_CAP);
+}
+
+static void update_continuation_history(Position *board, uint16_t move, int ply, int bonus)
+{
+    if (ply <= 0 || ply > MAX_DEPTH)
+        return;
+
+    uint16_t prev = search_stack_moves[ply - 1];
+    if (!prev)
+        return;
+
+    int from = (move >> 6) & 0x3F;
+    int to = move & 0x3F;
+    int piece = board->mailbox[from];
+
+    if (piece < 0 || piece >= 6)
+        return;
+
+    int side = board->turn & 1;
+    int prev_from = (prev >> 6) & 0x3F;
+    int prev_to = prev & 0x3F;
+    int16_t *entry = &continuation_history[side][prev_from][prev_to][piece][to];
+
+    int value = *entry;
+    value += bonus - ((value * abs(bonus)) / HISTORY_SCORE_CAP);
+    value = clamp_int(value, -HISTORY_SCORE_CAP, HISTORY_SCORE_CAP);
+    *entry = (int16_t)value;
 }
 
 static int is_counter_move(uint16_t move, int ply)
@@ -567,7 +623,10 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
             continue;
         }
 
-        scores[i] = 100000 + quiet_history_score(board, move) + pawn_history_score(board, move);
+        scores[i] = 100000
+                  + quiet_history_score(board, move)
+                  + pawn_history_score(board, move)
+                  + continuation_history_score(board, move, ply);
     }
 
     for (unsigned int i = 1; i < move_list->offset; i++)
@@ -820,7 +879,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         int is_quiet = !is_cap && !is_promo;
 
         int move_is_counter = is_counter_move(move, ply);
-        int hist_score = is_quiet ? quiet_history_score(board, move) : 0;
+        int hist_score = is_quiet
+                             ? quiet_history_score(board, move)
+                                   + pawn_history_score(board, move)
+                                   + continuation_history_score(board, move, ply)
+                             : 0;
 
         if (!is_pv_node && depth <= 4 && !in_check && is_quiet && moves_searched > 0)
         {
@@ -904,7 +967,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                                 -beta, -alpha, stop, &child_pv)
                              .score;
         }
-        else if (moves_searched > 0)
+        else if (moves_searched > 0 && depth > 1)
         {
             score = -search(&copy, depth - 1, ply + 1,
                             -alpha - 1, -alpha, stop, NULL)
@@ -963,6 +1026,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
                 update_quiet_history(board, move, bonus);
                 update_pawn_history(board, move, bonus);
+                update_continuation_history(board, move, ply, bonus);
 
                 for (int q = 0; q < quiet_count; q++)
                 {
@@ -970,6 +1034,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     {
                         update_quiet_history(board, quiets_searched[q], -bonus / 2);
                         update_pawn_history(board, quiets_searched[q], -bonus / 2);
+                        update_continuation_history(board, quiets_searched[q], ply, -bonus / 2);
                     }
                 }
             }
