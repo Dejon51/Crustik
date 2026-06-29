@@ -35,6 +35,7 @@ static uint64_t last_recorded_root_hash = 0;
 static int have_last_recorded_root = 0;
 
 static uint16_t killers[MAX_DEPTH][2];
+
 static uint16_t counter_moves[64][64];
 static uint16_t search_stack_moves[MAX_DEPTH + 1];
 static int static_eval_stack[MAX_DEPTH + 1];
