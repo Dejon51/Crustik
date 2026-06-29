@@ -1087,6 +1087,19 @@ void legalMoveGen(Position *board, MoveList *list)
     if (check_count >= 2)
         return;
 
+    if (check_count == 0 && pinned_pieces == 0 && board->epsquare == -1)
+    {
+        if (us == 0)
+            pawnMovesWhite(board, list);
+        else
+            pawnMovesBlack(board, list);
+
+        horseMovesLegal(board, list, us, 0xFFFFFFFFFFFFFFFFULL, 0);
+        bishopMoves(board, list, us);
+        rookMoves(board, list, us);
+        return;
+    }
+
     if (us == 0)
         pawnMovesWhiteLegal(board, list, check_mask, pinned_pieces, pinner_ray,
                             check_count, king_sq, them, occ);
