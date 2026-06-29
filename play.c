@@ -101,13 +101,29 @@ Bitboard pawnMask(Position *board, bool color)
 }
 Bitboard horseMask(Position *board, bool color)
 {
+    const Bitboard FILE_A = 0x0101010101010101ULL;
+    const Bitboard FILE_B = 0x0202020202020202ULL;
+    const Bitboard FILE_G = 0x4040404040404040ULL;
+    const Bitboard FILE_H = 0x8080808080808080ULL;
+
+    const Bitboard NOT_A_FILE  = ~FILE_A;
+    const Bitboard NOT_H_FILE  = ~FILE_H;
+    const Bitboard NOT_AB_FILE = ~(FILE_A | FILE_B);
+    const Bitboard NOT_GH_FILE = ~(FILE_G | FILE_H);
+
+    Bitboard knights = board->pieces[2] & board->color[color];
     Bitboard horsemask = 0ULL;
-    uint64_t knights = board->pieces[2] & board->color[color];
-    while (knights)
-    {
-        int ind = pop_lsb(&knights);
-        horsemask |= knighttable[ind];
-    }
+
+    horsemask |= (knights & NOT_H_FILE)  << 17;
+    horsemask |= (knights & NOT_A_FILE)  << 15;
+    horsemask |= (knights & NOT_GH_FILE) << 10;
+    horsemask |= (knights & NOT_AB_FILE) << 6;
+
+    horsemask |= (knights & NOT_A_FILE)  >> 17;
+    horsemask |= (knights & NOT_H_FILE)  >> 15;
+    horsemask |= (knights & NOT_AB_FILE) >> 10;
+    horsemask |= (knights & NOT_GH_FILE) >> 6;
+
     return horsemask;
 }
 
@@ -358,24 +374,32 @@ void pawnMovesBlack(Position *board, MoveList *list)
     }
 }
 
-void horseMoves(Position *board, MoveList *list, bool color)
+Bitboard horseMoves(Position *board, bool color)
 {
-    uint64_t knights = board->pieces[2] & board->color[color];
+    const Bitboard FILE_A = 0x0101010101010101ULL;
+    const Bitboard FILE_B = 0x0202020202020202ULL;
+    const Bitboard FILE_G = 0x4040404040404040ULL;
+    const Bitboard FILE_H = 0x8080808080808080ULL;
 
-    while (knights)
-    {
-        int ind = pop_lsb(&knights);
+    const Bitboard NOT_A_FILE  = ~FILE_A;
+    const Bitboard NOT_H_FILE  = ~FILE_H;
+    const Bitboard NOT_AB_FILE = ~(FILE_A | FILE_B);
+    const Bitboard NOT_GH_FILE = ~(FILE_G | FILE_H);
 
-        uint64_t attacks = knighttable[ind];
+    Bitboard knights = board->pieces[2] & board->color[color];
+    Bitboard attacks = 0ULL;
 
-        attacks &= ~board->color[color];
+    attacks |= (knights & NOT_H_FILE)  << 17;
+    attacks |= (knights & NOT_A_FILE)  << 15;
+    attacks |= (knights & NOT_GH_FILE) << 10;
+    attacks |= (knights & NOT_AB_FILE) << 6;
 
-        while (attacks)
-        {
-            int target = pop_lsb(&attacks);
-            list->movelist[list->offset++] = (ind << 6) | target;
-        }
-    }
+    attacks |= (knights & NOT_A_FILE)  >> 17;
+    attacks |= (knights & NOT_H_FILE)  >> 15;
+    attacks |= (knights & NOT_AB_FILE) >> 10;
+    attacks |= (knights & NOT_GH_FILE) >> 6;
+
+    return attacks & ~board->color[color];
 }
 
 void bishopMoves(Position *board, MoveList *list, bool color)
