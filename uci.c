@@ -248,9 +248,40 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "go") == 0)
         {
-            if (tokens[1] == NULL)
+            // UCI: plain "go" should start searching.
+            // With no limits, this searches until MAX_DEPTH in iterative_deepening(),
+            // which behaves like infinite search for normal use.
+            if (tokens[1] == NULL || strcmp(tokens[1], "infinite") == 0)
             {
-                printf("go: missing argument\n");
+                stopConditions stop = {0};
+                stop.start_time = 0;
+                stop.max_time = 0;
+                stop.max_nodes = 0;
+                stop.depth = 0;
+                stop.nodes = 0;
+                stop.stop = 0;
+
+                uint16_t result = iterative_deepening(&board, &stop);
+
+                if (result == 0)
+                {
+                    uint64_t king_bb = board.pieces[5] & board.color[board.turn];
+                    if (!king_bb)
+                        break;
+                    int king_pos = __builtin_ctzll(king_bb);
+                    if (squareAttacked(&board, king_pos, !board.turn))
+                    {
+                        printf("%s is checkmated\n", board.turn ? "Black" : "White");
+                    }
+                    else
+                    {
+                        printf("Stalemate\n");
+                    }
+                }
+                else
+                {
+                    movestring(result);
+                }
             }
             else if (strcmp(tokens[1], "nodes") == 0)
             {
