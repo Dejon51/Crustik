@@ -744,7 +744,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
         tt_move = entry->move;
 
-        if (entry->depth >= depth)
+        // At root, keep the TT move for ordering, but do not allow a TT cutoff.
+        // Otherwise iterative deepening can immediately return from the previous
+        // extended-depth root entry, leaving seldepth at 0 and PV empty.
+        if (ply > 0 && entry->depth >= depth)
         {
             int tt_score = entry->score;
 
