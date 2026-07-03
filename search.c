@@ -93,6 +93,7 @@ void clear_ordering_tables(void)
     have_last_recorded_root = 0;
 }
 
+
 static void append_root_history(uint64_t hash)
 {
     if (root_history_ply < MAX_GAME_PLY)
