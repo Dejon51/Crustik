@@ -4,7 +4,7 @@ import re
 import subprocess
 import sys
 
-# Compile Engine
+# Compile engine
 subprocess.run(["./run.sh"], check=True)
 
 # Run the benchmark
@@ -29,11 +29,40 @@ if not match:
 
 nodes = match.group(1)
 
-# Git add
+# Stage all changes
 subprocess.run(["git", "add", "."], check=True)
 
-# Git commit
+# Commit (skip if nothing changed)
 commit_message = f"bench:{nodes}"
-subprocess.run(["git", "commit", "-m", commit_message], check=True)
+commit = subprocess.run(
+    ["git", "commit", "-m", commit_message],
+    text=True,
+    capture_output=True,
+)
 
-print(f"Committed with message: {commit_message}")
+if commit.returncode == 0:
+    print(f"Committed with message: {commit_message}")
+elif "nothing to commit" in commit.stdout.lower() or "nothing to commit" in commit.stderr.lower():
+    print("Nothing to commit.")
+else:
+    print(commit.stdout)
+    print(commit.stderr)
+    sys.exit(commit.returncode)
+
+# Push every local branch and set upstream if needed
+branches = subprocess.check_output(
+    ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads"],
+    text=True,
+).splitlines()
+
+for branch in branches:
+    print(f"Pushing {branch}...")
+    subprocess.run(
+        ["git", "push", "-u", "origin", branch],
+        check=True,
+    )
+
+# Push tags (optional)
+subprocess.run(["git", "push", "--tags"], check=True)
+
+print("Done! All branches and tags have been pushed.")
