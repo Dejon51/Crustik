@@ -12,10 +12,6 @@
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
 
-void clear_ordering_tables(void)
-{
-}
-
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = (move >> 6) & 0x3F;
@@ -101,6 +97,12 @@ static int piece_on_square(Position *board, int sq)
     return -1;
 }
 
+static int is_mate_score(int score)
+{
+    return score > 31000 || score < -31000;
+}
+
+// 145 elo moveordering
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     (void)ply;
@@ -155,6 +157,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     return ordered;
 }
 
+// 361 elo qsearch
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 {
     stop->nodes++;
@@ -172,7 +175,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     MoveList move_list = {0};
     captureMoves(board, &move_list, board->turn);
-    move_list = ordermoves(board, &move_list, ply, 0);
+    move_list = ordermoves(board, &move_list, ply, 0); // 18 elo qsearch ordering moves
 
     int best_score = static_eval;
 
@@ -246,7 +249,26 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     uint64_t king_bb = board->pieces[5] & board->color[board->turn];
     int in_check = (!king_bb ||
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
+    int static_eval = 0;
 
+    if (!in_check && tt_move != 0)
+    {
+        static_eval = eval(board);
+
+        if (ply > 0 &&
+            depth <= 6 &&
+            !is_mate_score(beta))
+        {
+            int margin = 100 * depth;
+
+            if (static_eval - margin >= beta)
+            {
+                return (searchOutput){
+                    .score = (static_eval + beta) / 2,
+                    .move = tt_move};
+            }
+        }
+    }
     if (depth <= 0)
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
