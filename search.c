@@ -95,6 +95,7 @@ static int piece_on_square(Position *board, int sq)
     return -1;
 }
 
+
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     (void)ply;
@@ -151,6 +152,51 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     return ordered;
 }
 
+int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
+{
+    stop->nodes++;
+
+    if (ply > stop->seldepth)
+        stop->seldepth = ply;
+
+    int static_eval = eval(board);
+
+    if (static_eval >= beta)
+        return static_eval;
+
+    if (static_eval > alpha)
+        alpha = static_eval;
+
+    MoveList move_list = {0};
+    captureMoves(board, &move_list, board->turn);
+    // move_list = ordermoves(board, &move_list, ply, 0);
+
+    int best_score = static_eval;
+
+    for (unsigned int i = 0; i < move_list.offset; i++)
+    {
+        Position copy = *board;
+        makeMove(&copy, &move_list, i);
+
+        uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+        if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
+            continue;
+
+        int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
+
+        if (score > best_score)
+            best_score = score;
+
+        if (score >= beta)
+            return score;
+
+        if (score > alpha)
+            alpha = score;
+    }
+
+    return best_score;
+}
+
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     stopConditions *stop, PVLine *pv)
 {
@@ -199,7 +245,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
 
     if (depth <= 0)
-        return (searchOutput){.score = eval(board), .move = 0};
+        return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
