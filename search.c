@@ -12,6 +12,10 @@
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
 
+void clear_ordering_tables(void)
+{
+}
+
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = (move >> 6) & 0x3F;
@@ -62,6 +66,89 @@ static int score_to_tt(int score, int ply)
     if (score < -31000)
         return score - ply;
     return score;
+}
+
+static int piece_value_lva(int piece)
+{
+    switch (piece)
+    {
+    case 0: return 100;   // pawn
+    case 1: return 330;   // bishop
+    case 2: return 320;   // horse/knight
+    case 3: return 500;   // rook
+    case 4: return 900;   // queen
+    case 5: return 20000; // king
+    }
+    return 0;
+}
+
+static int piece_on_square(Position *board, int sq)
+{
+    uint64_t bb = 1ULL << sq;
+
+    for (int p = 0; p < 6; p++)
+    {
+        if (board->pieces[p] & bb)
+            return p;
+    }
+
+    return -1;
+}
+
+MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
+{
+    (void)ply;
+
+    MoveList ordered = *move_list;
+    int scores[256] = {0};
+
+    for (unsigned int i = 0; i < ordered.offset; i++)
+    {
+        uint16_t move = ordered.movelist[i];
+
+        if (move == tt_move)
+        {
+            scores[i] = 100000000;
+            continue;
+        }
+
+        int from = (move >> 6) & 0x3F;
+        int to = move & 0x3F;
+
+        int attacker = piece_on_square(board, from);
+        int victim = piece_on_square(board, to);
+
+        if (victim != -1 && attacker != -1)
+        {
+            scores[i] = 1000000
+                      + piece_value_lva(victim) * 10
+                      - piece_value_lva(attacker);
+        }
+    }
+
+    for (unsigned int i = 0; i < ordered.offset; i++)
+    {
+        unsigned int best = i;
+
+        for (unsigned int j = i + 1; j < ordered.offset; j++)
+        {
+            if (scores[j] > scores[best])
+                best = j;
+        }
+
+        if (best != i)
+        {
+            uint16_t tmp_move = ordered.movelist[i];
+            ordered.movelist[i] = ordered.movelist[best];
+            ordered.movelist[best] = tmp_move;
+
+            int tmp_score = scores[i];
+            scores[i] = scores[best];
+            scores[best] = tmp_score;
+        }
+    }
+
+    return ordered;
 }
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
@@ -116,6 +203,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
+    move_list = ordermoves(board, &move_list, ply, tt_move);
 
     if (move_list.offset == 0)
     {

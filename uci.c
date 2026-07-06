@@ -192,6 +192,7 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "uci") == 0)
         {
+            printf("id name Crustik 0.2.0\nid author Dejon Eltahan\n");
             printf("uciok\n");
         }
         else if (strcmp(tokens[0], "isready") == 0)
@@ -246,9 +247,40 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "go") == 0)
         {
-            if (tokens[1] == NULL)
+            // UCI: plain "go" should start searching.
+            // With no limits, this searches until MAX_DEPTH in iterative_deepening(),
+            // which behaves like infinite search for normal use.
+            if (tokens[1] == NULL || strcmp(tokens[1], "infinite") == 0)
             {
-                printf("go: missing argument\n");
+                stopConditions stop = {0};
+                stop.start_time = 0;
+                stop.max_time = 0;
+                stop.max_nodes = 0;
+                stop.depth = 0;
+                stop.nodes = 0;
+                stop.stop = 0;
+
+                uint16_t result = iterative_deepening(&board, &stop);
+
+                if (result == 0)
+                {
+                    uint64_t king_bb = board.pieces[5] & board.color[board.turn];
+                    if (!king_bb)
+                        break;
+                    int king_pos = __builtin_ctzll(king_bb);
+                    if (squareAttacked(&board, king_pos, !board.turn))
+                    {
+                        printf("%s is checkmated\n", board.turn ? "Black" : "White");
+                    }
+                    else
+                    {
+                        printf("Stalemate\n");
+                    }
+                }
+                else
+                {
+                    movestring(result);
+                }
             }
             else if (strcmp(tokens[1], "nodes") == 0)
             {
@@ -386,66 +418,100 @@ void uciStart()
                 }
                 else
                 {
-                    int divide = 0;
-
-
-                    if (tokens[3] && strcmp(tokens[3], "divide") == 0 && tokens[4])
-                    {
-                        divide = 0;
-
-                        for (int i = 0; tokens[4][i] != '\0'; i++)
-                        {
-                            if (tokens[4][i] < '0' || tokens[4][i] > '9')
-                            {
-                                printf("Invalid divide value\n");
-                                divide = 0;
-                                break;
-                            }
-                            divide = divide * 10 + (tokens[4][i] - '0');
-                        }
-                    }
-
                     int depth = 0;
+                    int divide = 0;
+                    int bulk = 0;
+                    int valid = 1;
+
                     for (int i = 0; tokens[2][i] != '\0'; i++)
                     {
                         if (tokens[2][i] < '0' || tokens[2][i] > '9')
                         {
                             printf("Invalid depth value\n");
-                            depth = 0;
+                            valid = 0;
                             break;
                         }
                         depth = depth * 10 + (tokens[2][i] - '0');
                     }
 
-                    struct timespec start, stop;
-
-#ifdef __linux__
-                    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-                    uint64_t total_nodes = perft(&board, depth, divide);
-                    clock_gettime(CLOCK_MONOTONIC_RAW, &stop);
-#else
-                    clock_gettime(CLOCK_MONOTONIC, &start);
-                    uint64_t total_nodes = perft(&board, depth, divide);
-                    clock_gettime(CLOCK_MONOTONIC, &stop);
-#endif
-
-
-                    long sec = stop.tv_sec - start.tv_sec;
-                    long nsec = stop.tv_nsec - start.tv_nsec;
-
-                    if (nsec < 0)
+                    for (int i = 3; valid && tokens[i] != NULL; i++)
                     {
-                        sec -= 1;
-                        nsec += 1000000000L;
+                        if (strcmp(tokens[i], "bulk") == 0)
+                        {
+                            bulk = 1;
+                        }
+                        else if (strcmp(tokens[i], "divide") == 0)
+                        {
+                            i++;
+                            if (tokens[i] == NULL)
+                            {
+                                printf("go perft divide: missing divide depth/value\n");
+                                valid = 0;
+                                break;
+                            }
+
+                            divide = 0;
+                            for (int j = 0; tokens[i][j] != '\0'; j++)
+                            {
+                                if (tokens[i][j] < '0' || tokens[i][j] > '9')
+                                {
+                                    printf("Invalid divide value\n");
+                                    valid = 0;
+                                    break;
+                                }
+                                divide = divide * 10 + (tokens[i][j] - '0');
+                            }
+                        }
+                        else
+                        {
+                            printf("go perft: unknown argument: %s\n", tokens[i]);
+                            valid = 0;
+                        }
                     }
 
-                    double seconds = (double)sec + (double)nsec / 1000000000.0;
-                    double nps = (seconds > 0.0) ? (double)total_nodes / seconds : 0.0;
-                    double elapsed_ms = seconds * 1000.0;
+                    if (valid)
+                    {
+                        uint64_t total_nodes = 0;
+                        struct timespec start_time, stop_time;
 
-                    printf("Total Nodes: %" PRIu64 "\n", total_nodes);
-                    printf("Elapsed time: %.3f ms\n", elapsed_ms);
-                    printf("N/S: %.0f\n", nps);
+#ifdef CLOCK_MONOTONIC_RAW
+                        clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
+#else
+                        clock_gettime(CLOCK_MONOTONIC, &start_time);
+#endif
+
+                        if (bulk)
+                        {
+                            total_nodes = perftbulk(&board, depth);
+                        }
+                        else
+                        {
+                            total_nodes = perft(&board, depth, divide);
+                        }
+
+#ifdef CLOCK_MONOTONIC_RAW
+                        clock_gettime(CLOCK_MONOTONIC_RAW, &stop_time);
+#else
+                        clock_gettime(CLOCK_MONOTONIC, &stop_time);
+#endif
+
+                        long sec = stop_time.tv_sec - start_time.tv_sec;
+                        long nsec = stop_time.tv_nsec - start_time.tv_nsec;
+
+                        if (nsec < 0)
+                        {
+                            sec -= 1;
+                            nsec += 1000000000L;
+                        }
+
+                        double seconds = (double)sec + (double)nsec / 1000000000.0;
+                        double nps = (seconds > 0.0) ? (double)total_nodes / seconds : 0.0;
+                        double elapsed_ms = seconds * 1000.0;
+
+                        printf("Total Nodes: %" PRIu64 "\n", total_nodes);
+                        printf("Elapsed time: %.3f ms\n", elapsed_ms);
+                        printf("N/S: %.0f\n", nps);
+                    }
                 }
             }
             else
