@@ -169,7 +169,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     MoveList move_list = {0};
     captureMoves(board, &move_list, board->turn);
-    // move_list = ordermoves(board, &move_list, ply, 0);
+    move_list = ordermoves(board, &move_list, ply, 0);
 
     int best_score = static_eval;
 
