@@ -72,12 +72,18 @@ static int piece_value_lva(int piece)
 {
     switch (piece)
     {
-    case 0: return 100;   // pawn
-    case 1: return 330;   // bishop
-    case 2: return 320;   // horse/knight
-    case 3: return 500;   // rook
-    case 4: return 900;   // queen
-    case 5: return 20000; // king
+    case 0:
+        return 100; // pawn
+    case 1:
+        return 330; // bishop
+    case 2:
+        return 320; // horse/knight
+    case 3:
+        return 500; // rook
+    case 4:
+        return 900; // queen
+    case 5:
+        return 20000; // king
     }
     return 0;
 }
@@ -94,7 +100,6 @@ static int piece_on_square(Position *board, int sq)
 
     return -1;
 }
-
 
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
@@ -121,9 +126,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
         if (victim != -1 && attacker != -1)
         {
-            scores[i] = 1000000
-                      + piece_value_lva(victim) * 10
-                      - piece_value_lva(attacker);
+            scores[i] = 1000000 + piece_value_lva(victim) * 10 - piece_value_lva(attacker);
         }
     }
 
@@ -278,9 +281,29 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         makeMove(&copy, &move_list, i);
 
         PVLine child_pv = {0};
-        int score = -search(&copy, depth - 1, ply + 1,
+        int score;
+
+        if (i == 0 || depth <= 2)
+        {
+            score = -search(&copy, depth - 1, ply + 1,
                             -beta, -alpha, stop, &child_pv)
                          .score;
+        }
+        else
+        {
+            score = -search(&copy, depth - 1, ply + 1,
+                            -alpha - 1, -alpha, stop, &child_pv)
+                         .score;
+
+            if (!stop->stop && score > alpha && score < beta)
+            {
+                child_pv.length = 0;
+
+                score = -search(&copy, depth - 1, ply + 1,
+                                -beta, -alpha, stop, &child_pv)
+                             .score;
+            }
+        }
 
         if (stop->stop)
             break;
