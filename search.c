@@ -140,7 +140,6 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     {
         uint16_t move = ordered.movelist[i];
 
-        // 1. Transposition table move (always first)
         if (move == tt_move)
         {
             scores[i] = TT_SCORE;
