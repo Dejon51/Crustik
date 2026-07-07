@@ -2,7 +2,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <math.h>
 
 #include "play.h"
 #include "lmath.h"
@@ -17,6 +16,13 @@
 
 static int butterfly_hist[2][64][64];
 static uint16_t killer_moves[MAX_GAME_PLY][2];
+
+
+void reset_history(void)
+{
+    memset(butterfly_hist, 0, sizeof butterfly_hist);
+    memset(killer_moves, 0, sizeof killer_moves);
+}
 
 static void move_to_uci(uint16_t move, char *buf)
 {
@@ -70,19 +76,6 @@ static int score_to_tt(int score, int ply)
     return score;
 }
 
-static int lmr_reduction(int depth, unsigned int move_number)
-{
-    int r = (int)(log((double)depth) * log((double)move_number) / 2.0);
-
-    if (r < 1)
-        r = 1;
-
-    if (r > depth - 2)
-        r = depth - 2;
-
-    return r;
-}
-
 static int piece_value_lva(int piece)
 {
     switch (piece)
@@ -131,12 +124,6 @@ static int piece_on_square(Position *board, int sq)
 static int is_mate_score(int score)
 {
     return score > 31000 || score < -31000;
-}
-
-void reset_history(void)
-{
-    memset(butterfly_hist, 0, sizeof butterfly_hist);
-    memset(killer_moves, 0, sizeof killer_moves);
 }
 
 // 145 elo moveordering
@@ -280,7 +267,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (stop->stop)
         return output;
-
+    if (depth <= 0)
+        return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
     TTEntry *entry = tt_probe(board->hash);
     if (entry)
     {
@@ -303,10 +291,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int in_check = (!king_bb ||
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
     int static_eval = 0;
+
     bool root_node = (ply == 0);
     if (!in_check)
     {
-        // Null Move Pruning
+
         static_eval = eval(board);
         if (depth >= 3 && !root_node)
         {
@@ -341,9 +330,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
         }
     }
-
-    if (depth <= 0)
-        return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
@@ -386,45 +372,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         else
         {
-            int to = move & 0x3F;
-            int flag = (move >> 12) & 0xF;
+            score = -search(&copy, depth - 1, ply + 1,
+                            -alpha - 1, -alpha, stop, &child_pv)
+                         .score;
 
-            bool is_capture = piece_on_square(board, to) != -1;
-            bool is_promotion = flag >= 5 && flag <= 8;
-            // Late move reduction 83 ELO
-            int reduction = 0;
-
-            if (!root_node &&
-                !in_check &&
-                depth >= 3 &&
-                i >= 4 &&
-                !is_capture &&
-                !is_promotion &&
-                move != tt_move)
-            {
-                reduction = lmr_reduction(depth, i + 1);
-            }
-
-            if (reduction > 0)
-            {
-                score = -search(&copy, depth - 1 - reduction, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL)
-                             .score;
-
-                if (!stop->stop && score > alpha)
-                {
-                    score = -search(&copy, depth - 1, ply + 1,
-                                    -alpha - 1, -alpha, stop, NULL)
-                                 .score;
-                }
-            }
-            else
-            {
-                score = -search(&copy, depth - 1, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL)
-                             .score;
-            }
-            // PVS 11 ELO
             if (!stop->stop && score > alpha && score < beta)
             {
                 child_pv.length = 0;
