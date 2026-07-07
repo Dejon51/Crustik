@@ -259,11 +259,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = tt_score, .move = tt_move};
         }
     }
-
+    if (depth <= 0)
+        return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
     uint64_t king_bb = board->pieces[5] & board->color[board->turn];
     int in_check = (!king_bb ||
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
     int static_eval = 0;
+
     bool root_node = (ply == 0);
     if (!in_check)
     {
@@ -302,9 +304,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
         }
     }
-
-    if (depth <= 0)
-        return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
