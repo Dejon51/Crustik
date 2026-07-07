@@ -20,10 +20,10 @@ SRCS := \
 
 OBJS := $(SRCS:.c=.o)
 
-# Standard (C23)
+# Standard
 STD := -std=c2x
 
-# Required POSIX/GNU extensions for clock_gettime, etc.
+# Required POSIX extensions
 DEFS := -D_POSIX_C_SOURCE=200809L
 
 # Warnings
@@ -34,12 +34,12 @@ OPT := -O3 -DNDEBUG -flto -march=native -mtune=native
 
 CFLAGS := $(STD) $(DEFS) $(WARN) $(OPT)
 LDFLAGS := -flto
+LDLIBS := -lm
 
-# Default target
 all: $(EXE)
 
 $(EXE): $(OBJS)
-	$(CC) $(OBJS) -o $@ $(LDFLAGS)
+	$(CC) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -48,20 +48,18 @@ bench: $(EXE)
 	./$(EXE) bench
 
 debug: clean
-	$(MAKE) CFLAGS="$(STD) $(DEFS) $(WARN) -O0 -g3"
+	$(MAKE) CFLAGS="$(STD) $(DEFS) $(WARN) -O0 -g3" LDFLAGS="" LDLIBS="$(LDLIBS)"
 
 sanitize: clean
-	$(MAKE) CFLAGS="$(STD) $(DEFS) $(WARN) \
-		-O1 -g3 \
-		-fsanitize=address,undefined \
-		-fno-omit-frame-pointer" \
-		LDFLAGS="-fsanitize=address,undefined"
+	$(MAKE) CFLAGS="$(STD) $(DEFS) $(WARN) -O1 -g3 -fsanitize=address,undefined -fno-omit-frame-pointer" \
+		LDFLAGS="-fsanitize=address,undefined" \
+		LDLIBS="$(LDLIBS)"
 
 pgo-build: clean
-	$(MAKE) CFLAGS="$(CFLAGS) -fprofile-generate" LDFLAGS="$(LDFLAGS) -fprofile-generate"
+	$(MAKE) CFLAGS="$(CFLAGS) -fprofile-generate" LDFLAGS="$(LDFLAGS) -fprofile-generate" LDLIBS="$(LDLIBS)"
 	./$(EXE) bench
 	$(MAKE) clean
-	$(MAKE) CFLAGS="$(CFLAGS) -fprofile-use -fprofile-correction" LDFLAGS="$(LDFLAGS) -fprofile-use"
+	$(MAKE) CFLAGS="$(CFLAGS) -fprofile-use -fprofile-correction" LDFLAGS="$(LDFLAGS) -fprofile-use" LDLIBS="$(LDLIBS)"
 
 clean:
 	rm -f $(OBJS) $(EXE)
