@@ -14,6 +14,8 @@
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
 
+static int butterfly_hist[2][64][64];
+
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = (move >> 6) & 0x3F;
@@ -143,6 +145,11 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         if (victim != -1 && attacker != -1)
         {
             scores[i] = 1000000 + piece_value_lva(victim) * 10 - piece_value_lva(attacker);
+        }
+        else
+        {
+            // Quiet moves butterfly history
+            scores[i] = butterfly_hist[board->turn][from][to];
         }
     }
 
@@ -383,7 +390,21 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         if (alpha >= beta)
+        {
+            int from = (move >> 6) & 0x3F;
+            int to = move & 0x3F;
+            int flag = (move >> 12) & 0xF;
+
+            bool is_capture = piece_on_square(board, to) != -1;
+            bool is_promotion = flag >= 5 && flag <= 8;
+
+            if (!is_capture && !is_promotion)
+            {
+                butterfly_hist[board->turn][from][to] += depth * depth;
+            }
+
             break;
+        }
     }
 
     if (!stop->stop)
