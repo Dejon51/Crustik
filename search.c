@@ -299,6 +299,20 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
 
         static_eval = eval(board);
+                // RFP 60 elo
+        if (!root_node &&
+            depth <= 6 &&
+            !is_mate_score(beta))
+        {
+            int margin = 100 * depth;
+
+            if (static_eval - margin >= beta)
+            {
+                return (searchOutput){
+                    .score = (static_eval + beta) / 2,
+                    .move = tt_move};
+            }
+        }
         if (depth >= 3 && !root_node)
         {
             int R = 3;
@@ -317,20 +331,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (score >= beta)
                 return (searchOutput){.score = beta, .move = 0};
         }
-        // RFP 60 elo
-        if (!root_node &&
-            depth <= 6 &&
-            !is_mate_score(beta))
-        {
-            int margin = 100 * depth;
 
-            if (static_eval - margin >= beta)
-            {
-                return (searchOutput){
-                    .score = (static_eval + beta) / 2,
-                    .move = tt_move};
-            }
-        }
     }
 
     MoveList move_list = {0};
