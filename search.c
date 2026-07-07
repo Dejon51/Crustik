@@ -15,13 +15,14 @@
 #define MAX_GAME_PLY 2048
 
 static int butterfly_hist[2][64][64];
+static uint16_t killer_moves[MAX_GAME_PLY][2];
 
 
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
+    memset(killer_moves, 0, sizeof killer_moves);
 }
-
 
 static void move_to_uci(uint16_t move, char *buf)
 {
@@ -142,7 +143,17 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
             scores[i] = 100000000;
             continue;
         }
+        if (ply < MAX_GAME_PLY && move == killer_moves[ply][0])
+        {
+            scores[i] = 90000000;
+            continue;
+        }
 
+        if (ply < MAX_GAME_PLY && move == killer_moves[ply][1])
+        {
+            scores[i] = 89900000;
+            continue;
+        }
         int from = (move >> 6) & 0x3F;
         int to = move & 0x3F;
 
@@ -408,6 +419,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!is_capture && !is_promotion)
             {
                 butterfly_hist[board->turn][from][to] += depth * depth;
+
+                if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
+                {
+                    killer_moves[ply][1] = killer_moves[ply][0];
+                    killer_moves[ply][0] = move;
+                }
             }
 
             break;
