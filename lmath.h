@@ -102,6 +102,8 @@ typedef struct {
 
 uint64_t get_time_ms();
 
+int clamp_int(int value, int min, int max);
+
 int pop_lsb(Bitboard* bb);
 
 bool isDigit(char c);

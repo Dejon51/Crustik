@@ -16,6 +16,12 @@ uint64_t get_time_ms()
     return (ts.tv_sec * 1000L) + (ts.tv_nsec / 1000000L);
 }
 
+int clamp_int(int value, int min, int max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+}
+
 int pop_lsb(Bitboard* bb) {
   const int sq = __builtin_ctzll(*bb);
   *bb &= *bb - 1;

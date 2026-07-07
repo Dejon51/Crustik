@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include "play.h"
 #include "lmath.h"
@@ -13,6 +14,8 @@
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
+
+#define MAX_HISTORY 16384
 
 static int butterfly_hist[2][64][64];
 static uint16_t killer_moves[MAX_GAME_PLY][2];
@@ -423,7 +426,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!is_capture && !is_promotion)
             {
                 // Butterfly history 68 Elo
-                butterfly_hist[board->turn][from][to] += depth * depth;
+                int clampedBonus = clamp_int(320*depth-400,0, MAX_HISTORY);
+                butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
 
                 // Killer moves
                 if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
