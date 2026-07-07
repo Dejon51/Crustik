@@ -20,6 +20,7 @@
 static int butterfly_hist[2][64][64];
 static uint16_t killer_moves[MAX_GAME_PLY][2];
 
+
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
@@ -134,9 +135,9 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     MoveList ordered = *move_list;
     int scores[256] = {0};
 
-    const int TT_SCORE = 100000000;
-    const int CAPTURE_BASE = 90000000; // above killers
-    const int KILLER_BASE = 80000000;  // above history
+    const int TT_SCORE      = 100000000;
+    const int CAPTURE_BASE  = 90000000;   // above killers
+    const int KILLER_BASE   = 80000000;   // above history
 
     for (unsigned int i = 0; i < ordered.offset; i++)
     {
@@ -149,8 +150,8 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         }
 
         int from = (move >> 6) & 0x3F;
-        int to = move & 0x3F;
-        int victim = piece_on_square(board, to);
+        int to   = move & 0x3F;
+        int victim   = piece_on_square(board, to);
         int attacker = piece_on_square(board, from);
 
         if (victim != -1 && attacker != -1)
@@ -301,7 +302,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
 
         static_eval = eval(board);
-        // RFP 60 elo
+                // RFP 60 elo
         if (!root_node &&
             depth <= 6 &&
             !is_mate_score(beta))
@@ -333,6 +334,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (score >= beta)
                 return (searchOutput){.score = beta, .move = 0};
         }
+
     }
 
     MoveList move_list = {0};
@@ -411,25 +413,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 pv->length = child_pv.length + 1;
             }
         }
-        else
-        {
-            int from = (move >> 6) & 0x3F;
-            int to = move & 0x3F;
-            int flag = (move >> 12) & 0xF;
-
-            bool is_capture = piece_on_square(board, to) != -1;
-            bool is_promotion = flag >= 5 && flag <= 8;
-
-            if (!is_capture && !is_promotion)
-            {
-                int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
-
-                butterfly_hist[board->turn][from][to] +=
-                    malus -
-                    butterfly_hist[board->turn][from][to] *
-                        abs(malus) / MAX_HISTORY;
-            }
-        }
 
         if (alpha >= beta)
         {
@@ -443,7 +426,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!is_capture && !is_promotion)
             {
                 // Butterfly history 68 Elo
-                int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
+                int clampedBonus = clamp_int(320*depth-400,0, MAX_HISTORY);
                 butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
 
                 // Killer moves
