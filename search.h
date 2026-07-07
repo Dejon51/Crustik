@@ -27,6 +27,8 @@ typedef struct {
     int length;
 } PVLine;
 
+void reset_history(void);
+
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *);
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop);

@@ -16,6 +16,13 @@
 
 static int butterfly_hist[2][64][64];
 
+
+void reset_history(void)
+{
+    memset(butterfly_hist, 0, sizeof butterfly_hist);
+}
+
+
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = (move >> 6) & 0x3F;
