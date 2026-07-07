@@ -267,7 +267,26 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     bool root_node = (ply == 0);
     if (!in_check)
     {
+
         static_eval = eval(board);
+        if (depth >= 3 && !root_node)
+        {
+            int R = 3;
+
+            Position copy = *board;
+            make_null_move(&copy);
+
+            int score = -search(&copy, depth - R - 1,
+                                ply + 1, -beta, -beta + 1,
+                                stop, NULL)
+                             .score;
+
+            if (stop->stop)
+                return (searchOutput){0};
+
+            if (score >= beta)
+                return (searchOutput){.score = beta, .move = 0};
+        }
         // RFP 60 elo
         if (!root_node &&
             depth <= 6 &&
