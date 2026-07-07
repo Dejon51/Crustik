@@ -129,45 +129,50 @@ static int is_mate_score(int score)
 // 145 elo moveordering
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
-    (void)ply;
-
     MoveList ordered = *move_list;
     int scores[256] = {0};
+
+    const int TT_SCORE      = 100000000;
+    const int CAPTURE_BASE  = 90000000;   // above killers
+    const int KILLER_BASE   = 80000000;   // above history
 
     for (unsigned int i = 0; i < ordered.offset; i++)
     {
         uint16_t move = ordered.movelist[i];
 
+        // 1. Transposition table move (always first)
         if (move == tt_move)
         {
-            scores[i] = 100000000;
+            scores[i] = TT_SCORE;
             continue;
         }
 
-        if (ply < MAX_GAME_PLY && move == killer_moves[ply][0])
-        {
-            scores[i] = 90000000;
-            continue;
-        }
-
-        if (ply < MAX_GAME_PLY && move == killer_moves[ply][1])
-        {
-            scores[i] = 89900000;
-            continue;
-        }
         int from = (move >> 6) & 0x3F;
-        int to = move & 0x3F;
-
+        int to   = move & 0x3F;
+        int victim   = piece_on_square(board, to);
         int attacker = piece_on_square(board, from);
-        int victim = piece_on_square(board, to);
 
         if (victim != -1 && attacker != -1)
         {
-            scores[i] = 1000000 + piece_value_lva(victim) * 10 - piece_value_lva(attacker);
+            int mvv_lva = piece_value_lva(victim) * 10 - piece_value_lva(attacker);
+            scores[i] = CAPTURE_BASE + mvv_lva;
+            continue;
         }
-        else
+
+        bool is_killer = false;
+        if (ply < MAX_GAME_PLY)
         {
-            // Quiet moves butterfly history
+            if (move == killer_moves[ply][0] || move == killer_moves[ply][1])
+            {
+                // slight edge to the first killer
+                int bonus = (move == killer_moves[ply][0]) ? 1 : 0;
+                scores[i] = KILLER_BASE + bonus;
+                is_killer = true;
+            }
+        }
+
+        if (!is_killer)
+        {
             scores[i] = butterfly_hist[board->turn][from][to];
         }
     }
@@ -175,13 +180,11 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     for (unsigned int i = 0; i < ordered.offset; i++)
     {
         unsigned int best = i;
-
         for (unsigned int j = i + 1; j < ordered.offset; j++)
         {
             if (scores[j] > scores[best])
                 best = j;
         }
-
         if (best != i)
         {
             uint16_t tmp_move = ordered.movelist[i];
