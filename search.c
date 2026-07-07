@@ -310,7 +310,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 return (searchOutput){
                     .score = (static_eval + beta) / 2,
-                    .move = tt_move};
+                    .move = 0};
             }
         }
         if (depth >= 3 && !root_node)
