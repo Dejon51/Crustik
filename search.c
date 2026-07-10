@@ -355,7 +355,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !is_mate_score(alpha) &&
             !is_mate_score(beta))
         {
-            int futility_margin = 120;
             if (static_eval + 256 + 128 * depth <= alpha)
             {
                 bool is_capture = is_capture_move(board, move);
