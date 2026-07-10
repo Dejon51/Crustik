@@ -361,9 +361,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                    depth, mv, i + 1);
             fflush(stdout);
         }
-        if (depth <= 2 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
+        if (depth <= 1 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
-            int futility_margin = 100;
+            int futility_margin = 120;
             if (static_eval + futility_margin <= alpha)
             {
                 int flag = (move >> 12) & 0xF;
