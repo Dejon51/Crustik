@@ -353,11 +353,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (depth <= 1 &&
             !in_check &&
             !is_mate_score(alpha) &&
-            !is_mate_score(beta) &&
-            static_eval + 256 + 128 * depth < alpha)
+            !is_mate_score(beta))
         {
             int futility_margin = 120;
-            if (static_eval + futility_margin <= alpha)
+            if (static_eval + 256 + 128 * depth <= alpha)
             {
                 bool is_capture = is_capture_move(board, move);
                 bool is_promotion = is_promotion_move(move);
