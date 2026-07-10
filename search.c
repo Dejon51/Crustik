@@ -361,6 +361,21 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                    depth, mv, i + 1);
             fflush(stdout);
         }
+        if (depth == 1 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
+        {
+            int futility_margin = 150;
+            if (static_eval + futility_margin <= alpha)
+            {
+                int flag = (move >> 12) & 0xF;
+                int to = move & 0x3F;
+                bool is_capture = piece_on_square(board, to) != -1;
+                bool is_promotion = flag >= 5 && flag <= 8;
+                if (!is_capture && !is_promotion)
+                {
+                    continue;
+                }
+            }
+        }
 
         Position copy = *board;
         makeMove(&copy, &move_list, i);

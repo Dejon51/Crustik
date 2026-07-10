@@ -3,13 +3,27 @@
 import re
 import subprocess
 import sys
+import os
+
+# Detect the operating system
+is_windows = sys.platform == "win32"
+
+# Choose the right commands for the platform
+if is_windows:
+    # Windows: run .bat via cmd, and the compiled .exe
+    compile_cmd = ["cmd", "/c", "run.bat"]
+    bench_cmd = ["crustik.exe", "bench"]   # assuming your compiler outputs crustik.exe
+else:
+    # Unix-like (Linux/macOS)
+    compile_cmd = ["./run.sh"]
+    bench_cmd = ["./crustik", "bench"]
 
 # Compile engine
-subprocess.run(["./run.sh"], check=True)
+subprocess.run(compile_cmd, check=True)
 
 # Run the benchmark
 result = subprocess.run(
-    ["./crustik", "bench"],
+    bench_cmd,
     capture_output=True,
     text=True
 )
