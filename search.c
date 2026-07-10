@@ -350,7 +350,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                    depth, mv, i + 1);
             fflush(stdout);
         }
-        if (depth <= 1 &&
+        if (depth <= 4 &&
             !in_check &&
             !is_mate_score(alpha) &&
             !is_mate_score(beta))
