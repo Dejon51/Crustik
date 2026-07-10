@@ -129,5 +129,11 @@ int matoi(const char *str);
 
 float logf(float x);
 
+int move_from(uint16_t move);
+int move_to(uint16_t move);
+int move_flag(uint16_t move);
+int piece_on_square(Position *board, int sq);
+bool is_capture_move(Position *board, uint16_t move);
+bool is_promotion_move(uint16_t move);
 
 #endif

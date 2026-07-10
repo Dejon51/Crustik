@@ -138,6 +138,39 @@ int matoi(const char *str)
     return result * sign;
 }
 
+int move_from(uint16_t move) {
+    return (move >> 6) & 0x3F;
+}
+int move_to(uint16_t move) {
+    return move & 0x3F;
+}
+int move_flag(uint16_t move) {
+    return (move >> 12) & 0xF;
+}
+
+int piece_on_square(Position *board, int sq)
+{
+    uint64_t bb = 1ULL << sq;
+
+    for (int p = 0; p < 6; p++)
+    {
+        if (board->pieces[p] & bb)
+            return p;
+    }
+
+    return -1;
+}
+
+bool is_capture_move(Position *board, uint16_t move) {
+    return piece_on_square(board, move_to(move)) != -1;
+}
+bool is_promotion_move(uint16_t move) {
+    int flag = move_flag(move);
+    return flag >= 5 && flag <= 8;
+}
+
+
+
 // #define LN2 0.69314718056f
 // #define SQRT2 1.41421356237f
 
