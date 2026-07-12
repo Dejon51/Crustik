@@ -110,8 +110,6 @@ static void make_null_move(Position *board)
     board->hash ^= zobrist_table[768];
 }
 
-
-
 static int is_mate_score(int score)
 {
     return score > 31000 || score < -31000;
@@ -350,13 +348,28 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                    depth, mv, i + 1);
             fflush(stdout);
         }
+
+        bool is_capture = is_capture_move(board, move);
+        bool is_killer =
+            move == killer_moves[ply][0] ||
+            move == killer_moves[ply][1];
+        bool is_promotion = is_promotion_move(move);
+
+        if (!root_node &&
+            !in_check &&
+            depth <= 3 &&
+            !is_capture &&
+            !is_killer &&
+            (int)i >= 20)
+        {
+            continue;
+        }
+
         if (depth <= 1 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
             int futility_margin = 120;
             if (static_eval + futility_margin <= alpha)
             {
-                bool is_capture = is_capture_move(board, move);
-                bool is_promotion = is_promotion_move(move);
 
                 if (!is_capture && !is_promotion)
                 {
@@ -364,7 +377,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 }
             }
         }
-
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -418,10 +430,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int from = (move >> 6) & 0x3F;
             int to = move & 0x3F;
-            int flag = (move >> 12) & 0xF;
-
-            bool is_capture = piece_on_square(board, to) != -1;
-            bool is_promotion = flag >= 5 && flag <= 8;
 
             if (!is_capture && !is_promotion)
             {
@@ -436,12 +444,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (alpha >= beta)
         {
-            int from = (move >> 6) & 0x3F;
-            int to = move & 0x3F;
-            int flag = (move >> 12) & 0xF;
-
-            bool is_capture = piece_on_square(board, to) != -1;
-            bool is_promotion = flag >= 5 && flag <= 8;
+            int from = move_from(move);
+            int to = move_to(move);
 
             if (!is_capture && !is_promotion)
             {
