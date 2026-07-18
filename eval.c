@@ -11,6 +11,15 @@
 
 // static uint8_t penaltymap[64] = {1, 2, 3, 4, 4, 3, 2, 1, 2, 3, 4, 5, 5, 4, 3, 2, 3, 4, 5, 6, 6, 5, 4, 3, 4, 5, 6, 7, 7, 6, 5, 4, 4, 5, 6, 7, 7, 6, 5, 4, 3, 4, 5, 6, 6, 5, 4, 3, 2, 3, 4, 5, 5, 4, 3, 2, 1, 2, 3, 4, 4, 3, 2, 1};
 
+typedef struct
+{
+    uint64_t pieceAttacks[12];
+    uint64_t colorAttacks[2];
+
+} EvalInfo;
+
+#define BISHOP_PAIR_MG 30
+#define BISHOP_PAIR_EG 50
 
 typedef enum
 {
@@ -204,92 +213,158 @@ void init_tables()
     }
 }
 
-int getMobility(Position *board, int piece, int sq, int side)
+int getMobility(Position *board, EvalInfo *info, int piece, int sq, int side)
 {
     uint64_t occ = board->color[0] | board->color[1];
     uint64_t own = board->color[side];
 
+    int pc = 2 * piece + side;
+
     switch (piece)
     {
-        case 2: { // knight
-            uint64_t attacks = knighttable[sq] & ~own;
-            return __builtin_popcountll(attacks);
-        }
-
-        case 1: { // bishop
+        case 1: // bishop
+        {
             uint64_t attacks = getbishopAttacks(sq, occ) & ~own;
+
+            info->pieceAttacks[pc] |= attacks;
+            info->colorAttacks[side] |= attacks;
+
             return __builtin_popcountll(attacks);
         }
 
-        case 3: { // rook
+        case 2: // knight
+        {
+            uint64_t attacks = knighttable[sq] & ~own;
+
+            info->pieceAttacks[pc] |= attacks;
+            info->colorAttacks[side] |= attacks;
+
+            return __builtin_popcountll(attacks);
+        }
+
+        case 3: // rook
+        {
             uint64_t attacks = getrookAttacks(sq, occ) & ~own;
+
+            info->pieceAttacks[pc] |= attacks;
+            info->colorAttacks[side] |= attacks;
+
             return __builtin_popcountll(attacks);
         }
 
-        case 4: { // queen
+        case 4: // queen
+        {
             uint64_t attacks =
                 (getbishopAttacks(sq, occ) |
                  getrookAttacks(sq, occ)) & ~own;
 
+            info->pieceAttacks[pc] |= attacks;
+            info->colorAttacks[side] |= attacks;
+
             int mob = __builtin_popcountll(attacks);
 
-            // prevent eval explosion
             return mob > 14 ? 14 : mob;
         }
 
         default:
-            return 0;
+            return 0; // pawn and king
     }
 }
 
+
 int eval(Position *board)
 {
-    int mg[2] = {0, 0};
-    int eg[2] = {0, 0};
+    EvalInfo info = {0};
+
+    int mg[2] = {0,0};
+    int eg[2] = {0,0};
+
     int gamePhase = 0;
+
 
     for (int piece = 0; piece < 6; piece++)
     {
-        // white pieces
+
+        // WHITE
+
         uint64_t bb = board->pieces[piece] & board->color[0];
+
         while (bb)
         {
             int sq = __builtin_ctzll(bb);
             bb &= bb - 1;
 
-            int pc = 2*piece + 0;
-            int mob = getMobility(board, piece, sq, 0);
+            int pc = 2 * piece;
+
+            int mob = getMobility(board, &info, piece, sq, 0);
+
             mg[0] += mob * mobility_mg[piece];
             eg[0] += mob * mobility_eg[piece];
+
             mg[0] += mg_table[pc][sq];
             eg[0] += eg_table[pc][sq];
+
             gamePhase += gamephaseInc[pc];
         }
 
-        // black pieces
+
+        // BLACK
+
         bb = board->pieces[piece] & board->color[1];
+
         while (bb)
         {
             int sq = __builtin_ctzll(bb);
             bb &= bb - 1;
 
-            int pc = 2*piece + 1;
-            int mob = getMobility(board, piece, sq, 1);
+            int pc = 2 * piece + 1;
+
+            int mob = getMobility(board, &info, piece, sq, 1);
+
             mg[1] += mob * mobility_mg[piece];
             eg[1] += mob * mobility_eg[piece];
+
             mg[1] += mg_table[pc][sq];
             eg[1] += eg_table[pc][sq];
+
             gamePhase += gamephaseInc[pc];
         }
     }
 
-    // Tapered eval 
-    int mgScore = mg[board->turn] - mg[!board->turn];
-    int egScore = eg[board->turn] - eg[!board->turn];
 
-    if (gamePhase > 24) gamePhase = 24; // cap in case of promotions
+    // Bishop pair bonus
+
+    for (int side = 0; side < 2; side++)
+    {
+        uint64_t bishops =
+            board->pieces[1] & board->color[side];
+
+        if (__builtin_popcountll(bishops) >= 2)
+        {
+            mg[side] += BISHOP_PAIR_MG;
+            eg[side] += BISHOP_PAIR_EG;
+        }
+    }
+
+
+    // tapered evaluation
+
+    int mgScore =
+        mg[board->turn] -
+        mg[!board->turn];
+
+    int egScore =
+        eg[board->turn] -
+        eg[!board->turn];
+
+
+    if (gamePhase > 24)
+        gamePhase = 24;
+
+
     int egPhase = 24 - gamePhase;
-    int base_eval = (mgScore * gamePhase + egScore * egPhase) / 24;
 
-    return base_eval;
+
+    return (mgScore * gamePhase +
+            egScore * egPhase) / 24;
 }
