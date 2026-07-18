@@ -116,7 +116,6 @@ static int is_mate_score(int score)
     return score > 31000 || score < -31000;
 }
 
-// LMR reduction function (from first code)
 static int lmr_reduction(int depth, unsigned int move_number)
 {
     int r = (int)(log((double)depth) * log((double)move_number) / 2.0);
@@ -406,7 +405,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         else
         {
-            // ---- LMR integration starts here ----
             int reduction = 0;
             if (!root_node && !in_check && depth >= 3 && i >= 4 &&
                 !is_capture && !is_promotion && move != tt_move)
@@ -445,7 +443,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                                 -beta, -alpha, stop, &child_pv)
                              .score;
             }
-            // ---- LMR integration ends here ----
         }
 
         if (stop->stop)
