@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "play.h"
 #include "lmath.h"
@@ -113,6 +114,20 @@ static void make_null_move(Position *board)
 static int is_mate_score(int score)
 {
     return score > 31000 || score < -31000;
+}
+
+// LMR reduction function (from first code)
+static int lmr_reduction(int depth, unsigned int move_number)
+{
+    int r = (int)(log((double)depth) * log((double)move_number) / 2.0);
+
+    if (r < 1)
+        r = 1;
+
+    if (r > depth - 2)
+        r = depth - 2;
+
+    return r;
 }
 
 // 145 elo moveordering
@@ -391,18 +406,46 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         else
         {
-            score = -search(&copy, depth - 1, ply + 1,
-                            -alpha - 1, -alpha, stop, &child_pv)
-                         .score;
+            // ---- LMR integration starts here ----
+            int reduction = 0;
+            if (!root_node && !in_check && depth >= 3 && i >= 4 &&
+                !is_capture && !is_promotion && move != tt_move)
+            {
+                reduction = lmr_reduction(depth, i + 1);
+            }
 
+            if (reduction > 0)
+            {
+                // Reduced depth search with null window
+                score = -search(&copy, depth - 1 - reduction, ply + 1,
+                                -alpha - 1, -alpha, stop, NULL)
+                             .score;
+
+                if (!stop->stop && score > alpha)
+                {
+                    // Re-search with full depth but still null window
+                    score = -search(&copy, depth - 1, ply + 1,
+                                    -alpha - 1, -alpha, stop, NULL)
+                                 .score;
+                }
+            }
+            else
+            {
+                // Normal null-window search
+                score = -search(&copy, depth - 1, ply + 1,
+                                -alpha - 1, -alpha, stop, NULL)
+                             .score;
+            }
+
+            // If score is inside the window, do a full-window re-search with PV
             if (!stop->stop && score > alpha && score < beta)
             {
                 child_pv.length = 0;
-
                 score = -search(&copy, depth - 1, ply + 1,
                                 -beta, -alpha, stop, &child_pv)
                              .score;
             }
+            // ---- LMR integration ends here ----
         }
 
         if (stop->stop)
