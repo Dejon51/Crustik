@@ -296,11 +296,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
     bool root_node = (ply == 0);
 
-    if (depth >= 4 && tt_move == 0 && !in_check)
-    {
-        depth--;
-    }
-
     int static_eval = 0;
 
     if (!in_check)
@@ -340,7 +335,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
         }
     }
-
+    if (depth >= 4 && tt_move == 0 && !in_check)
+    {
+        depth--;
+    }
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
     move_list = ordermoves(board, &move_list, ply, tt_move);
