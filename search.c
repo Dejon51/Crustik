@@ -535,7 +535,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     long long search_start = get_time_ms();
 
     int prev_score = 0;
-    int aspiration_delta = 40;
+    int aspiration_delta = 25;
     const int ASPIRATION_MAX_DELTA = 500;
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
