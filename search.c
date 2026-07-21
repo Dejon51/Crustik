@@ -291,13 +291,25 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = tt_score, .move = tt_move};
         }
     }
-
     uint64_t king_bb = board->pieces[5] & board->color[board->turn];
     int in_check = (!king_bb ||
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
+    bool root_node = (ply == 0);
+
+    if (!root_node &&
+        depth >= 4 &&
+        tt_move == 0 &&
+        !in_check)
+    {
+        search(board, depth - 2, ply, alpha, beta, stop, NULL);
+
+        TTEntry *new_entry = tt_probe(board->hash);
+        if (new_entry)
+            tt_move = new_entry->move;
+    }
+
     int static_eval = 0;
 
-    bool root_node = (ply == 0);
     if (!in_check)
     {
 
