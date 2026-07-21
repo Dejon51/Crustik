@@ -534,6 +534,10 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     PVLine best_pv = {0};
     long long search_start = get_time_ms();
 
+    int prev_score = 0;
+    int aspiration_delta = 25;
+    const int ASPIRATION_MAX_DELTA = 500;
+
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
         if (stop->depth > 0 && depth > stop->depth)
@@ -542,10 +546,60 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         stop->seldepth = 0;
 
         PVLine pv = {0};
-        searchOutput out = search(board, depth, 0, -MATE_SCORE, MATE_SCORE, stop, &pv);
+        searchOutput out;
+
+        int alpha, beta;
+        bool first_attempt = (depth == 1);
+        if (first_attempt) {
+            alpha = -MATE_SCORE;
+            beta  =  MATE_SCORE;
+        } else {
+            alpha = prev_score - aspiration_delta;
+            beta  = prev_score + aspiration_delta;
+        }
+
+        int delta = aspiration_delta;
+        int research_count = 0;
+        const int MAX_RESEARCH = 5;
+
+        while (1) {
+            pv.length = 0;
+            out = search(board, depth, 0, alpha, beta, stop, &pv);
+
+            if (stop->stop)
+                break;
+
+            if (out.score > alpha && out.score < beta)
+                break;
+
+            if (out.score <= alpha) {
+                alpha = out.score - delta;
+                if (alpha < -MATE_SCORE) alpha = -MATE_SCORE;
+            } else if (out.score >= beta) {
+                beta = out.score + delta;
+                if (beta > MATE_SCORE) beta = MATE_SCORE;
+            }
+
+            delta *= 2;
+            if (delta > ASPIRATION_MAX_DELTA) {
+                alpha = -MATE_SCORE;
+                beta  =  MATE_SCORE;
+            }
+
+            research_count++;
+            if (research_count >= MAX_RESEARCH) {
+                alpha = -MATE_SCORE;
+                beta  =  MATE_SCORE;
+                pv.length = 0;
+                out = search(board, depth, 0, alpha, beta, stop, &pv);
+                break;
+            }
+        }
 
         if (stop->stop)
             break;
+
+        prev_score = out.score;
 
         if (out.move != 0)
         {
