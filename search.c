@@ -301,11 +301,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         tt_move == 0 &&
         !in_check)
     {
-        search(board, depth - 2, ply, alpha, beta, stop, NULL);
-
-        TTEntry *new_entry = tt_probe(board->hash);
-        if (new_entry)
-            tt_move = new_entry->move;
+        depth--;
     }
 
     int static_eval = 0;
