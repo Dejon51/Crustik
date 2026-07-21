@@ -296,10 +296,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
     bool root_node = (ply == 0);
 
-    if (!root_node &&
-        depth >= 4 &&
-        tt_move == 0 &&
-        !in_check)
+    if (depth >= 4 && tt_move == 0 && !in_check)
     {
         depth--;
     }
