@@ -229,7 +229,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
-        if (king_in_check(&copy, board->turn)) continue; 
+        uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+        if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
+            continue;
 
         int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
 
