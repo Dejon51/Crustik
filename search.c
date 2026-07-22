@@ -229,9 +229,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
-        uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
-        if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
-            continue;
+        if (king_in_check(&copy, board->turn)) continue; 
 
         int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
 
@@ -291,9 +289,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = tt_score, .move = tt_move};
         }
     }
-    uint64_t king_bb = board->pieces[5] & board->color[board->turn];
-    int in_check = (!king_bb ||
-                    squareAttacked(board, __builtin_ctzll(king_bb), !board->turn));
+    int in_check = king_in_check(board, board->turn);
     bool root_node = (ply == 0);
 
     if (depth >= 4 && tt_move == 0 && !in_check)

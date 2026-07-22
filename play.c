@@ -1451,6 +1451,15 @@ void captureMoves(Position *board, MoveList *list, bool color)
     }
 }
 
+bool king_in_check(Position *board, int us) {
+    uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];
+    if (!king_bb) return false;
+    int king_sq = __builtin_ctzll(king_bb);
+    uint64_t occ = board->color[0] | board->color[1];
+    AttackSet enemyAttacks = buildAttackSet(board, !us);
+    return squareAttacked_fast(king_sq, !us, occ, &enemyAttacks);
+}
+
 uint64_t perft(Position *board, int depth, int divide)
 {
     if (depth == 0)
