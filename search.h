@@ -17,6 +17,8 @@ typedef struct {
     uint64_t start_time;
     uint64_t max_time;
     uint64_t max_nodes;
+    uint64_t soft_nodes;
+    int64_t soft_time;
     uint8_t depth;
     int seldepth;
     int print_info; 

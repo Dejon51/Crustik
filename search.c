@@ -538,6 +538,16 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
+        /* -------- SOFT LIMIT CHECKS (only if non‑zero) -------- */
+        if (stop->soft_time > 0) {
+            int64_t elapsed = get_time_ms() - stop->start_time;
+            if (elapsed >= stop->soft_time)
+                break;                      // stop before next depth
+        }
+        if (stop->soft_nodes > 0 && stop->nodes >= stop->soft_nodes)
+            break;                          // stop before next depth
+        /* ------------------------------------------------------ */
+
         if (stop->depth > 0 && depth > stop->depth)
             break;
 
@@ -564,7 +574,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             pv.length = 0;
             out = search(board, depth, 0, alpha, beta, stop, &pv);
 
-            if (stop->stop)
+            if (stop->stop)          // hard stop triggered inside search
                 break;
 
             if (out.score > alpha && out.score < beta)
@@ -599,13 +609,12 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         prev_score = out.score;
 
-        if (out.move != 0)
-        {
+        if (out.move != 0) {
             best_move_so_far = out.move;
             best_pv = pv;
         }
 
-        long long elapsed = get_time_ms() - search_start;
+        int64_t elapsed = get_time_ms() - search_start;
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
 
         char score_str[32];
