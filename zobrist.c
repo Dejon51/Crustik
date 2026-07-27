@@ -1,6 +1,7 @@
 #include "zobrist.h"
 #include "lmath.h"
 
+
 uint64_t zobrist_table[793] = {
     0x157a3807a48faa9dULL,
     0xd573529b34a1d093ULL,
