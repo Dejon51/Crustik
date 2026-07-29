@@ -15,6 +15,7 @@
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
+#define MAX_LMR_MOVES 50
 
 #define MAX_HISTORY 16384
 
@@ -25,6 +26,31 @@ void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
+}
+
+int lmr_table[MAX_DEPTH + 1][MAX_LMR_MOVES + 1];
+
+void init_lmr()
+{
+    for (int depth = 1; depth <= MAX_DEPTH; depth++)
+    {
+        for (int move = 1; move <= MAX_LMR_MOVES; move++)
+        {
+            int r = (int)(log((double)depth) *
+                           log((double)move) / 2.0);
+
+            if (r < 1)
+                r = 1;
+
+            if (r > depth - 2)
+                r = depth - 2;
+
+            if (r > 8)
+                r = 8;
+
+            lmr_table[depth][move] = r;
+        }
+    }
 }
 
 static void move_to_uci(uint16_t move, char *buf)
@@ -116,19 +142,17 @@ static int is_mate_score(int score)
     return score > 31000 || score < -31000;
 }
 
-static int lmr_reduction(int depth, unsigned int move_number)
+
+static inline int lmr_reduction(int depth, int move_number)
 {
-    int r = (int)(log((double)depth) * log((double)move_number) / 2.0);
+    if (depth < 3 || move_number < 3)
+        return 0;
 
-    if (r < 1)
-        r = 1;
+    if (move_number > MAX_LMR_MOVES)
+        move_number = MAX_LMR_MOVES;
 
-    if (r > depth - 2)
-        r = depth - 2;
-
-    return r;
+    return lmr_table[depth][move_number];
 }
-
 // 145 elo moveordering
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
