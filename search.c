@@ -219,7 +219,8 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         alpha = static_eval;
 
     MoveList move_list = {0};
-    captureMoves(board, &move_list, board->turn);
+
+    qsearchMoves(board, &move_list, board->turn);
     move_list = ordermoves(board, &move_list, ply, 0); // 18 elo qsearch ordering moves
 
     int best_score = static_eval;

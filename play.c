@@ -1451,6 +1451,32 @@ void captureMoves(Position *board, MoveList *list, bool color)
     }
 }
 
+void qsearchMoves(Position *board, MoveList *list, bool color) {
+    captureMoves(board, list, color);
+
+    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[color];
+    uint64_t empty = ~(board->color[2]);
+    int prom_flag = 8;
+
+    if (color == 0) { // White
+        uint64_t prom_pawns = pawns & 0x000000000000FF00ULL;
+        uint64_t pushes = (prom_pawns >> 8) & empty;
+        while (pushes) {
+            int to = pop_lsb(&pushes);
+            int from = to + 8;
+            ADD_FLAG_MOVE(list, prom_flag, from, to);
+        }
+    } else {           // Black
+        uint64_t prom_pawns = pawns & 0x00FF000000000000ULL;
+        uint64_t pushes = (prom_pawns << 8) & empty;
+        while (pushes) {
+            int to = pop_lsb(&pushes);
+            int from = to - 8;
+            ADD_FLAG_MOVE(list, prom_flag, from, to);
+        }
+    }
+}
+
 bool king_in_check(Position *board, int us) {
     uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];
     if (!king_bb) return false;
