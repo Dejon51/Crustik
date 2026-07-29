@@ -145,9 +145,6 @@ static int is_mate_score(int score)
 
 static inline int lmr_reduction(int depth, int move_number)
 {
-    if (depth < 3 || move_number < 3)
-        return 0;
-
     if (move_number > MAX_LMR_MOVES)
         move_number = MAX_LMR_MOVES;
 
