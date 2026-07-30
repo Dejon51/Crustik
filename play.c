@@ -1112,246 +1112,229 @@ void legalMoveGen(Position *board, MoveList *list)
     rookMovesLegal(board, list, us, check_mask, pinned_pieces, pinner_ray);
 }
 
+#define DEFINE_MAKEMOVE(COLOR, c)                                              \
+static inline void makeMove##COLOR(Position *board, MoveList *list, int move)  \
+{                                                                              \
+    int to   = list->movelist[move] & 0x3F;                                    \
+    int from = (list->movelist[move] >> 6) & 0x3F;                             \
+    int flag = (list->movelist[move] >> 12) & 0xF;                             \
+                                                                               \
+    uint64_t frombb = 1ULL << from;                                            \
+    uint64_t tobb   = 1ULL << to;                                              \
+                                                                               \
+    int old_epsquare = board->epsquare;                                        \
+    int old_castling = board->castling;                                        \
+                                                                               \
+    int piece        = board->mailbox[from];                                   \
+    int moving_piece = piece;                                                  \
+    int victim       = board->mailbox[to];                                     \
+                                                                               \
+    if (piece == 6) return;                                                    \
+                                                                               \
+    /* quiet move (no capture, no promotion, no ep) */                         \
+    if (flag == 0 && victim == 6 &&                                            \
+        !(moving_piece == 0 && to == old_epsquare && old_epsquare != -1)) {    \
+        board->hash ^= zobrist_table[769 + old_castling];                      \
+        if (old_epsquare != -1)                                                \
+            board->hash ^= zobrist_table[785 + (old_epsquare & 7)];            \
+        board->epsquare = -1;                                                  \
+                                                                               \
+        board->hash ^= zobrist_table[(c * 384) + (moving_piece * 64) + from];  \
+                                                                               \
+        if (moving_piece == 0) board->halfmoves = 0;                           \
+        else                  board->halfmoves++;                               \
+                                                                               \
+        if (piece == KINGNUMBER) {                                              \
+            if (c == 0) board->castling &= ~((1U << WHITE_KINGSIDE) |          \
+                                             (1U << WHITE_QUEENSIDE));         \
+            else        board->castling &= ~((1U << BLACK_KINGSIDE) |          \
+                                             (1U << BLACK_QUEENSIDE));         \
+        }                                                                      \
+                                                                               \
+        if (from == H1) board->castling &= ~(1U << WHITE_KINGSIDE);            \
+        if (from == A1) board->castling &= ~(1U << WHITE_QUEENSIDE);           \
+        if (from == H8) board->castling &= ~(1U << BLACK_KINGSIDE);            \
+        if (from == A8) board->castling &= ~(1U << BLACK_QUEENSIDE);           \
+                                                                               \
+        board->pieces[moving_piece] &= ~frombb;                                \
+        board->color[c]            &= ~frombb;                                 \
+        board->mailbox[from]        = 6;                                       \
+                                                                               \
+        board->pieces[moving_piece] |= tobb;                                   \
+        board->color[c]            |= tobb;                                    \
+        board->mailbox[to]          = piece;                                   \
+                                                                               \
+        board->hash ^= zobrist_table[(c * 384) + (moving_piece * 64) + to];    \
+                                                                               \
+        if (to == H1) board->castling &= ~(1U << WHITE_KINGSIDE);              \
+        if (to == A1) board->castling &= ~(1U << WHITE_QUEENSIDE);             \
+        if (to == H8) board->castling &= ~(1U << BLACK_KINGSIDE);              \
+        if (to == A8) board->castling &= ~(1U << BLACK_QUEENSIDE);             \
+                                                                               \
+        if (moving_piece == 0) {                                               \
+            int from_rank = from >> 3;                                         \
+            int to_rank   = to >> 3;                                           \
+            if (abs1(from_rank - to_rank) == 2)                                \
+                board->epsquare = from + ((c == 0) ? -8 : 8);                  \
+        }                                                                      \
+                                                                               \
+        if (board->epsquare != -1)                                             \
+            board->hash ^= zobrist_table[785 + (board->epsquare & 7)];         \
+        board->hash ^= zobrist_table[769 + board->castling];                   \
+                                                                               \
+        board->hash ^= zobrist_table[768];                                     \
+        if (c == 1) board->fullmoves++;                                        \
+        board->turn = !c;                                                      \
+        return;                                                                \
+    }                                                                          \
+                                                                               \
+    /* general move (captures, promotions, castling, ep) */                    \
+    board->hash ^= zobrist_table[769 + old_castling];                          \
+    if (old_epsquare != -1)                                                    \
+        board->hash ^= zobrist_table[785 + (old_epsquare & 7)];                \
+    board->epsquare = -1;                                                      \
+                                                                               \
+    board->hash ^= zobrist_table[(c * 384) + (moving_piece * 64) + from];      \
+                                                                               \
+    if (victim != 6)                                                           \
+        board->hash ^= zobrist_table[(!c * 384) + (victim * 64) + to];         \
+                                                                               \
+    bool is_capture    = (victim != 6);                                         \
+    bool is_pawn_move  = (moving_piece == 0);                                  \
+    bool is_ep_capture = (moving_piece == 0 && to == old_epsquare &&           \
+                          old_epsquare != -1);                                  \
+                                                                               \
+    board->halfmoves = (is_pawn_move || is_capture || is_ep_capture) ? 0       \
+                                                                       : board->halfmoves + 1; \
+                                                                               \
+    if (piece == KINGNUMBER) {                                                  \
+        if (c == 0) board->castling &= ~((1U << WHITE_KINGSIDE) |              \
+                                         (1U << WHITE_QUEENSIDE));             \
+        else        board->castling &= ~((1U << BLACK_KINGSIDE) |              \
+                                         (1U << BLACK_QUEENSIDE));             \
+    }                                                                          \
+                                                                               \
+    if (piece == 3) {                                                           \
+        if (from == H1) board->castling &= ~(1U << WHITE_KINGSIDE);            \
+        if (from == A1) board->castling &= ~(1U << WHITE_QUEENSIDE);           \
+        if (from == H8) board->castling &= ~(1U << BLACK_KINGSIDE);            \
+        if (from == A8) board->castling &= ~(1U << BLACK_QUEENSIDE);           \
+    }                                                                          \
+                                                                               \
+    switch (flag) {                                                            \
+        case 1: /* white king side */                                          \
+            board->pieces[3] &= ~(1ULL << H1);                                 \
+            board->color[c]   &= ~(1ULL << H1);                                \
+            board->mailbox[H1] = 6;                                            \
+            board->pieces[3]  |= (1ULL << F1);                                 \
+            board->color[c]    |= (1ULL << F1);                                \
+            board->mailbox[F1] = 3;                                            \
+            board->castling &= ~(1U << WHITE_KINGSIDE);                        \
+            board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + H1];           \
+            board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + F1];           \
+            break;                                                             \
+        case 2: /* white queen side */                                         \
+            board->pieces[3] &= ~(1ULL << A1);                                 \
+            board->color[c]   &= ~(1ULL << A1);                                \
+            board->mailbox[A1] = 6;                                            \
+            board->pieces[3]  |= (1ULL << D1);                                 \
+            board->color[c]    |= (1ULL << D1);                                \
+            board->mailbox[D1] = 3;                                            \
+            board->castling &= ~(1U << WHITE_QUEENSIDE);                       \
+            board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + A1];           \
+            board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + D1];           \
+            break;                                                             \
+        case 4: /* black king side */                                          \
+            board->pieces[3] &= ~(1ULL << H8);                                 \
+            board->color[c]   &= ~(1ULL << H8);                                \
+            board->mailbox[H8] = 6;                                            \
+            board->pieces[3]  |= (1ULL << F8);                                 \
+            board->color[c]    |= (1ULL << F8);                                \
+            board->mailbox[F8] = 3;                                            \
+            board->castling &= ~(1U << BLACK_KINGSIDE);                        \
+            board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + H8];           \
+            board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + F8];           \
+            break;                                                             \
+        case 3: /* black queen side */                                         \
+            board->pieces[3] &= ~(1ULL << A8);                                 \
+            board->color[c]   &= ~(1ULL << A8);                                \
+            board->mailbox[A8] = 6;                                            \
+            board->pieces[3]  |= (1ULL << D8);                                 \
+            board->color[c]    |= (1ULL << D8);                                \
+            board->mailbox[D8] = 3;                                            \
+            board->castling &= ~(1U << BLACK_QUEENSIDE);                       \
+            board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + A8];           \
+            board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + D8];           \
+            break;                                                             \
+        case 5: piece = 1; break; /* PR_BISHOP */                              \
+        case 6: piece = 2; break; /* PR_KNIGHT */                              \
+        case 7: piece = 3; break; /* PR_ROOK   */                              \
+        case 8: piece = 4; break; /* PR_QUEEN  */                              \
+    }                                                                          \
+                                                                               \
+    board->pieces[moving_piece] &= ~frombb;                                    \
+    board->color[c]            &= ~frombb;                                     \
+    board->mailbox[from]        = 6;                                           \
+                                                                               \
+    if (moving_piece == 0 && to == old_epsquare && old_epsquare != -1) {       \
+        int captured_sq = to + ((c == 0) ? 8 : -8);                            \
+        uint64_t capBB = 1ULL << captured_sq;                                  \
+        board->pieces[0]      &= ~capBB;                                       \
+        board->color[!c]       &= ~capBB;                                      \
+        board->mailbox[captured_sq] = 6;                                       \
+        board->hash ^= zobrist_table[(!c * 384) + (0 * 64) + captured_sq];     \
+    }                                                                          \
+                                                                               \
+    if (victim != 6) board->pieces[victim] &= ~tobb;                           \
+    board->color[!c] &= ~tobb;                                                 \
+                                                                               \
+    board->pieces[piece] |= tobb;                                              \
+    board->color[c]      |= tobb;                                              \
+    board->mailbox[to]    = piece;                                             \
+                                                                               \
+    board->hash ^= zobrist_table[(c * 384) + (piece * 64) + to];               \
+                                                                               \
+    if (to == H1) board->castling &= ~(1U << WHITE_KINGSIDE);                  \
+    if (to == A1) board->castling &= ~(1U << WHITE_QUEENSIDE);                 \
+    if (to == H8) board->castling &= ~(1U << BLACK_KINGSIDE);                  \
+    if (to == A8) board->castling &= ~(1U << BLACK_QUEENSIDE);                 \
+                                                                               \
+    if (moving_piece == 0) {                                                   \
+        int from_y = from >> 3;                                                \
+        int to_y   = to >> 3;                                                  \
+        if (abs1(to_y - from_y) == 2)                                          \
+            board->epsquare = from + ((c == 0) ? -8 : 8);                      \
+    }                                                                          \
+                                                                               \
+    if (board->epsquare != -1)                                                 \
+        board->hash ^= zobrist_table[785 + (board->epsquare & 7)];             \
+    board->hash ^= zobrist_table[769 + board->castling];                       \
+                                                                               \
+    board->hash ^= zobrist_table[768];                                         \
+    if (c == 1) board->fullmoves++;                                            \
+    board->turn = !c;                                                          \
+}
+
+DEFINE_MAKEMOVE(White, 0)
+DEFINE_MAKEMOVE(Black, 1)
+
 void makeMove(Position *board, MoveList *list, int move)
 {
-    int direction = (board->turn == 0) ? -1 : 1;
-
-    int to = list->movelist[move] & 0x3F;
-    int from = (list->movelist[move] >> 6) & 0x3F;
-    int flag = (list->movelist[move] >> 12) & 0xF;
-
-    uint64_t frombb = 1ULL << from;
-    uint64_t tobb = 1ULL << to;
-
-    int old_epsquare = board->epsquare;
-    int old_castling = board->castling;
-
-    // Remove old Castling and EP from hash
-    board->hash ^= zobrist_table[769 + old_castling];
-    if (old_epsquare != -1)
-        board->hash ^= zobrist_table[785 + (old_epsquare & 7)];
-
-    board->epsquare = -1;
-
-    int piece = board->mailbox[from];
-    int moving_piece = piece;
-    int victim = board->mailbox[to];
-
-    if (piece == 6)
-        return;
-
-    // Remove moving piece from 'from' square in hash
-    board->hash ^= zobrist_table[(board->turn * 384) + (moving_piece * 64) + from];
-
-    // If regular capture, remove victim from hash
-    if (victim != 6)
-    {
-        board->hash ^= zobrist_table[(!board->turn * 384) + (victim * 64) + to];
-    }
-
-    // Check if this is a capture or pawn move (resets halfmove clock)
-    bool is_capture = (board->mailbox[to] != 6);
-    bool is_pawn_move = (moving_piece == 0);
-
-    // Check for en passant capture (also resets halfmove clock)
-    bool is_ep_capture = (moving_piece == 0 && to == old_epsquare && old_epsquare != -1);
-
-    // Update halfmove clock
-    if (is_pawn_move || is_capture || is_ep_capture)
-    {
-        board->halfmoves = 0;
-    }
+    if (board->turn == 0)
+        makeMoveWhite(board, list, move);
     else
-    {
-        board->halfmoves++;
-    }
-
-    // king moved remove both castling rights
-    if (piece == KINGNUMBER)
-    {
-        switch (board->turn)
-        {
-        case 0:
-            board->castling &= ~((1U << WHITE_KINGSIDE) | (1U << WHITE_QUEENSIDE));
-            break;
-        case 1:
-            board->castling &= ~((1U << BLACK_KINGSIDE) | (1U << BLACK_QUEENSIDE));
-            break;
-        }
-    }
-
-    // rook moved remove that sides castling
-    if (piece == 3)
-    {
-        if (from == H1)
-            board->castling &= ~(1U << WHITE_KINGSIDE);
-        if (from == A1)
-            board->castling &= ~(1U << WHITE_QUEENSIDE);
-        if (from == H8)
-            board->castling &= ~(1U << BLACK_KINGSIDE);
-        if (from == A8)
-            board->castling &= ~(1U << BLACK_QUEENSIDE);
-    }
-
-    // castling move handling
-    switch (flag)
-    {
-    case 1: // white king side
-        board->pieces[3] &= ~(1ULL << H1);
-        board->color[board->turn] &= ~(1ULL << H1);
-        board->mailbox[H1] = 6;
-
-        board->pieces[3] |= (1ULL << F1);
-        board->color[board->turn] |= (1ULL << F1);
-        board->mailbox[F1] = 3;
-
-        board->castling &= ~(1U << WHITE_KINGSIDE);
-
-        // Update Rook hash for castle
-        board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + H1];
-        board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + F1];
-        break;
-
-    case 2: // white queen side
-        board->pieces[3] &= ~(1ULL << A1);
-        board->color[board->turn] &= ~(1ULL << A1);
-        board->mailbox[A1] = 6;
-
-        board->pieces[3] |= (1ULL << D1);
-        board->color[board->turn] |= (1ULL << D1);
-        board->mailbox[D1] = 3;
-
-        board->castling &= ~(1U << WHITE_QUEENSIDE);
-
-        // Update Rook hash for castle
-        board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + A1];
-        board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + D1];
-        break;
-
-    case 4: // black king side
-        board->pieces[3] &= ~(1ULL << H8);
-        board->color[board->turn] &= ~(1ULL << H8);
-        board->mailbox[H8] = 6;
-
-        board->pieces[3] |= (1ULL << F8);
-        board->color[board->turn] |= (1ULL << F8);
-        board->mailbox[F8] = 3;
-
-        board->castling &= ~(1U << BLACK_KINGSIDE);
-
-        // Update Rook hash for castle
-        board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + H8];
-        board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + F8];
-        break;
-
-    case 3: // black queen side
-        board->pieces[3] &= ~(1ULL << A8);
-        board->color[board->turn] &= ~(1ULL << A8);
-        board->mailbox[A8] = 6;
-
-        board->pieces[3] |= (1ULL << D8);
-        board->color[board->turn] |= (1ULL << D8);
-        board->mailbox[D8] = 3;
-
-        board->castling &= ~(1U << BLACK_QUEENSIDE);
-
-        // Update Rook hash for castle
-        board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + A8];
-        board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + D8];
-        break;
-
-    case 5:
-        piece = 1;
-        break;
-    case 6:
-        piece = 2;
-        break;
-    case 7:
-        piece = 3;
-        break;
-    case 8:
-        piece = 4;
-        break;
-
-    default:
-        break;
-    }
-
-    // remove piece from origin (use moving_piece, not piece)
-    board->pieces[moving_piece] &= ~frombb;
-    board->color[board->turn] &= ~frombb;
-    board->mailbox[from] = 6;
-
-    // en passant capture
-    if (moving_piece == 0 && to == old_epsquare && old_epsquare != -1)
-    {
-        int captured_sq = to - (direction * 8);
-        uint64_t capBB = 1ULL << captured_sq;
-
-        board->pieces[0] &= ~capBB;
-        board->color[!board->turn] &= ~capBB;
-        board->mailbox[captured_sq] = 6;
-
-        // Remove captured pawn from hash
-        board->hash ^= zobrist_table[(!board->turn * 384) + (0 * 64) + captured_sq];
-    }
-
-    if (to == H1)
-        board->castling &= ~(1U << WHITE_KINGSIDE);
-    if (to == A1)
-        board->castling &= ~(1U << WHITE_QUEENSIDE);
-    if (to == H8)
-        board->castling &= ~(1U << BLACK_KINGSIDE);
-    if (to == A8)
-        board->castling &= ~(1U << BLACK_QUEENSIDE);
-
-    // clear destination square
-    if (victim != 6) board->pieces[victim] &= ~tobb;
- 
-
-    board->color[!board->turn] &= ~tobb;
-
-    // place moving piece (use piece, which is promoted type if applicable)
-    board->pieces[piece] |= tobb;
-    board->color[board->turn] |= tobb;
-    board->mailbox[to] = piece;
-
-    // Add piece to 'to' square in hash
-    board->hash ^= zobrist_table[(board->turn * 384) + (piece * 64) + to];
-
-    if (moving_piece == 0)
-    {
-        int from_y = from >> 3;
-        int to_y = to >> 3;
-
-        if (abs1(to_y - from_y) == 2)
-            board->epsquare = from + (direction * 8);
-    }
-
-    // XOR IN new EP and Castling rights
-    if (board->epsquare != -1)
-        board->hash ^= zobrist_table[785 + (board->epsquare & 7)];
-    board->hash ^= zobrist_table[769 + board->castling];
-
-    // Toggle turn in hash
-    board->hash ^= zobrist_table[768];
-
-    // Update fullmove counter (increments after black's move)
-    if (board->turn == 1)
-    {
-        board->fullmoves++;
-    }
-
-    board->turn ^= 1;
+        makeMoveBlack(board, list, move);
 }
 
 void moveint(Position *board, uint16_t move)
 {
     MoveList tmp;
     tmp.movelist[0] = move;
-    makeMove(board, &tmp, 0);
+    if (board->turn == 0)
+        makeMoveWhite(board, &tmp, 0);
+    else
+        makeMoveBlack(board, &tmp, 0);
 }
-
 void captureMoves(Position *board, MoveList *list, bool color)
 {
     uint64_t own = board->color[color];
@@ -1477,6 +1460,7 @@ void qsearchMoves(Position *board, MoveList *list, bool color) {
     }
 }
 
+
 bool king_in_check(Position *board, int us) {
     uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];
     if (!king_bb) return false;
@@ -1498,8 +1482,12 @@ uint64_t perft(Position *board, int depth, int divide)
     uint64_t nodes = 0;
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
-        Position copy = *board; // Stack allocation
-        makeMove(&copy, &move_list, i);
+        Position copy = *board;
+
+        if (copy.turn == 0)
+            makeMoveWhite(&copy, &move_list, i);
+        else
+            makeMoveBlack(&copy, &move_list, i);
 
         uint64_t move_nodes = perft(&copy, depth - 1, divide);
         nodes += move_nodes;
@@ -1507,7 +1495,7 @@ uint64_t perft(Position *board, int depth, int divide)
         if (depth == divide && divide != 0)
         {
             int from = (move_list.movelist[i] >> 6) & 0x3F;
-            int to = move_list.movelist[i] & 0x3F;
+            int to   =  move_list.movelist[i] & 0x3F;
             int flag = (move_list.movelist[i] >> 12) & 0xF;
 
             int x1 = from % 8;
@@ -1516,35 +1504,26 @@ uint64_t perft(Position *board, int depth, int divide)
             int y2 = 8 - (to / 8);
 
             char promotion = 0;
-            if (flag == 5)
-                promotion = 'b';
-            else if (flag == 6)
-                promotion = 'n';
-            else if (flag == 7)
-                promotion = 'r';
-            else if (flag == 8)
-                promotion = 'q';
+            if (flag == 5)      promotion = 'b';
+            else if (flag == 6) promotion = 'n';
+            else if (flag == 7) promotion = 'r';
+            else if (flag == 8) promotion = 'q';
 
             if (promotion)
-            {
                 printf("%c%i%c%i%c - %" PRIu64 "\n",
                        'a' + x1, y1,
                        'a' + x2, y2,
                        promotion,
                        move_nodes);
-            }
             else
-            {
                 printf("%c%i%c%i - %" PRIu64 "\n",
                        'a' + x1, y1,
                        'a' + x2, y2,
                        move_nodes);
-            }
         }
     }
     return nodes;
 }
-
 
 uint64_t perftbulk(Position *board, int depth)
 {
@@ -1556,18 +1535,19 @@ uint64_t perftbulk(Position *board, int depth)
     legalMoveGen(board, &move_list);
 
     if (depth == 1)
-    {
         return move_list.offset;
-    }
 
     uint64_t nodes = 0;
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
-        Position copy = *board; // Stack allocation
-        makeMove(&copy, &move_list, i);
+        Position copy = *board;
 
-        uint64_t move_nodes = perftbulk(&copy, depth - 1);
-        nodes += move_nodes;
+        if (copy.turn == 0)
+            makeMoveWhite(&copy, &move_list, i);
+        else
+            makeMoveBlack(&copy, &move_list, i);
+
+        nodes += perftbulk(&copy, depth - 1);
     }
     return nodes;
 }
