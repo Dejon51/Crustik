@@ -172,10 +172,8 @@ int eg_king_table[64] = {
     -53, -34, -21, -11, -28, -14, -24, -43
 };
 
-#define MAX_MOBILITY 28
-
-int mg_mobility_table[6][MAX_MOBILITY];
-int eg_mobility_table[6][MAX_MOBILITY];
+int mobility_mg[6] = {0, 4, 4, 2, 1, 0};
+int mobility_eg[6] = {0, 2, 3, 2, 1, 0};
 
 int* mg_pesto_table[6] =
 {
@@ -200,54 +198,7 @@ int gamephaseInc[12] = {0,0,1,1,1,1,2,2,4,4,0,0};
 int mg_table[12][64];
 int eg_table[12][64];
 
-void init_mobility_tables()
-{
-    for (int p = 0; p < 6; p++)
-    {
-        int max = 0;
-        if (p == 1) max = 13;      // bishop
-        else if (p == 2) max = 8;  // knight
-        else if (p == 3) max = 14; // rook
-        else if (p == 4) max = 27; // queen
 
-        for (int i = 0; i < MAX_MOBILITY; i++)
-        {
-            if (i <= max)
-            {
-                if (p == 1) // bishop
-                {
-                    mg_mobility_table[p][i] = (i * i) / 2 - 10;
-                    eg_mobility_table[p][i] = (i * i) / 4 - 5;
-                }
-                else if (p == 2) // knight
-                {
-                    mg_mobility_table[p][i] = i * 6 - 20;
-                    eg_mobility_table[p][i] = i * 4 - 12;
-                }
-                else if (p == 3) // rook
-                {
-                    mg_mobility_table[p][i] = (i * i) / 3 - 10;
-                    eg_mobility_table[p][i] = (i * i) / 4 - 5;
-                }
-                else if (p == 4) // queen
-                {
-                    mg_mobility_table[p][i] = (i * i) / 6 - 10;
-                    eg_mobility_table[p][i] = (i * i) / 8 - 5;
-                }
-                else // pawn or king
-                {
-                    mg_mobility_table[p][i] = 0;
-                    eg_mobility_table[p][i] = 0;
-                }
-            }
-            else
-            {
-                mg_mobility_table[p][i] = 0;
-                eg_mobility_table[p][i] = 0;
-            }
-        }
-    }
-}
 
 void init_tables()
 {
@@ -260,8 +211,6 @@ void init_tables()
             eg_table[pc+1][sq] = eg_value[p] + eg_pesto_table[p][FLIP(sq)];
         }
     }
-
-    init_mobility_tables();
 }
 
 int getMobility(Position *board, EvalInfo *info, int piece, int sq, int side)
@@ -314,7 +263,7 @@ int getMobility(Position *board, EvalInfo *info, int piece, int sq, int side)
 
             int mob = __builtin_popcountll(attacks);
 
-            return mob > 27 ? 27 : mob;
+            return mob > 14 ? 14 : mob;
         }
 
         default:
@@ -349,8 +298,8 @@ int eval(Position *board)
 
             int mob = getMobility(board, &info, piece, sq, 0);
 
-            mg[0] += mg_mobility_table[piece][mob];
-            eg[0] += eg_mobility_table[piece][mob];
+            mg[0] += mob * mobility_mg[piece];
+            eg[0] += mob * mobility_eg[piece];
 
             mg[0] += mg_table[pc][sq];
             eg[0] += eg_table[pc][sq];
@@ -372,8 +321,8 @@ int eval(Position *board)
 
             int mob = getMobility(board, &info, piece, sq, 1);
 
-            mg[1] += mg_mobility_table[piece][mob];
-            eg[1] += eg_mobility_table[piece][mob];
+            mg[1] += mob * mobility_mg[piece];
+            eg[1] += mob * mobility_eg[piece];
 
             mg[1] += mg_table[pc][sq];
             eg[1] += eg_table[pc][sq];
