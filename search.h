@@ -29,6 +29,8 @@ typedef struct {
     int length;
 } PVLine;
 
+void init_lmr();
+
 void reset_history(void);
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *);

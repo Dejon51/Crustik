@@ -156,6 +156,8 @@ void d(Position *board) // Displays board or something
 
 void uciStart()
 {
+    init_lmr();
+
     Position board = {0};
     Position copyboard = {0};
 
