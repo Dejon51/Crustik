@@ -230,6 +230,13 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     if (ply > stop->seldepth)
         stop->seldepth = ply;
+    if (stop->start_time && (stop->nodes & 2047) == 0 &&
+        get_time_ms() - stop->start_time >= stop->max_time)
+        stop->stop = 1;
+
+    if (stop->max_nodes && stop->nodes >= stop->max_nodes)
+        stop->stop = 1;
+
 
     int static_eval = eval(board);
 
