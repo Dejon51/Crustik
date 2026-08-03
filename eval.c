@@ -21,6 +21,11 @@ typedef struct
 #define BISHOP_PAIR_MG 30
 #define BISHOP_PAIR_EG 50
 
+#define ROOK_OPEN_FILE_MG 20
+#define ROOK_OPEN_FILE_EG 10
+#define ROOK_SEMI_OPEN_FILE_MG 10
+#define ROOK_SEMI_OPEN_FILE_EG 5
+
 typedef enum
 {
     PAWNVAL = 1,
@@ -198,7 +203,9 @@ int gamephaseInc[12] = {0,0,1,1,1,1,2,2,4,4,0,0};
 int mg_table[12][64];
 int eg_table[12][64];
 
-
+// fileMasks[f] = all 8 squares on file f (0 = a-file ... 7 = h-file),
+// used for the rook open/semi-open file check.
+static uint64_t fileMasks[8];
 
 void init_tables()
 {
@@ -210,6 +217,14 @@ void init_tables()
             mg_table[pc+1][sq] = mg_value[p] + mg_pesto_table[p][FLIP(sq)];
             eg_table[pc+1][sq] = eg_value[p] + eg_pesto_table[p][FLIP(sq)];
         }
+    }
+
+    for (int f = 0; f < 8; f++)
+    {
+        uint64_t mask = 0ULL;
+        for (int r = 0; r < 8; r++)
+            mask |= (1ULL << (r * 8 + f));
+        fileMasks[f] = mask;
     }
 }
 
@@ -281,6 +296,10 @@ int eval(Position *board)
 
     int gamePhase = 0;
 
+    uint64_t allPawns = board->pieces[0];
+    uint64_t whitePawns = allPawns & board->color[0];
+    uint64_t blackPawns = allPawns & board->color[1];
+
 
     for (int piece = 0; piece < 6; piece++)
     {
@@ -305,6 +324,22 @@ int eval(Position *board)
             eg[0] += eg_table[pc][sq];
 
             gamePhase += gamephaseInc[pc];
+
+            if (piece == 3) // rook
+            {
+                uint64_t file = fileMasks[sq & 7];
+
+                if (!(file & allPawns))
+                {
+                    mg[0] += ROOK_OPEN_FILE_MG;
+                    eg[0] += ROOK_OPEN_FILE_EG;
+                }
+                else if (!(file & whitePawns))
+                {
+                    mg[0] += ROOK_SEMI_OPEN_FILE_MG;
+                    eg[0] += ROOK_SEMI_OPEN_FILE_EG;
+                }
+            }
         }
 
 
@@ -328,6 +363,22 @@ int eval(Position *board)
             eg[1] += eg_table[pc][sq];
 
             gamePhase += gamephaseInc[pc];
+
+            if (piece == 3) // rook
+            {
+                uint64_t file = fileMasks[sq & 7];
+
+                if (!(file & allPawns))
+                {
+                    mg[1] += ROOK_OPEN_FILE_MG;
+                    eg[1] += ROOK_OPEN_FILE_EG;
+                }
+                else if (!(file & blackPawns))
+                {
+                    mg[1] += ROOK_SEMI_OPEN_FILE_MG;
+                    eg[1] += ROOK_SEMI_OPEN_FILE_EG;
+                }
+            }
         }
     }
 
