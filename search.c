@@ -445,6 +445,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 !is_capture && !is_promotion && move != tt_move)
             {
                 reduction = lmr_reduction(depth, i + 1);
+                int is_pv_node = (beta - alpha) > 1;
+
+                if (is_pv_node)
+                    reduction -= 1;
+                else
+                    reduction += 1;
+
+                if (reduction < 0)
+                    reduction = 0;
+                if (reduction > depth - 1)
+                    reduction = depth - 1;
             }
 
             if (reduction > 0)
