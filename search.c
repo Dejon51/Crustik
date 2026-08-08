@@ -449,8 +449,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
                 if (is_pv_node)
                     reduction -= 1;
-                else
-                    reduction += 1;
 
                 if (reduction < 0)
                     reduction = 0;
