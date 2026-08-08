@@ -323,6 +323,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int in_check = king_in_check(board, board->turn);
     bool root_node = (ply == 0);
 
+    if (in_check)
+        depth++;
+
     if (depth >= 4 && tt_move == 0 && !in_check)
     {
         depth--;
