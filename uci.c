@@ -551,29 +551,40 @@ void uciStart()
                         printf("go: unknown argument: %s\n", tokens[1]);
                     }
                 }
+
                 int increment = 0;
-                int time_move = 0;
+                int time_left = 0;
+
                 if (board.turn == 0)
                 {
-                    increment = white_increment * 0.7;
-                    time_move = white_time / 30 + increment;
+                    increment = (int)(white_increment * 0.7);
+                    time_left = white_time;
                 }
                 else if (board.turn == 1)
                 {
-                    increment = black_increment * 0.7;
-                    time_move = black_time / 30 + increment;
+                    increment = (int)(black_increment * 0.7);
+                    time_left = black_time;
                 }
 
-                int movetime = time_move;
-                if (movetime <= 0)
-                    movetime = 100;
+                int overhead = 30;
+
+                int soft = time_left / 30 + increment;
+                int hard = time_left / 3 + increment;
+
+                if (soft < 10) soft = 10;
+                if (hard < soft) hard = soft;
+                if (hard > time_left - overhead) hard = time_left - overhead;
+                if (soft > hard) soft = hard;
+                if (hard <= 0) hard = 50;
 
                 stopConditions stop = {};
                 stop.start_time = get_time_ms();
-                stop.max_time = movetime;
-                stop.max_nodes = 0;
-                stop.nodes = 0;
-                stop.stop = 0;
+                stop.soft_time  = soft;
+                stop.max_time   = hard;
+                stop.max_nodes  = 0;
+                stop.nodes      = 0;
+                stop.stop       = 0;
+                /* ------------------------------------------------ */
 
                 uint16_t result = iterative_deepening(&board, &stop);
 
