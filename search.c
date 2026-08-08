@@ -351,7 +351,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     .move = 0};
             }
         }
-        if (depth >= 3 && !root_node)
+        if (depth >= 3 && !root_node && static_eval >= beta)
         {
             int R = 3;
 
