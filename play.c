@@ -1470,6 +1470,7 @@ bool king_in_check(Position *board, int us) {
     return squareAttacked_fast(king_sq, !us, occ, &enemyAttacks);
 }
 
+
 uint64_t perft(Position *board, int depth, int divide)
 {
     if (depth == 0)
