@@ -158,22 +158,14 @@ static inline int lmr_reduction(int depth, int move_number)
     return lmr_table[depth][move_number];
 }
 
-// --- Draw detection ---
-// Checks the 50-move rule and repetition (game history + in-tree history).
-// board->hash and board->halfmoves must already reflect the *current* node's
-// position (i.e. after the move that led here has been applied).
 static bool is_repetition_or_fifty(Position *board, int ply)
 {
     if (board->halfmoves >= 100)
         return true; // 50-move rule
 
-    // Only positions since the last irreversible move (pawn move / capture)
-    // can possibly repeat.
     int reversible_plies = board->halfmoves;
     int total_ply = game_history_count + ply;
 
-    // Same side to move repeats every 2 plies, so step by 2. Start at 4
-    // because you need at least two full moves (4 plies) for a repeat.
     for (int i = 4; i <= reversible_plies && i <= total_ply; i += 2)
     {
         uint64_t past_hash;
