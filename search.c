@@ -19,6 +19,13 @@
 
 #define MAX_HISTORY 16384
 
+#define MAX_SEARCH_PLY 128
+
+uint64_t game_history[MAX_GAME_PLY];
+int game_history_count = 0;
+
+static uint64_t search_path_hash[MAX_SEARCH_PLY];
+
 static int butterfly_hist[2][64][64];
 static uint16_t killer_moves[MAX_GAME_PLY][2];
 
@@ -150,6 +157,40 @@ static inline int lmr_reduction(int depth, int move_number)
 
     return lmr_table[depth][move_number];
 }
+
+// --- Draw detection ---
+// Checks the 50-move rule and repetition (game history + in-tree history).
+// board->hash and board->halfmoves must already reflect the *current* node's
+// position (i.e. after the move that led here has been applied).
+static bool is_repetition_or_fifty(Position *board, int ply)
+{
+    if (board->halfmoves >= 100)
+        return true; // 50-move rule
+
+    // Only positions since the last irreversible move (pawn move / capture)
+    // can possibly repeat.
+    int reversible_plies = board->halfmoves;
+    int total_ply = game_history_count + ply;
+
+    // Same side to move repeats every 2 plies, so step by 2. Start at 4
+    // because you need at least two full moves (4 plies) for a repeat.
+    for (int i = 4; i <= reversible_plies && i <= total_ply; i += 2)
+    {
+        uint64_t past_hash;
+        int idx = total_ply - i;
+
+        if (idx >= game_history_count)
+            past_hash = search_path_hash[idx - game_history_count];
+        else
+            past_hash = game_history[idx];
+
+        if (past_hash == board->hash)
+            return true; // first repetition treated as draw (standard, conservative)
+    }
+
+    return false;
+}
+
 // 145 elo moveordering
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
@@ -301,6 +342,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (stop->stop)
         return output;
+
+    // --- Draw detection: repetition + 50-move rule ---
+    // Skipped at the root (ply == 0) so we never claim a draw on the position
+    // we're actually asked to find a move from.
+    if (ply > 0 && ply < MAX_SEARCH_PLY)
+    {
+        search_path_hash[ply] = board->hash;
+        if (is_repetition_or_fifty(board, ply))
+            return (searchOutput){.score = 0, .move = 0};
+    }
+
     if (depth <= 0)
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
     TTEntry *entry = tt_probe(board->hash);

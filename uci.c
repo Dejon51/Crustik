@@ -10,6 +10,11 @@
 #include <inttypes.h>
 #include "text.h"
 
+#define MAX_GAME_PLY 2048
+
+extern uint64_t game_history[MAX_GAME_PLY];
+extern int game_history_count;
+
 void movestring(uint16_t move)
 {
     int from = (move >> 6) & 0x3F;
@@ -165,6 +170,7 @@ void uciStart()
 
     fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq",
             "-", "0", "1");
+    game_history_count = 0;
 
     char line[20000];
 
@@ -207,6 +213,7 @@ void uciStart()
             reset_history();
             fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w",
                     "KQkq", "-", "0", "1");
+            game_history_count = 0;
         }
         else if (strcmp(tokens[0], "position") == 0)
         {
@@ -218,6 +225,7 @@ void uciStart()
             {
                 fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w",
                         "KQkq", "-", "0", "1");
+                game_history_count = 0;
 
                 int i = 2;
                 if (tokens[i] && strcmp(tokens[i], "moves") == 0)
@@ -226,12 +234,15 @@ void uciStart()
                 {
                     uint16_t move = parsemove(&board, tokens[i]);
                     moveint(&board, move);
+                    if (game_history_count < MAX_GAME_PLY)
+                        game_history[game_history_count++] = board.hash;
                     i++;
                 }
             }
             else if (strcmp(tokens[1], "fen") == 0)
             {
                 fenRead(&board, tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7]);
+                game_history_count = 0;
 
                 int i = 8;
                 if (tokens[i] && strcmp(tokens[i], "moves") == 0)
@@ -240,6 +251,8 @@ void uciStart()
                 {
                     uint16_t move = parsemove(&board, tokens[i]);
                     moveint(&board, move);
+                    if (game_history_count < MAX_GAME_PLY)
+                        game_history[game_history_count++] = board.hash;
                     i++;
                 }
             }
