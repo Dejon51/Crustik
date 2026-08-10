@@ -18,6 +18,7 @@
 #define MAX_LMR_MOVES 50
 
 #define MAX_HISTORY 16384
+#define NO_EVAL (-32001)
 
 #define MAX_SEARCH_PLY 128
 
@@ -28,11 +29,14 @@ static uint64_t search_path_hash[MAX_SEARCH_PLY];
 
 static int butterfly_hist[2][64][64];
 static uint16_t killer_moves[MAX_GAME_PLY][2];
+static int eval_stack[MAX_GAME_PLY];
 
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
+    for (int i = 0; i < MAX_GAME_PLY; i++)
+        eval_stack[i] = NO_EVAL;
 }
 
 int lmr_table[MAX_DEPTH + 1][MAX_LMR_MOVES + 1];
@@ -335,9 +339,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (stop->stop)
         return output;
 
-    // --- Draw detection: repetition + 50-move rule ---
-    // Skipped at the root (ply == 0) so we never claim a draw on the position
-    // we're actually asked to find a move from.
     if (ply > 0 && ply < MAX_SEARCH_PLY)
     {
         search_path_hash[ply] = board->hash;
@@ -367,6 +368,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int in_check = king_in_check(board, board->turn);
     bool root_node = (ply == 0);
 
+    if (in_check && ply < MAX_GAME_PLY)
+        eval_stack[ply] = NO_EVAL;
+
     if (in_check)
         depth++;
 
@@ -375,12 +379,23 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         depth--;
     }
 
+    
     int static_eval = 0;
+    bool improving = false;
 
     if (!in_check)
     {
 
         static_eval = eval(board);
+        
+        if (ply < MAX_GAME_PLY)
+        {
+            improving = (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
+                            ? static_eval > eval_stack[ply - 2]
+                            : true;
+
+            eval_stack[ply] = static_eval;
+        }
         // RFP 60 elo
         if (!root_node &&
             depth <= 6 &&
@@ -453,7 +468,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             depth <= 3 &&
             !is_capture &&
             !is_killer &&
-            (int)i >= 20)
+            (int)i >= (improving ? 24 : 16))
         {
             continue;
         }
