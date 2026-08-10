@@ -462,14 +462,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             move == killer_moves[ply][0] ||
             move == killer_moves[ply][1];
         bool is_promotion = is_promotion_move(move);
-        int threshold = (5 + depth * depth) / (2 - improving);
 
         if (!root_node &&
             !in_check &&
             depth <= 3 &&
             !is_capture &&
             !is_killer &&
-            (int)i >= threshold)
+            (int)i >= (improving ? 24 : 16))
         {
             continue;
         }
