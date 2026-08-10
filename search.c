@@ -468,6 +468,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             depth <= 3 &&
             !is_capture &&
             !is_killer &&
+            !is_promotion &&
             (int)i >= (improving ? 24 : 16))
         {
             continue;
