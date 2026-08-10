@@ -53,6 +53,14 @@ enum {
     KINGNUMBER = 5,
 };
 
+typedef enum {
+    MOVE_NONE          = 0,
+    MOVE_PROMO_BISHOP  = 5,
+    MOVE_PROMO_KNIGHT  = 6,
+    MOVE_PROMO_ROOK    = 7,
+    MOVE_PROMO_QUEEN   = 8,
+} MoveFlag;
+
 #if __STDC_VERSION__ >= 202311L
     // C23: enums with fixed underlying type
     enum Side : uint8_t {

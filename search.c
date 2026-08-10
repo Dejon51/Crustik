@@ -462,13 +462,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             move == killer_moves[ply][0] ||
             move == killer_moves[ply][1];
         bool is_promotion = is_promotion_move(move);
+        bool is_queen_promo = move_flag(move) == MOVE_PROMO_QUEEN;
 
         if (!root_node &&
             !in_check &&
             depth <= 3 &&
             !is_capture &&
             !is_killer &&
-            !is_promotion &&
+            !is_queen_promo &&
             (int)i >= (improving ? 24 : 16))
         {
             continue;
