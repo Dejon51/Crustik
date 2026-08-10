@@ -409,7 +409,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         if (depth >= 3 && !root_node && static_eval >= beta)
         {
-            int R = 3;
+            int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
+            if (R > depth - 1)
+                R = depth - 1;
 
             Position copy = *board;
             make_null_move(&copy);
@@ -638,11 +640,14 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
-        if (stop->soft_time > 0) {
+        if (stop->soft_time > 0)
+        {
             int iterations_stable = depth - last_best_move_change;
             double factor = 1.2 - 0.05 * (double)iterations_stable;
-            if (factor < 0.8) factor = 0.8;
-            if (factor > 1.2) factor = 1.2;
+            if (factor < 0.8)
+                factor = 0.8;
+            if (factor > 1.2)
+                factor = 1.2;
 
             int64_t effective_soft = (int64_t)(stop->soft_time * factor);
             if (effective_soft > (int64_t)stop->max_time)
@@ -665,19 +670,23 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         int alpha, beta;
         bool first_attempt = (depth == 1);
-        if (first_attempt) {
+        if (first_attempt)
+        {
             alpha = -MATE_SCORE;
-            beta  =  MATE_SCORE;
-        } else {
+            beta = MATE_SCORE;
+        }
+        else
+        {
             alpha = prev_score - aspiration_delta;
-            beta  = prev_score + aspiration_delta;
+            beta = prev_score + aspiration_delta;
         }
 
         int delta = aspiration_delta;
         int research_count = 0;
         const int MAX_RESEARCH = 5;
 
-        while (1) {
+        while (1)
+        {
             pv.length = 0;
             out = search(board, depth, 0, alpha, beta, stop, &pv);
 
@@ -687,24 +696,31 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             if (out.score > alpha && out.score < beta)
                 break;
 
-            if (out.score <= alpha) {
+            if (out.score <= alpha)
+            {
                 alpha = out.score - delta;
-                if (alpha < -MATE_SCORE) alpha = -MATE_SCORE;
-            } else if (out.score >= beta) {
+                if (alpha < -MATE_SCORE)
+                    alpha = -MATE_SCORE;
+            }
+            else if (out.score >= beta)
+            {
                 beta = out.score + delta;
-                if (beta > MATE_SCORE) beta = MATE_SCORE;
+                if (beta > MATE_SCORE)
+                    beta = MATE_SCORE;
             }
 
             delta *= 2;
-            if (delta > ASPIRATION_MAX_DELTA) {
+            if (delta > ASPIRATION_MAX_DELTA)
+            {
                 alpha = -MATE_SCORE;
-                beta  =  MATE_SCORE;
+                beta = MATE_SCORE;
             }
 
             research_count++;
-            if (research_count >= MAX_RESEARCH) {
+            if (research_count >= MAX_RESEARCH)
+            {
                 alpha = -MATE_SCORE;
-                beta  =  MATE_SCORE;
+                beta = MATE_SCORE;
                 pv.length = 0;
                 out = search(board, depth, 0, alpha, beta, stop, &pv);
                 break;
@@ -716,7 +732,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         prev_score = out.score;
 
-        if (out.move != 0) {
+        if (out.move != 0)
+        {
             if (out.move != prev_best_move)
                 last_best_move_change = depth;
 
