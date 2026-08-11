@@ -290,6 +290,11 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
+        uint16_t move = move_list.movelist[i];
+
+        if (!see_ge(board, move, 0))
+            continue;
+            
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 

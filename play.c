@@ -1552,3 +1552,153 @@ uint64_t perftbulk(Position *board, int depth)
     }
     return nodes;
 }
+
+static inline int lva_pick(uint64_t subset)
+{
+    return __builtin_ctzll(__builtin_bswap64(subset)) ^ 56;
+}
+
+uint64_t get_attackers(Position *board, int sq, uint64_t occ)
+{
+    uint64_t attackers = 0ULL;
+
+    attackers |= white_pawn_attacks[sq] & board->pieces[PAWNNUMBER] & board->color[0];
+    attackers |= black_pawn_attacks[sq] & board->pieces[PAWNNUMBER] & board->color[1];
+
+    attackers |= knighttable[sq] & board->pieces[HORSENUMBER];
+
+    attackers |= kingtable[sq] & board->pieces[KINGNUMBER];
+
+    attackers |= getbishopAttacks(sq, occ) &
+                 (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]);
+
+    attackers |= getrookAttacks(sq, occ) &
+                 (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]);
+
+    attackers &= occ;
+
+    return attackers;
+}
+
+int get_lva(Position *board, uint64_t attackers, int side, int *piece_type)
+{
+    uint64_t side_attackers = attackers & board->color[side];
+    if (!side_attackers) return -1;
+
+    uint64_t subset = side_attackers & board->pieces[PAWNNUMBER];
+    if (subset) { *piece_type = PAWNNUMBER; return lva_pick(subset); }
+
+    subset = side_attackers & board->pieces[HORSENUMBER];
+    if (subset) { *piece_type = HORSENUMBER; return lva_pick(subset); }
+
+    subset = side_attackers & board->pieces[BISHOPNUMBER];
+    if (subset) { *piece_type = BISHOPNUMBER; return lva_pick(subset); }
+
+    subset = side_attackers & board->pieces[ROOKNUMBER];
+    if (subset) { *piece_type = ROOKNUMBER; return lva_pick(subset); }
+
+    subset = side_attackers & board->pieces[QUEENNUMBER];
+    if (subset) { *piece_type = QUEENNUMBER; return lva_pick(subset); }
+
+    subset = side_attackers & board->pieces[KINGNUMBER];
+    if (subset) { *piece_type = KINGNUMBER; return lva_pick(subset); }
+
+    return -1;
+}
+
+static const int PIECE_VALUES[7] = { 100, 300, 300, 500, 900, 20000, 0 };
+
+bool see_ge(Position *board, uint16_t move, int threshold)
+{
+    int from = (move >> 6) & 0x3F;
+    int to   =  move & 0x3F;
+    int flag = (move >> 12) & 0xF;
+
+    int from_piece = board->mailbox[from];
+    if (from_piece >= 6) return false; // Sanity check
+
+    int target_piece = board->mailbox[to];
+
+    if (from_piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1) {
+        target_piece = PAWNNUMBER;
+    }
+
+    if (target_piece >= 6) target_piece = 6;
+
+    int promo_piece = -1;
+    if (flag >= 5 && flag <= 8) {
+        if (flag == 5) promo_piece = BISHOPNUMBER;
+        if (flag == 6) promo_piece = HORSENUMBER;
+        if (flag == 7) promo_piece = ROOKNUMBER;
+        if (flag == 8) promo_piece = QUEENNUMBER;
+    }
+
+    int gain[32];
+    int d = 0;
+
+    gain[d] = PIECE_VALUES[target_piece];
+    if (promo_piece != -1) {
+        gain[d] += PIECE_VALUES[promo_piece] - PIECE_VALUES[PAWNNUMBER];
+    }
+
+    // Early exit check
+    if (gain[d] < threshold) return false;
+
+    uint64_t occ = board->color[0] | board->color[1];
+    uint64_t attackers = get_attackers(board, to, occ);
+
+    occ &= ~(1ULL << from);
+
+    if (from_piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1) {
+        int cap_sq = to + (board->turn == 0 ? 8 : -8);
+        occ &= ~(1ULL << cap_sq);
+    }
+
+    uint64_t bishops_queens = (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & occ;
+    uint64_t rooks_queens   = (board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER]) & occ;
+
+    attackers |= (getbishopAttacks(to, occ) & bishops_queens);
+    attackers |= (getrookAttacks(to, occ)   & rooks_queens);
+    attackers &= occ;
+
+    int side = !board->turn;
+    int attacking_piece = (promo_piece != -1) ? promo_piece : from_piece;
+
+    while (1) {
+        int next_piece = -1;
+        int lva_sq = get_lva(board, attackers, side, &next_piece);
+        if (lva_sq == -1) break;
+
+        if (next_piece == KINGNUMBER) {
+            if (attackers & board->color[!side]) {
+                break;
+            }
+        }
+
+        d++;
+        gain[d] = PIECE_VALUES[attacking_piece] - gain[d - 1];
+
+        // Pruning checks
+        if (gain[d] < threshold && -gain[d - 1] >= threshold) break;
+
+        occ &= ~(1ULL << lva_sq);
+
+        bishops_queens = (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & occ;
+        rooks_queens   = (board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER]) & occ;
+
+        attackers |= (getbishopAttacks(to, occ) & bishops_queens);
+        attackers |= (getrookAttacks(to, occ)   & rooks_queens);
+        attackers &= occ;
+
+        attacking_piece = next_piece;
+        side = !side;
+    }
+
+    while (d > 0) {
+        int negated = -gain[d];
+        gain[d - 1] = (gain[d - 1] < negated) ? gain[d - 1] : negated;
+        d--;
+    }
+
+    return gain[0] >= threshold;
+}
