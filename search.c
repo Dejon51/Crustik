@@ -292,6 +292,22 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     {
         uint16_t move = move_list.movelist[i];
 
+                int to = move_to(move);
+        int victim = piece_on_square(board, to);
+        int flag = (move >> 12) & 0xF;
+        bool is_promo = flag >= 5 && flag <= 8;
+        int delta_margin = 200;
+        if (!is_mate_score(alpha) && !is_mate_score(beta))
+        {
+            int gain = (victim != -1) ? piece_value_lva(victim) : 0;
+
+            if (is_promo)
+                gain += piece_value_lva(4) - piece_value_lva(0);
+
+            if (static_eval + gain + delta_margin <= alpha)
+                continue;
+        }
+
         if (!see_ge(board, move, 0))
             continue;
             
