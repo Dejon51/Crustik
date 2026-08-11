@@ -477,6 +477,18 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             continue;
         }
 
+        if (!root_node &&
+            !in_check &&
+            depth <= 8 &&
+            !is_mate_score(alpha) &&
+            !is_mate_score(beta))
+        {
+            int see_threshold = is_capture ? -90 * depth : -50 * depth;
+            if (!see_ge(board, move, see_threshold))
+                continue;
+        }
+
+
         if (depth <= 1 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
             int futility_margin = 120;
