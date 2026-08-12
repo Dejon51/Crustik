@@ -198,6 +198,7 @@ void uciStart()
         if (strcmp(tokens[0], "quit") == 0)
         {
             printf("bye\n");
+            tt_free();
             break;
         }
         else if (strcmp(tokens[0], "uci") == 0)
