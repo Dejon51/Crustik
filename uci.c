@@ -6,9 +6,8 @@
 #include "tt.h"
 #include <stdio.h>
 #include <string.h>
-#include <strings.h> 
+#include <ctype.h>
 #include <time.h>
-#include <string.h>
 #include <inttypes.h>
 #include "text.h"
 
@@ -16,6 +15,20 @@
 
 extern uint64_t game_history[MAX_GAME_PLY];
 extern int game_history_count;
+
+static int str_eq_ci(const char *a, const char *b)
+{
+    while (*a && *b)
+    {
+        unsigned char ca = (unsigned char)tolower((unsigned char)*a);
+        unsigned char cb = (unsigned char)tolower((unsigned char)*b);
+        if (ca != cb)
+            return 0;
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
 
 void movestring(uint16_t move)
 {
@@ -214,13 +227,13 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "setoption") == 0)
         {
-            if (tokens[1] && strcasecmp(tokens[1], "name") == 0 && tokens[2] &&
-                strcasecmp(tokens[2], "Hash") == 0)
+            if (tokens[1] && str_eq_ci(tokens[1], "name") && tokens[2] &&
+                str_eq_ci(tokens[2], "Hash"))
             {
                 char *value_tok = NULL;
                 for (int i = 3; tokens[i] != NULL; i++)
                 {
-                    if (strcasecmp(tokens[i], "value") == 0 && tokens[i + 1])
+                    if (str_eq_ci(tokens[i], "value") && tokens[i + 1])
                     {
                         value_tok = tokens[i + 1];
                         break;
