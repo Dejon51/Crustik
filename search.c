@@ -292,7 +292,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     {
         uint16_t move = move_list.movelist[i];
 
-                int to = move_to(move);
+        int to = move_to(move);
         int victim = piece_on_square(board, to);
         int flag = (move >> 12) & 0xF;
         bool is_promo = flag >= 5 && flag <= 8;
