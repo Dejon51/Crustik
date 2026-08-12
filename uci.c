@@ -6,6 +6,7 @@
 #include "tt.h"
 #include <stdio.h>
 #include <string.h>
+#include <strings.h> 
 #include <time.h>
 #include <string.h>
 #include <inttypes.h>
