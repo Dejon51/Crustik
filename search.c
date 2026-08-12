@@ -294,7 +294,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         if (!see_ge(board, move, 0))
             continue;
-            
+
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -487,7 +487,23 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!see_ge(board, move, see_threshold))
                 continue;
         }
+        if (!root_node &&
+            !in_check &&
+            !is_capture &&
+            !is_killer &&
+            !is_promotion &&
+            depth <= 3 &&
+            (int)i >= 4 &&
+            move != tt_move)
+        {
+            int from = move_from(move);
+            int to = move_to(move);
+            int hist_score = butterfly_hist[board->turn][from][to];
 
+            int history_threshold = -4000 * depth;
+            if (hist_score < history_threshold)
+                continue;
+        }
 
         if (depth <= 1 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
