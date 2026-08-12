@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <string.h>
 #include <inttypes.h>
 #include "text.h"
 
@@ -162,6 +163,7 @@ void d(Position *board) // Displays board or something
 void uciStart()
 {
     init_lmr();
+    tt_init(TT_DEFAULT_MB);
 
     Position board = {0};
     Position copyboard = {0};
@@ -201,11 +203,51 @@ void uciStart()
         else if (strcmp(tokens[0], "uci") == 0)
         {
             printf("id name Crustik 0.2.0\nid author Dejon Eltahan\n");
+            printf("option name Hash type spin default %d min %d max %d\n", TT_DEFAULT_MB, TT_MIN_MB, TT_MAX_MB);
             printf("uciok\n");
         }
         else if (strcmp(tokens[0], "isready") == 0)
         {
             printf("readyok\n");
+        }
+        else if (strcmp(tokens[0], "setoption") == 0)
+        {
+            if (tokens[1] && strcasecmp(tokens[1], "name") == 0 && tokens[2] &&
+                strcasecmp(tokens[2], "Hash") == 0)
+            {
+                char *value_tok = NULL;
+                for (int i = 3; tokens[i] != NULL; i++)
+                {
+                    if (strcasecmp(tokens[i], "value") == 0 && tokens[i + 1])
+                    {
+                        value_tok = tokens[i + 1];
+                        break;
+                    }
+                }
+
+                if (value_tok)
+                {
+                    int mb = 0, valid = 1;
+                    for (int i = 0; value_tok[i] != '\0'; i++)
+                    {
+                        if (value_tok[i] < '0' || value_tok[i] > '9')
+                        {
+                            valid = 0;
+                            break;
+                        }
+                        mb = mb * 10 + (value_tok[i] - '0');
+                    }
+
+                    if (valid && mb > 0)
+                        tt_resize((size_t)mb);
+                    else
+                        printf("setoption Hash: invalid value '%s'\n", value_tok);
+                }
+                else
+                {
+                    printf("setoption Hash: missing value\n");
+                }
+            }
         }
         else if (strcmp(tokens[0], "ucinewgame") == 0)
         {
@@ -263,9 +305,6 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "go") == 0)
         {
-            // UCI: plain "go" should start searching.
-            // With no limits, this searches until MAX_DEPTH in iterative_deepening(),
-            // which behaves like infinite search for normal use.
             if (tokens[1] == NULL || strcmp(tokens[1], "infinite") == 0)
             {
                 stopConditions stop = {0};
@@ -398,18 +437,19 @@ void uciStart()
                 else
                 {
                     int depth = 0;
-                    for (int i = 0; tokens[2][i] != '\0'; i++) depth = depth * 10 + (tokens[2][i] - '0');
+                    for (int i = 0; tokens[2][i] != '\0'; i++)
+                        depth = depth * 10 + (tokens[2][i] - '0');
 
                     stopConditions stop = {0};
                     stop.depth = depth;
-                    
 
                     uint16_t result = iterative_deepening(&board, &stop);
 
                     if (result == 0)
                     {
                         uint64_t king_bb = board.pieces[5] & board.color[board.turn];
-                        if (!king_bb) break;
+                        if (!king_bb)
+                            break;
                         int king_pos = __builtin_ctzll(king_bb);
                         if (squareAttacked(&board, king_pos, !board.turn))
                         {
@@ -424,7 +464,7 @@ void uciStart()
                     {
                         movestring(result);
                     }
-            }
+                }
             }
             else if (strcmp(tokens[1], "perft") == 0)
             {
@@ -584,19 +624,24 @@ void uciStart()
                 int soft = time_left / 30 + increment;
                 int hard = time_left / 3 + increment;
 
-                if (soft < 10) soft = 10;
-                if (hard < soft) hard = soft;
-                if (hard > time_left - overhead) hard = time_left - overhead;
-                if (soft > hard) soft = hard;
-                if (hard <= 0) hard = 50;
+                if (soft < 10)
+                    soft = 10;
+                if (hard < soft)
+                    hard = soft;
+                if (hard > time_left - overhead)
+                    hard = time_left - overhead;
+                if (soft > hard)
+                    soft = hard;
+                if (hard <= 0)
+                    hard = 50;
 
                 stopConditions stop = {};
                 stop.start_time = get_time_ms();
-                stop.soft_time  = soft;
-                stop.max_time   = hard;
-                stop.max_nodes  = 0;
-                stop.nodes      = 0;
-                stop.stop       = 0;
+                stop.soft_time = soft;
+                stop.max_time = hard;
+                stop.max_nodes = 0;
+                stop.nodes = 0;
+                stop.stop = 0;
                 /* ------------------------------------------------ */
 
                 uint16_t result = iterative_deepening(&board, &stop);
