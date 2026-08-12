@@ -1615,7 +1615,7 @@ bool see_ge(Position *board, uint16_t move, int threshold)
     int flag = (move >> 12) & 0xF;
 
     int from_piece = board->mailbox[from];
-    if (from_piece >= 6) return false; // Sanity check
+    if (from_piece >= 6) return false;
 
     int target_piece = board->mailbox[to];
 
@@ -1641,7 +1641,6 @@ bool see_ge(Position *board, uint16_t move, int threshold)
         gain[d] += PIECE_VALUES[promo_piece] - PIECE_VALUES[PAWNNUMBER];
     }
 
-    // Early exit check
     if (gain[d] < threshold) return false;
 
     uint64_t occ = board->color[0] | board->color[1];
@@ -1654,11 +1653,15 @@ bool see_ge(Position *board, uint16_t move, int threshold)
         occ &= ~(1ULL << cap_sq);
     }
 
-    uint64_t bishops_queens = (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & occ;
-    uint64_t rooks_queens   = (board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER]) & occ;
+    /* Invariant across the whole exchange - hoist out of the loop */
+    const uint64_t diag_pieces = board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER];
+    const uint64_t orth_pieces = board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER];
 
-    attackers |= (getbishopAttacks(to, occ) & bishops_queens);
-    attackers |= (getrookAttacks(to, occ)   & rooks_queens);
+    uint64_t bishops_queens = diag_pieces & occ;
+    uint64_t rooks_queens   = orth_pieces & occ;
+
+    if (bishops_queens) attackers |= (getbishopAttacks(to, occ) & bishops_queens);
+    if (rooks_queens)   attackers |= (getrookAttacks(to, occ)   & rooks_queens);
     attackers &= occ;
 
     int side = !board->turn;
@@ -1678,16 +1681,15 @@ bool see_ge(Position *board, uint16_t move, int threshold)
         d++;
         gain[d] = PIECE_VALUES[attacking_piece] - gain[d - 1];
 
-        // Pruning checks
         if (gain[d] < threshold && -gain[d - 1] >= threshold) break;
 
         occ &= ~(1ULL << lva_sq);
 
-        bishops_queens = (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & occ;
-        rooks_queens   = (board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER]) & occ;
+        bishops_queens = diag_pieces & occ;
+        rooks_queens   = orth_pieces & occ;
 
-        attackers |= (getbishopAttacks(to, occ) & bishops_queens);
-        attackers |= (getrookAttacks(to, occ)   & rooks_queens);
+        if (bishops_queens) attackers |= (getbishopAttacks(to, occ) & bishops_queens);
+        if (rooks_queens)   attackers |= (getrookAttacks(to, occ)   & rooks_queens);
         attackers &= occ;
 
         attacking_piece = next_piece;
