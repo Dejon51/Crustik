@@ -371,14 +371,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
         tt_move = entry->move;
 
-        // FIX: don't take the TT score cutoff at PV nodes (pv != NULL).
-        // Previously this returned immediately without ever writing to `pv`,
-        // leaving `pv->length == 0`. The caller then rebuilt its own PV as
-        // just [move] + child_pv (length 0), silently truncating the whole
-        // principal variation at every TT hit along the PV. Non-PV
-        // (null-window) nodes don't need a PV, so they can still cut here;
-        // the TT move is still used for move ordering either way via
-        // tt_move above.
         if (entry->depth >= depth && !pv)
         {
             int tt_score = score_from_tt(entry->score, ply);
