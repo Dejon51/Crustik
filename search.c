@@ -367,7 +367,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (depth <= 0)
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
-
     TTEntry *entry = tt_probe(board->hash);
     if (entry)
     {
@@ -385,7 +384,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = tt_score, .move = tt_move};
         }
     }
-
     int in_check = king_in_check(board, board->turn);
     bool root_node = (ply == 0);
 
@@ -405,6 +403,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (!in_check)
     {
+
         static_eval = eval(board);
 
         if (ply < MAX_GAME_PLY)
@@ -415,7 +414,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             eval_stack[ply] = static_eval;
         }
-
         // RFP 60 elo
         if (!root_node &&
             depth <= 6 &&
@@ -430,7 +428,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     .move = 0};
             }
         }
-
         if (depth >= 3 && !root_node && static_eval >= beta)
         {
             int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
@@ -485,7 +482,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             move == killer_moves[ply][0] ||
             move == killer_moves[ply][1];
         bool is_promotion = is_promotion_move(move);
-        bool is_pv_node = (beta - alpha > 1);
 
         if (!root_node &&
             !in_check &&
@@ -497,32 +493,16 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             continue;
         }
 
-        // --- SEE pruning (single consistent block) ---
-        // PV nodes get a looser (more permissive) margin than non-PV nodes,
-        // since PV moves are more likely to be worth searching even if SEE
-        // looks slightly negative. Only applied to i > 0 (never prune the
-        // first move, which sets our initial alpha/best_score baseline).
         if (!root_node &&
             !in_check &&
-            i > 0 &&
             depth <= 8 &&
             !is_mate_score(alpha) &&
             !is_mate_score(beta))
         {
-            if (is_capture && !is_promotion)
-            {
-                int see_threshold = is_pv_node ? -110 * depth : -90 * depth;
-                if (!see_ge(board, move, see_threshold))
-                    continue;
-            }
-            else if (!is_killer)
-            {
-                int see_threshold = is_pv_node ? -60 * depth : -50 * depth;
-                if (!see_ge(board, move, see_threshold))
-                    continue;
-            }
+            int see_threshold = is_capture ? -90 * depth : -50 * depth;
+            if (!see_ge(board, move, see_threshold))
+                continue;
         }
-
         if (!root_node &&
             !in_check &&
             !is_capture &&
@@ -546,13 +526,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int futility_margin = 120;
             if (static_eval + futility_margin <= alpha)
             {
+
                 if (!is_capture && !is_promotion)
                 {
                     continue;
                 }
             }
         }
-
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -572,9 +552,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 !is_capture && !is_promotion && move != tt_move)
             {
                 reduction = lmr_reduction(depth, i + 1);
-                int is_pv_node_lmr = (beta - alpha) > 1;
+                int is_pv_node = (beta - alpha) > 1;
 
-                if (is_pv_node_lmr)
+                if (is_pv_node)
                     reduction -= 1;
 
                 if (reduction < 0)
@@ -585,12 +565,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (reduction > 0)
             {
+                // Reduced depth search with null window
                 score = -search(&copy, depth - 1 - reduction, ply + 1,
                                 -alpha - 1, -alpha, stop, NULL)
                              .score;
 
                 if (!stop->stop && score > alpha)
                 {
+                    // Re-search with full depth but still null window
                     score = -search(&copy, depth - 1, ply + 1,
                                     -alpha - 1, -alpha, stop, NULL)
                                  .score;
@@ -598,11 +580,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
             else
             {
+                // Normal null-window search
                 score = -search(&copy, depth - 1, ply + 1,
                                 -alpha - 1, -alpha, stop, NULL)
                              .score;
             }
 
+            // If score is inside the window, do a full-window re-search with PV
             if (!stop->stop && score > alpha && score < beta)
             {
                 child_pv.length = 0;
@@ -656,9 +640,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (!is_capture && !is_promotion)
             {
+                // Butterfly history 68 Elo
                 int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
                 butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
 
+                // Killer moves
                 if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
                 {
                     killer_moves[ply][1] = killer_moves[ply][0];
