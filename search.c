@@ -358,12 +358,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (stop->stop)
         return output;
 
-    if (ply > 0 && ply < MAX_SEARCH_PLY)
-    {
+    if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
-        if (is_repetition_or_fifty(board, ply))
-            return (searchOutput){.score = 0, .move = 0};
-    }
+
+    if (ply > 0 && is_repetition_or_fifty(board, ply))
+        return (searchOutput){.score = 0, .move = 0};
 
     if (depth <= 0)
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
