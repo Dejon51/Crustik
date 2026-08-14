@@ -29,11 +29,16 @@ typedef struct {
     int length;
 } PVLine;
 
+typedef struct {
+    uint16_t excluded_move;
+} SearchStack;
+
+
 void init_lmr();
 
 void reset_history(void);
 
-searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *pv, uint16_t excluded_move);
+searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *pv, SearchStack *stack);
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 

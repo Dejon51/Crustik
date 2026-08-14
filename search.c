@@ -334,11 +334,15 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 }
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
-                    stopConditions *stop, PVLine *pv, uint16_t excluded_move)
+                    stopConditions *stop, PVLine *pv, SearchStack *stack)
 {
     searchOutput output = {0};
     int alpha_orig = alpha;
     uint16_t tt_move = 0;
+
+    SearchStack no_excl = {0};
+    if (!stack)
+        stack = &no_excl;
 
     stop->nodes++;
 
@@ -372,7 +376,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
         tt_move = entry->move;
 
-        if (entry->depth >= depth && !pv && excluded_move == 0)
+        if (entry->depth >= depth && !pv && stack->excluded_move == 0)
         {
             int tt_score = score_from_tt(entry->score, ply);
 
@@ -439,7 +443,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             int score = -search(&copy, depth - R - 1,
                                 ply + 1, -beta, -beta + 1,
-                                stop, NULL, 0)
+                                stop, NULL, &no_excl)
                              .score;
 
             if (stop->stop)
@@ -468,7 +472,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
         uint16_t move = move_list.movelist[i];
 
-        if (move == excluded_move)
+        if (move == stack->excluded_move)
             continue;
 
         if (ply == 0 && stop->print_info)
@@ -540,7 +544,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         int extension = 0;
 
         if (!root_node &&
-            excluded_move == 0 &&
+            stack->excluded_move == 0 &&
             move == tt_move &&
             entry != NULL &&
             entry->move == tt_move &&
@@ -553,9 +557,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int singular_beta = tt_score - 2 * depth;
             int singular_depth = (depth - 1) / 2;
 
+            SearchStack singular_stack = { .excluded_move = move };
+
             searchOutput se_result = search(board, singular_depth, ply,
                                             singular_beta - 1, singular_beta,
-                                            stop, NULL, move);
+                                            stop, NULL, &singular_stack);
 
             if (stop->stop)
                 return (searchOutput){0};
@@ -573,7 +579,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (i == 0 || depth <= 2)
         {
             score = -search(&copy, depth - 1 + extension, ply + 1,
-                            -beta, -alpha, stop, &child_pv, 0)
+                            -beta, -alpha, stop, &child_pv, &no_excl)
                          .score;
         }
         else
@@ -606,14 +612,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 // Reduced depth search with null window
                 score = -search(&copy, depth - 1 - reduction, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, 0)
+                                -alpha - 1, -alpha, stop, NULL, &no_excl)
                              .score;
 
                 if (!stop->stop && score > alpha)
                 {
                     // Re-search with full depth but still null window
                     score = -search(&copy, depth - 1 + extension, ply + 1,
-                                    -alpha - 1, -alpha, stop, NULL, 0)
+                                    -alpha - 1, -alpha, stop, NULL, &no_excl)
                                  .score;
                 }
             }
@@ -621,7 +627,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 // Normal null-window search
                 score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, 0)
+                                -alpha - 1, -alpha, stop, NULL, &no_excl)
                              .score;
             }
 
@@ -630,7 +636,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 child_pv.length = 0;
                 score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -beta, -alpha, stop, &child_pv, 0)
+                                -beta, -alpha, stop, &child_pv, &no_excl)
                              .score;
             }
         }
@@ -695,7 +701,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
 
-    if (!stop->stop && excluded_move == 0)
+    if (!stop->stop && stack->excluded_move == 0)
     {
         int flag;
         if (best_score <= alpha_orig)
@@ -725,6 +731,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     uint16_t prev_best_move = 0;
     int last_best_move_change = 0;
+
+    SearchStack no_excl = {0};
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
@@ -776,7 +784,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         while (1)
         {
             pv.length = 0;
-            out = search(board, depth, 0, alpha, beta, stop, &pv, 0);
+            out = search(board, depth, 0, alpha, beta, stop, &pv, &no_excl);
 
             if (stop->stop)
                 break;
@@ -810,7 +818,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
                 alpha = -MATE_SCORE;
                 beta = MATE_SCORE;
                 pv.length = 0;
-                out = search(board, depth, 0, alpha, beta, stop, &pv, 0);
+                out = search(board, depth, 0, alpha, beta, stop, &pv, &no_excl);
                 break;
             }
         }

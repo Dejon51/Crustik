@@ -65,7 +65,7 @@ const char *fens[] = {
 
 int bench() {
     Position boards[FEN_COUNT];
-    int depth = 9;
+    int depth = 11;
     uint64_t total_nodes = 0;
 
     // Parse all FENs before timing
@@ -90,8 +90,10 @@ int bench() {
 
     for (uint64_t i = 0; i < FEN_COUNT; i++) {
         stopConditions stop = {0};
+        SearchStack no_excl = {0};
 
-        search(&boards[i], depth, 0, -32000, 32000, &stop, NULL,0);
+
+        search(&boards[i], depth, 0, -32000, 32000, &stop, NULL,&no_excl);
         total_nodes += stop.nodes;
     }
 
