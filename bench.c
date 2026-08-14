@@ -91,7 +91,7 @@ int bench() {
     for (uint64_t i = 0; i < FEN_COUNT; i++) {
         stopConditions stop = {0};
 
-        search(&boards[i], depth, 0, -32000, 32000, &stop, NULL);
+        search(&boards[i], depth, 0, -32000, 32000, &stop, NULL,0);
         total_nodes += stop.nodes;
     }
 

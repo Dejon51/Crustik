@@ -33,7 +33,7 @@ void init_lmr();
 
 void reset_history(void);
 
-searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *);
+searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *pv, uint16_t excluded_move);
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 
