@@ -557,7 +557,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int singular_beta = tt_score - 2 * depth;
             int singular_depth = (depth - 1) / 2;
 
-            SearchStack singular_stack = { .excluded_move = move };
+            SearchStack singular_stack = {.excluded_move = move};
 
             searchOutput se_result = search(board, singular_depth, ply,
                                             singular_beta - 1, singular_beta,
@@ -567,7 +567,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){0};
 
             if (se_result.score < singular_beta)
+            {
                 extension = 1;
+            }
+            else if (se_result.score >= beta && (beta - alpha) == 1)
+            {
+                return (searchOutput){.score = beta, .move = 0};
+            }
         }
 
         Position copy = *board;
