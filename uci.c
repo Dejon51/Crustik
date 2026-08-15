@@ -16,7 +16,7 @@
 extern uint64_t game_history[MAX_GAME_PLY];
 extern int game_history_count;
 
-#define SOFT_NODES_HARD_MULTIPLIER 20
+#define SOFT_NODES_HARD_MULTIPLIER 200
 
 static bool use_soft_nodes = false;
 
