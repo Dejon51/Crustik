@@ -16,6 +16,10 @@
 extern uint64_t game_history[MAX_GAME_PLY];
 extern int game_history_count;
 
+#define SOFT_NODES_HARD_MULTIPLIER 20
+
+static bool use_soft_nodes = false;
+
 static int str_eq_ci(const char *a, const char *b)
 {
     while (*a && *b)
@@ -219,6 +223,7 @@ void uciStart()
         {
             printf("id name Crustik 0.2.0\nid author Dejon Eltahan\n");
             printf("option name Hash type spin default %d min %d max %d\n", TT_DEFAULT_MB, TT_MIN_MB, TT_MAX_MB);
+            printf("option name SoftNodes type check default false\n");
             printf("uciok\n");
         }
         else if (strcmp(tokens[0], "isready") == 0)
@@ -261,6 +266,33 @@ void uciStart()
                 else
                 {
                     printf("setoption Hash: missing value\n");
+                }
+            }
+            else if (tokens[1] && str_eq_ci(tokens[1], "name") && tokens[2] &&
+                     str_eq_ci(tokens[2], "SoftNodes"))
+            {
+                char *value_tok = NULL;
+                for (int i = 3; tokens[i] != NULL; i++)
+                {
+                    if (str_eq_ci(tokens[i], "value") && tokens[i + 1])
+                    {
+                        value_tok = tokens[i + 1];
+                        break;
+                    }
+                }
+
+                if (value_tok)
+                {
+                    if (str_eq_ci(value_tok, "true"))
+                        use_soft_nodes = true;
+                    else if (str_eq_ci(value_tok, "false"))
+                        use_soft_nodes = false;
+                    else
+                        printf("setoption SoftNodes: invalid value '%s'\n", value_tok);
+                }
+                else
+                {
+                    printf("setoption SoftNodes: missing value\n");
                 }
             }
         }
@@ -369,10 +401,21 @@ void uciStart()
 
                     stopConditions stop = {};
                     stop.start_time = get_time_ms();
-                    stop.max_time = 0;
-                    stop.max_nodes = max_nodes;
                     stop.nodes = 0;
                     stop.stop = 0;
+
+                    if (use_soft_nodes)
+                    {
+                        stop.soft_nodes = max_nodes;
+                        stop.max_nodes = max_nodes * SOFT_NODES_HARD_MULTIPLIER;
+                        stop.max_time = 0;
+                    }
+                    else
+                    {
+                        stop.soft_nodes = 0;
+                        stop.max_nodes = max_nodes;
+                        stop.max_time = 0;
+                    }
 
                     uint16_t result = iterative_deepening(&board, &stop);
 
