@@ -275,6 +275,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     int static_eval = eval(board);
 
+    if (stop->stop)
+        return static_eval;
+
     if (static_eval >= beta)
         return static_eval;
 
@@ -290,6 +293,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
+        if (stop->stop)
+            break;
+
         uint16_t move = move_list.movelist[i];
 
         int to = move_to(move);
@@ -319,6 +325,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
             continue;
 
         int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
+
+        if (stop->stop)
+            break;
 
         if (score > best_score)
             best_score = score;
