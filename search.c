@@ -164,7 +164,7 @@ static inline int lmr_reduction(int depth, int move_number)
 static bool is_repetition_or_fifty(Position *board, int ply)
 {
     if (board->halfmoves >= 100)
-        return true; // 50-move rule
+        return true;
 
     int reversible_plies = board->halfmoves;
     int total_ply = game_history_count + ply;
@@ -175,12 +175,17 @@ static bool is_repetition_or_fifty(Position *board, int ply)
         int idx = total_ply - i;
 
         if (idx >= game_history_count)
-            past_hash = search_path_hash[idx - game_history_count];
+        {
+            int local_idx = idx - game_history_count;
+            if (local_idx < 0 || local_idx >= MAX_SEARCH_PLY)
+                continue;
+            past_hash = search_path_hash[local_idx];
+        }
         else
             past_hash = game_history[idx];
 
         if (past_hash == board->hash)
-            return true; // first repetition treated as draw (standard, conservative)
+            return true;
     }
 
     return false;
@@ -193,8 +198,8 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     int scores[256] = {0};
 
     const int TT_SCORE = 100000000;
-    const int CAPTURE_BASE = 90000000; // above killers
-    const int KILLER_BASE = 80000000;  // above history
+    const int CAPTURE_BASE = 90000000;
+    const int KILLER_BASE = 80000000;
 
     for (unsigned int i = 0; i < ordered.offset; i++)
     {
@@ -223,7 +228,6 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         {
             if (move == killer_moves[ply][0] || move == killer_moves[ply][1])
             {
-                // slight edge to the first killer
                 int bonus = (move == killer_moves[ply][0]) ? 1 : 0;
                 scores[i] = KILLER_BASE + bonus;
                 is_killer = true;
@@ -266,7 +270,8 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     if (ply > stop->seldepth)
         stop->seldepth = ply;
-    if (stop->start_time && (stop->nodes & 2047) == 0 &&
+
+    if (stop->max_time && stop->start_time && (stop->nodes & 2047) == 0 &&
         get_time_ms() - stop->start_time >= stop->max_time)
         stop->stop = 1;
 
@@ -284,10 +289,13 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     if (static_eval > alpha)
         alpha = static_eval;
 
+    if (ply >= MAX_SEARCH_PLY - 1)
+        return static_eval;
+
     MoveList move_list = {0};
 
     qsearchMoves(board, &move_list, board->turn);
-    move_list = ordermoves(board, &move_list, ply, 0); // 18 elo qsearch ordering moves
+    move_list = ordermoves(board, &move_list, ply, 0);
 
     int best_score = static_eval;
 
@@ -361,7 +369,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (ply > stop->seldepth)
         stop->seldepth = ply;
 
-    if (stop->start_time && (stop->nodes & 2047) == 0 &&
+    if (stop->max_time && stop->start_time && (stop->nodes & 2047) == 0 &&
         get_time_ms() - stop->start_time >= stop->max_time)
         stop->stop = 1;
 
@@ -370,6 +378,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (stop->stop)
         return output;
+
+    if (ply >= MAX_SEARCH_PLY - 1)
+        return (searchOutput){.score = eval(board), .move = 0};
 
     if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
@@ -403,7 +414,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (in_check && ply < MAX_GAME_PLY)
         eval_stack[ply] = NO_EVAL;
 
-    if (in_check)
+    if (in_check && depth < MAX_DEPTH)
         depth++;
 
     if (depth >= 4 && tt_move == 0 && !in_check)
@@ -427,7 +438,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             eval_stack[ply] = static_eval;
         }
-        // RFP 60 elo
+
         if (!root_node &&
             depth <= 6 &&
             !is_mate_score(beta))
@@ -625,14 +636,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (reduction > 0)
             {
-                // Reduced depth search with null window
                 score = -search(&copy, depth - 1 - reduction, ply + 1,
                                 -alpha - 1, -alpha, stop, NULL, &no_excl)
                              .score;
 
                 if (!stop->stop && score > alpha)
                 {
-                    // Re-search with full depth but still null window
                     score = -search(&copy, depth - 1 + extension, ply + 1,
                                     -alpha - 1, -alpha, stop, NULL, &no_excl)
                                  .score;
@@ -640,13 +649,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
             else
             {
-                // Normal null-window search
                 score = -search(&copy, depth - 1 + extension, ply + 1,
                                 -alpha - 1, -alpha, stop, NULL, &no_excl)
                              .score;
             }
 
-            // If score is inside the window, do a full-window re-search with PV
             if (!stop->stop && score > alpha && score < beta)
             {
                 child_pv.length = 0;
@@ -700,11 +707,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (!is_capture && !is_promotion)
             {
-                // Butterfly history 68 Elo
                 int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
                 butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
 
-                // Killer moves
                 if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
                 {
                     killer_moves[ply][1] = killer_moves[ply][0];
@@ -726,7 +731,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         else
             flag = TT_EXACT;
 
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, depth, flag);
+        int tt_depth = depth;
+        if (tt_depth > 255)
+            tt_depth = 255;
+        if (tt_depth < 0)
+            tt_depth = 0;
+
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag);
     }
 
     output.score = best_score;
