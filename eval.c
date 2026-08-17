@@ -68,14 +68,6 @@ static int nnue_load(const char *path)
     long end = ftell(f);
     fclose(f);
 
-    if (pos != end)
-    {
-        fprintf(stderr,
-            "nnue_load: warning - %ld trailing bytes after expected layout "
-            "(read %ld of %ld). Harmless if it's a metadata footer, but check "
-            "the file format assumptions above if evals look wrong.\n",
-            end - pos, pos, end);
-    }
 
     nnue_loaded = 1;
     return 0;
@@ -131,11 +123,7 @@ static void nnue_buildAccumulator(Position *board, int ownSide, int16_t acc[NNUE
 
 static int nnue_forward(Position *board)
 {
-    if (!nnue_loaded)
-    {
-        fprintf(stderr, "nnue_forward: network not loaded, call init_tables() first\n");
-        return 0;
-    }
+
 
     int16_t accUs[NNUE_HL];
     int16_t accThem[NNUE_HL];
