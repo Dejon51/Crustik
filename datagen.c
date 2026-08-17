@@ -1,333 +1,616 @@
+// genfens.c
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
+#include <string.h>
 #include <stdbool.h>
 #include <ctype.h>
 
-#include "datagen.h"
-#include "play.h"          
-#include "search.h"        
-#include "eval.h"          
-#include "tt.h"
-#include "zobrist.h"
-#include "fen.h"          
+#include "play.h"
+#include "fen.h"
+#include "lmath.h"
 
-#define MATE_SCORE 32000
-#define MAX_DEPTH 200
+#define DEFAULT_PLIES 8
+#define MAX_GENERATION_ATTEMPTS 256
 
-static uint64_t rng_state;
+/* ------------------------------------------------------------------------- */
+/* Custom case-insensitive string comparison (portable)                      */
+/* ------------------------------------------------------------------------- */
 
-static void rng_seed(uint64_t seed) {
-    rng_state = seed ? seed : 1;
-}
-
-static uint64_t rng_rand64(void) {
-    rng_state ^= rng_state >> 12;
-    rng_state ^= rng_state << 25;
-    rng_state ^= rng_state >> 27;
-    return rng_state * 2685821657736338717ULL;
-}
-
-static int rng_uniform(int n) {
-    return (int)(rng_rand64() % (uint64_t)n);
-}
-
-static bool is_square_attacked(Position *board, int sq, int by_color) {
-    return squareAttacked(board, sq, by_color);
-}
-
-static bool is_position_valid(Position *board) {
-    int white_kings = 0, black_kings = 0;
-    for (int sq = 0; sq < 64; sq++) {
-        int piece = piece_on_square(board, sq);
-        if (piece == 5) { // King
-            if ((board->color[0] >> sq) & 1) white_kings++;
-            else if ((board->color[1] >> sq) & 1) black_kings++;
+static int str_iequal(const char *a, const char *b)
+{
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) {
+            return 0;
         }
+        a++;
+        b++;
     }
-    if (white_kings != 1 || black_kings != 1) return false;
-
-    int prev_turn = board->turn ^ 1;
-    uint64_t enemy_king_bb = board->pieces[5] & board->color[prev_turn];
-    if (enemy_king_bb) {
-        int king_sq = __builtin_ctzll(enemy_king_bb);
-        if (is_square_attacked(board, king_sq, board->turn)) {
-            return false;
-        }
-    }
-
-    return true;
+    return *a == *b;
 }
 
-static void fen_from_position(Position *board, char *fen) {
-    int idx = 0;
+/* ------------------------------------------------------------------------- */
+/* SplitMix64 RNG (exactly matching Rust implementation)                     */
+/* ------------------------------------------------------------------------- */
+
+typedef struct {
+    uint64_t state;
+} SplitMix64;
+
+static SplitMix64 splitmix64_new(uint64_t seed)
+{
+    SplitMix64 rng;
+    rng.state = seed;
+    return rng;
+}
+
+static uint64_t splitmix64_next_u64(SplitMix64 *rng)
+{
+    rng->state = rng->state + 0x9e3779b97f4a7c15ULL;
+    uint64_t z = rng->state;
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
+static size_t splitmix64_index(SplitMix64 *rng, size_t len)
+{
+    if (len == 0) return 0;
+    return (size_t)(splitmix64_next_u64(rng) % (uint64_t)len);
+}
+
+/* ------------------------------------------------------------------------- */
+/* PlyRange (exactly matching Rust implementation)                           */
+/* ------------------------------------------------------------------------- */
+
+typedef struct {
+    uint32_t min;
+    uint32_t max;
+} PlyRange;
+
+static PlyRange ply_range_exact(uint32_t plies)
+{
+    PlyRange range;
+    range.min = plies;
+    range.max = plies;
+    return range;
+}
+
+static uint32_t ply_range_sample(PlyRange range, SplitMix64 *rng)
+{
+    if (range.min == range.max) {
+        return range.min;
+    }
+    return range.min + (uint32_t)splitmix64_index(rng, (size_t)(range.max - range.min + 1));
+}
+
+/* ------------------------------------------------------------------------- */
+/* GenfensArgs                                                               */
+/* ------------------------------------------------------------------------- */
+
+typedef struct {
+    size_t count;
+    uint64_t seed;
+    char *book;
+    PlyRange plies;
+} GenfensArgs;
+
+/* ------------------------------------------------------------------------- */
+/* Parsing functions                                                         */
+/* ------------------------------------------------------------------------- */
+
+static int parse_nonzero_usize(const char *raw, const char *label, size_t *out)
+{
+    char *end = NULL;
+    unsigned long long value = strtoull(raw, &end, 10);
+    
+    if (end == raw || *end != '\0') {
+        fprintf(stderr, "invalid genfens %s: %s\n", label, raw);
+        return 0;
+    }
+    
+    if (value == 0) {
+        fprintf(stderr, "genfens %s must be greater than zero\n", label);
+        return 0;
+    }
+    
+    *out = (size_t)value;
+    return 1;
+}
+
+static int parse_ply_range(const char *raw, PlyRange *out)
+{
+    const char *dash = strchr(raw, '-');
+    
+    if (!dash) {
+        // Exact plies
+        char *end = NULL;
+        unsigned long plies = strtoul(raw, &end, 10);
+        
+        if (end == raw || *end != '\0') {
+            fprintf(stderr, "invalid plies value: %s\n", raw);
+            return 0;
+        }
+        
+        if (plies == 0) {
+            fprintf(stderr, "plies must be greater than zero\n");
+            return 0;
+        }
+        
+        *out = ply_range_exact((uint32_t)plies);
+        return 1;
+    }
+    
+    // Range: min-max
+    char min_str[32];
+    char max_str[32];
+    size_t min_len = (size_t)(dash - raw);
+    
+    if (min_len >= sizeof(min_str)) {
+        fprintf(stderr, "invalid plies range: %s\n", raw);
+        return 0;
+    }
+    
+    strncpy(min_str, raw, min_len);
+    min_str[min_len] = '\0';
+    strncpy(max_str, dash + 1, sizeof(max_str) - 1);
+    max_str[sizeof(max_str) - 1] = '\0';
+    
+    char *end = NULL;
+    unsigned long min = strtoul(min_str, &end, 10);
+    if (end == min_str || *end != '\0') {
+        fprintf(stderr, "invalid minimum plies value: %s\n", raw);
+        return 0;
+    }
+    
+    end = NULL;
+    unsigned long max = strtoul(max_str, &end, 10);
+    if (end == max_str || *end != '\0') {
+        fprintf(stderr, "invalid maximum plies value: %s\n", raw);
+        return 0;
+    }
+    
+    if (min == 0 || max == 0 || min > max) {
+        fprintf(stderr, "invalid plies range: %s\n", raw);
+        return 0;
+    }
+    
+    out->min = (uint32_t)min;
+    out->max = (uint32_t)max;
+    return 1;
+}
+
+/* ------------------------------------------------------------------------- */
+/* FEN generation                                                            */
+/* ------------------------------------------------------------------------- */
+
+static char piece_from_bitboards(Position *b, int sq)
+{
+    uint64_t bb = 1ULL << sq;
+    int side;
+
+    if (b->color[0] & bb) side = 0;
+    else if (b->color[1] & bb) side = 1;
+    else return 0;
+
+    if (b->pieces[0] & bb) return side == 0 ? 'P' : 'p';
+    if (b->pieces[1] & bb) return side == 0 ? 'B' : 'b';
+    if (b->pieces[2] & bb) return side == 0 ? 'N' : 'n';
+    if (b->pieces[3] & bb) return side == 0 ? 'R' : 'r';
+    if (b->pieces[4] & bb) return side == 0 ? 'Q' : 'q';
+    if (b->pieces[5] & bb) return side == 0 ? 'K' : 'k';
+    return 0;
+}
+
+static void generate_fen_string(Position *b, char *out, size_t out_size)
+{
+    size_t pos = 0;
+    b->color[2] = b->color[0] | b->color[1];
+
     for (int rank = 0; rank < 8; rank++) {
         int empty = 0;
         for (int file = 0; file < 8; file++) {
             int sq = rank * 8 + file;
-            int piece = piece_on_square((Position *)board, sq);
-            if (piece == -1) {
+            char c = piece_from_bitboards(b, sq);
+            if (!c) {
                 empty++;
             } else {
                 if (empty) {
-                    fen[idx++] = '0' + empty;
+                    pos += snprintf(out + pos, out_size - pos, "%d", empty);
                     empty = 0;
                 }
-                int white = (board->color[0] >> sq) & 1;
-                const char pchar[] = "PBNRQK";
-                fen[idx++] = white ? pchar[piece] : tolower(pchar[piece]);
+                pos += snprintf(out + pos, out_size - pos, "%c", c);
             }
         }
-        if (empty) fen[idx++] = '0' + empty;
-        if (rank < 7) fen[idx++] = '/';
+        if (empty) {
+            pos += snprintf(out + pos, out_size - pos, "%d", empty);
+        }
+        if (rank != 7) {
+            pos += snprintf(out + pos, out_size - pos, "/");
+        }
     }
-    fen[idx++] = ' ';
-    fen[idx++] = (board->turn == 0) ? 'w' : 'b';
-    fen[idx++] = ' ';
 
-    int cr = board->castling;
-    if (cr == 0) {
-        fen[idx++] = '-';
+    pos += snprintf(out + pos, out_size - pos, " %c ", b->turn ? 'b' : 'w');
+
+    int castle = 0;
+    if (b->castling & (1U << WHITE_KINGSIDE)) {
+        pos += snprintf(out + pos, out_size - pos, "K");
+        castle = 1;
+    }
+    if (b->castling & (1U << WHITE_QUEENSIDE)) {
+        pos += snprintf(out + pos, out_size - pos, "Q");
+        castle = 1;
+    }
+    if (b->castling & (1U << BLACK_KINGSIDE)) {
+        pos += snprintf(out + pos, out_size - pos, "k");
+        castle = 1;
+    }
+    if (b->castling & (1U << BLACK_QUEENSIDE)) {
+        pos += snprintf(out + pos, out_size - pos, "q");
+        castle = 1;
+    }
+    if (!castle) {
+        pos += snprintf(out + pos, out_size - pos, "-");
+    }
+
+    pos += snprintf(out + pos, out_size - pos, " ");
+
+    if (b->epsquare == -1) {
+        pos += snprintf(out + pos, out_size - pos, "-");
     } else {
-        if (cr & (1 << WHITE_KINGSIDE))  fen[idx++] = 'K';
-        if (cr & (1 << WHITE_QUEENSIDE)) fen[idx++] = 'Q';
-        if (cr & (1 << BLACK_KINGSIDE))  fen[idx++] = 'k';
-        if (cr & (1 << BLACK_QUEENSIDE)) fen[idx++] = 'q';
+        int sq = b->epsquare;
+        pos += snprintf(out + pos, out_size - pos, "%c%d", 'a' + (sq & 7), 8 - (sq >> 3));
     }
-    fen[idx++] = ' ';
 
-    int ep = board->epsquare;
-    if (ep == -1) {
-        fen[idx++] = '-';
-    } else {
-        fen[idx++] = 'a' + (ep & 7);
-        fen[idx++] = '0' + (8 - (ep >> 3));
-    }
-    fen[idx++] = ' ';
-
-    int half = board->halfmoves;
-    int full = board->fullmoves;
-    idx += sprintf(fen + idx, "%d %d", half, full);
-    fen[idx] = '\0';
+    snprintf(out + pos, out_size - pos, " %u %u", (unsigned)b->halfmoves, (unsigned)b->fullmoves);
 }
 
-static bool parse_fen(Position *board, const char *fen_str) {
-    char fen_copy[256];
-    strncpy(fen_copy, fen_str, sizeof(fen_copy) - 1);
-    fen_copy[sizeof(fen_copy) - 1] = '\0';
+/* ------------------------------------------------------------------------- */
+/* Opening book loading                                                      */
+/* ------------------------------------------------------------------------- */
 
-    char *tokens[6] = {NULL};
-    int count = 0;
-    char *saveptr;
-    char *token = strtok_r(fen_copy, " ", &saveptr);
-    while (token && count < 6) {
-        tokens[count++] = token;
-        token = strtok_r(NULL, " ", &saveptr);
+typedef struct {
+    char **fens;
+    size_t count;
+} StartPositions;
+
+static int load_start_positions(const char *book, StartPositions *starts)
+{
+    starts->fens = NULL;
+    starts->count = 0;
+    
+    if (str_iequal(book, "none")) {
+        starts->fens = malloc(sizeof(char *));
+        if (!starts->fens) return 0;
+        starts->fens[0] = strdup("startpos");
+        if (!starts->fens[0]) {
+            free(starts->fens);
+            starts->fens = NULL;
+            return 0;
+        }
+        starts->count = 1;
+        return 1;
     }
-
-    if (count < 4) return false;
-    if (count < 5) tokens[4] = "";
-    if (count < 6) tokens[5] = "";
-
-    fenRead(board, tokens[0], tokens[1], tokens[2], tokens[3], tokens[4], tokens[5]);
-    return true;
-}
-
-static uint16_t datagen_iterative_deepening(Position *board, stopConditions *stop) {
-    uint16_t best_move_so_far = 0;
-    int prev_score = 0;
-    int aspiration_delta = 25;
-    const int ASPIRATION_MAX_DELTA = 500;
-
-    for (int depth = 1; depth <= MAX_DEPTH; depth++) {
-        if (stop->soft_nodes > 0 && stop->nodes >= stop->soft_nodes)
-            break;
-
-        if (stop->depth > 0 && depth > stop->depth)
-            break;
-
-        stop->seldepth = 0;
-
-        PVLine pv = {0};
-        searchOutput out;
-        SearchStack no_excl = {0};
-
-
-        int alpha, beta;
-        bool first_attempt = (depth == 1);
-        if (first_attempt) {
-            alpha = -MATE_SCORE;
-            beta  =  MATE_SCORE;
+    
+    FILE *file = fopen(book, "r");
+    if (!file) {
+        fprintf(stderr, "failed to open book: %s\n", book);
+        return 0;
+    }
+    
+    char line[1024];
+    size_t capacity = 0;
+    
+    while (fgets(line, sizeof(line), file)) {
+        // Remove trailing newline
+        line[strcspn(line, "\r\n")] = '\0';
+        
+        // Skip empty lines and comments
+        char *trimmed = line;
+        while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+        if (*trimmed == '\0' || *trimmed == '#') continue;
+        
+        if (starts->count == capacity) {
+            size_t new_capacity = capacity ? capacity * 2 : 16;
+            char **new_fens = realloc(starts->fens, new_capacity * sizeof(char *));
+            if (!new_fens) {
+                fclose(file);
+                return 0;
+            }
+            starts->fens = new_fens;
+            capacity = new_capacity;
+        }
+        
+        // Parse book line
+        char fen_line[1024];
+        
+        // Try to parse as full FEN (6 fields)
+        char *tokens[16];
+        int token_count = 0;
+        char *saveptr = NULL;
+        char *token = strtok_r(trimmed, " \t", &saveptr);
+        
+        while (token && token_count < 16) {
+            tokens[token_count++] = token;
+            token = strtok_r(NULL, " \t", &saveptr);
+        }
+        
+        if (token_count >= 6) {
+            // Check if fields 5 and 6 are numbers (halfmove and fullmove)
+            char *end1 = NULL;
+            char *end2 = NULL;
+            strtoul(tokens[4], &end1, 10);
+            strtoul(tokens[5], &end2, 10);
+            
+            if (end1 != tokens[4] && *end1 == '\0' && 
+                end2 != tokens[5] && *end2 == '\0') {
+                // Full FEN
+                snprintf(fen_line, sizeof(fen_line), "%s %s %s %s %s %s",
+                         tokens[0], tokens[1], tokens[2], tokens[3],
+                         tokens[4], tokens[5]);
+            } else {
+                // Try EPD format
+                uint32_t halfmove = 0;
+                uint32_t fullmove = 1;
+                
+                for (int i = 0; i < token_count - 1; i++) {
+                    if (strcmp(tokens[i], "hmvc") == 0) {
+                        char *end = NULL;
+                        char *val = tokens[i + 1];
+                        // Remove trailing semicolon
+                        size_t len = strlen(val);
+                        if (len > 0 && val[len - 1] == ';') {
+                            val[len - 1] = '\0';
+                        }
+                        unsigned long hm = strtoul(val, &end, 10);
+                        if (end != val && *end == '\0') {
+                            halfmove = (uint32_t)hm;
+                        }
+                    } else if (strcmp(tokens[i], "fmvn") == 0) {
+                        char *end = NULL;
+                        char *val = tokens[i + 1];
+                        // Remove trailing semicolon
+                        size_t len = strlen(val);
+                        if (len > 0 && val[len - 1] == ';') {
+                            val[len - 1] = '\0';
+                        }
+                        unsigned long fm = strtoul(val, &end, 10);
+                        if (end != val && *end == '\0') {
+                            fullmove = (uint32_t)fm;
+                            if (fullmove == 0) fullmove = 1;
+                        }
+                    }
+                }
+                
+                snprintf(fen_line, sizeof(fen_line), "%s %s %s %s %u %u",
+                         tokens[0], tokens[1], tokens[2], tokens[3],
+                         halfmove, fullmove);
+            }
+        } else if (token_count >= 4) {
+            // Just 4 fields, use default halfmove and fullmove
+            snprintf(fen_line, sizeof(fen_line), "%s %s %s %s 0 1",
+                     tokens[0], tokens[1], tokens[2], tokens[3]);
         } else {
-            alpha = prev_score - aspiration_delta;
-            beta  = prev_score + aspiration_delta;
-        }
-
-        int delta = aspiration_delta;
-        int research_count = 0;
-        const int MAX_RESEARCH = 5;
-
-        while (1) {
-            pv.length = 0;
-
-            out = search(board, depth, 0, alpha, beta, stop, &pv,&no_excl);
-
-            if (stop->stop)
-                break;
-
-            if (out.score > alpha && out.score < beta)
-                break;
-
-            if (out.score <= alpha) {
-                alpha = out.score - delta;
-                if (alpha < -MATE_SCORE) alpha = -MATE_SCORE;
-            } else if (out.score >= beta) {
-                beta = out.score + delta;
-                if (beta > MATE_SCORE) beta = MATE_SCORE;
-            }
-
-            delta *= 2;
-            if (delta > ASPIRATION_MAX_DELTA) {
-                alpha = -MATE_SCORE;
-                beta  =  MATE_SCORE;
-            }
-
-            research_count++;
-            if (research_count >= MAX_RESEARCH) {
-                alpha = -MATE_SCORE;
-                beta  =  MATE_SCORE;
-                pv.length = 0;
-                out = search(board, depth, 0, alpha, beta, stop, &pv,&no_excl);
-                break;
-            }
-        }
-
-        if (stop->stop)
-            break;
-
-        prev_score = out.score;
-
-        if (out.move != 0) {
-            best_move_so_far = out.move;
-        }
-    }
-
-    return best_move_so_far;
-}
-
-void datagen_genfens(int argc, char **argv) {
-    int N = 0;
-    uint64_t seed = 0;
-    uint64_t soft_nodes = 5000;
-
-    char *tokens[64];
-    int token_count = 0;
-
-    for (int i = 1; i < argc; i++) {
-        char *copy = strdup(argv[i]);
-        char *saveptr;
-        char *tok = strtok_r(copy, " ", &saveptr);
-        while (tok && token_count < 64) {
-            tokens[token_count++] = strdup(tok);
-            tok = strtok_r(NULL, " ", &saveptr);
-        }
-        free(copy);
-    }
-
-    for (int i = 0; i < token_count; i++) {
-        if (strcmp(tokens[i], "genfens") == 0 && i + 1 < token_count) {
-            N = atoi(tokens[i + 1]);
-        } else if (strcmp(tokens[i], "seed") == 0 && i + 1 < token_count) {
-            seed = strtoull(tokens[i + 1], NULL, 10);
-        } else if (strcmp(tokens[i], "soft_nodes") == 0 && i + 1 < token_count) {
-            soft_nodes = strtoull(tokens[i + 1], NULL, 10);
-        }
-    }
-
-    for (int i = 0; i < token_count; i++) {
-        free(tokens[i]);
-    }
-
-    rng_seed(seed);
-    int generated = 0;
-
-    while (generated < N) {
-        Position board;
-        if (!parse_fen(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")) {
+            fprintf(stderr, "malformed book line: %s\n", trimmed);
             continue;
         }
-
-        int opening_plies = 4 + rng_uniform(7);
-        bool valid_opening = true;
-        for (int p = 0; p < opening_plies; p++) {
-            MoveList moves;
-            moves.offset = 0;
-            legalMoveGen(&board, &moves);
-            if (moves.offset == 0) {
-                valid_opening = false;
-                break;
-            }
-            int move_idx = rng_uniform(moves.offset);
-            makeMove(&board, &moves, move_idx);
-        }
-
-        if (!valid_opening || !is_position_valid(&board)) continue;
-
-        char game_fens[500][256];
-        int fen_count = 0;
-        bool game_finished = false;
-
-        while (!game_finished && fen_count < 300) {
-            fen_from_position(&board, game_fens[fen_count]);
-            fen_count++;
-
-            MoveList moves;
-            moves.offset = 0;
-            legalMoveGen(&board, &moves);
-            if (moves.offset == 0) {
-                game_finished = true;
-                break;
-            }
-
-            stopConditions stop = {0};
-            stop.start_time = get_time_ms();
-            stop.soft_nodes = soft_nodes;
-            stop.max_nodes  = soft_nodes * 4; 
-            stop.nodes      = 0;
-            stop.stop       = 0;
-
-            uint16_t best_move = datagen_iterative_deepening(&board, &stop);
-
-            if (best_move == 0) {
-                game_finished = true;
-                break;
-            }
-
-            int chosen_idx = -1;
-            for (unsigned int i = 0; i < moves.offset; i++) {
-                if (moves.movelist[i] == best_move) {
-                    chosen_idx = (int)i;
-                    break;
-                }
-            }
-
-            if (chosen_idx == -1) {
-                chosen_idx = 0;
-            }
-
-            makeMove(&board, &moves, chosen_idx);
-
-            if (board.halfmoves >= 100) {
-                game_finished = true;
-                break;
-            }
-        }
-
-        for (int i = 0; i < fen_count && generated < N; i++) {
-            printf("info string genfens %s\n", game_fens[i]);
-            fflush(stdout);
-            generated++;
+        
+        starts->fens[starts->count] = strdup(fen_line);
+        if (starts->fens[starts->count]) {
+            starts->count++;
         }
     }
+    
+    fclose(file);
+    
+    if (starts->count == 0) {
+        fprintf(stderr, "book contains no usable positions: %s\n", book);
+        return 0;
+    }
+    
+    return 1;
+}
+
+static void free_start_positions(StartPositions *starts)
+{
+    if (!starts) return;
+    for (size_t i = 0; i < starts->count; i++) {
+        free(starts->fens[i]);
+    }
+    free(starts->fens);
+    starts->fens = NULL;
+    starts->count = 0;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Engine interface                                                          */
+/* ------------------------------------------------------------------------- */
+
+static int set_start(Position *board, const char *start)
+{
+    if (strcmp(start, "startpos") == 0) {
+        // Set to start position
+        memset(board, 0, sizeof(*board));
+        fenRead(board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR",
+                "w", "KQkq", "-", "0", "1");
+        board->color[2] = board->color[0] | board->color[1];
+        return 1;
+    }
+    
+    // Parse FEN
+    char temp[512];
+    strncpy(temp, start, sizeof(temp) - 1);
+    temp[sizeof(temp) - 1] = '\0';
+    
+    char *tok[6];
+    int t = 0;
+    char *p = strtok(temp, " ");
+    
+    while (p && t < 6) {
+        tok[t++] = p;
+        p = strtok(NULL, " ");
+    }
+    
+    if (t < 6) return 0;
+    
+    fenRead(board, tok[0], tok[1], tok[2], tok[3], tok[4], tok[5]);
+    board->color[2] = board->color[0] | board->color[1];
+    return 1;
+}
+
+static int is_game_ongoing(Position *board)
+{
+    MoveList legal = {0};
+    legalMoveGen(board, &legal);
+    
+    // Check if there are legal moves
+    if (legal.offset == 0) {
+        return 0;
+    }
+    
+    // Check for 50-move rule
+    if (board->halfmoves >= 100) {
+        return 0;
+    }
+    
+    return 1;
+}
+
+static void play_random_plies(Position *board, uint32_t plies, SplitMix64 *rng)
+{
+    for (uint32_t i = 0; i < plies; i++) {
+        if (!is_game_ongoing(board)) {
+            return;
+        }
+        
+        MoveList legal_moves = {0};
+        legalMoveGen(board, &legal_moves);
+        
+        if (legal_moves.offset == 0) {
+            return;
+        }
+        
+        size_t index = splitmix64_index(rng, legal_moves.offset);
+        makeMove(board, &legal_moves, (int)index);
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+/* generate_opening (exactly matching Rust implementation)                   */
+/* ------------------------------------------------------------------------- */
+
+static int generate_opening(
+    StartPositions *starts,
+    PlyRange plies,
+    SplitMix64 *rng,
+    char *out_fen,
+    size_t out_size)
+{
+    for (int attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+        Position board;
+        memset(&board, 0, sizeof(board));
+        
+        const char *start = starts->fens[splitmix64_index(rng, starts->count)];
+        
+        if (!set_start(&board, start)) {
+            continue;
+        }
+        
+        play_random_plies(&board, ply_range_sample(plies, rng), rng);
+        
+        if (is_game_ongoing(&board)) {
+            generate_fen_string(&board, out_fen, out_size);
+            return 1;
+        }
+    }
+    
+    fprintf(stderr, "failed to generate a non-terminal opening\n");
+    return 0;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Main genfens command                                                      */
+/* ------------------------------------------------------------------------- */
+
+void datagen_genfens(int argc, char **argv)
+{
+    // Parse command: genfens <count> seed <seed> book <book> [plies=<plies>]
+    if (argc < 7 || strcmp(argv[1], "genfens") != 0) {
+        fprintf(stderr, "malformed genfens command\n");
+        fprintf(stderr, "usage: genfens <count> seed <seed> book <book> [plies=<plies>]\n");
+        return;
+    }
+    
+    GenfensArgs args;
+    memset(&args, 0, sizeof(args));
+    args.plies = ply_range_exact(DEFAULT_PLIES);
+    
+    // Parse count
+    if (!parse_nonzero_usize(argv[2], "count", &args.count)) {
+        return;
+    }
+    
+    // Check for "seed" keyword
+    if (strcmp(argv[3], "seed") != 0) {
+        fprintf(stderr, "expected seed after genfens count\n");
+        return;
+    }
+    
+    // Parse seed
+    char *end = NULL;
+    args.seed = strtoull(argv[4], &end, 10);
+    if (end == argv[4] || *end != '\0') {
+        fprintf(stderr, "invalid genfens seed: %s\n", argv[4]);
+        return;
+    }
+    
+    // Check for "book" keyword
+    if (strcmp(argv[5], "book") != 0) {
+        fprintf(stderr, "expected book after genfens seed\n");
+        return;
+    }
+    
+    // Get book name
+    args.book = strdup(argv[6]);
+    if (!args.book) {
+        fprintf(stderr, "out of memory\n");
+        return;
+    }
+    
+    // Parse optional arguments (starting from argv[7])
+    for (int i = 7; i < argc; i++) {
+        if (strncmp(argv[i], "plies=", 6) == 0) {
+            if (!parse_ply_range(argv[i] + 6, &args.plies)) {
+                free(args.book);
+                return;
+            }
+        } else if (argv[i][0] != '\0') {
+            fprintf(stderr, "unknown genfens argument: %s\n", argv[i]);
+            free(args.book);
+            return;
+        }
+    }
+    
+    // Load start positions
+    StartPositions starts;
+    if (!load_start_positions(args.book, &starts)) {
+        free(args.book);
+        return;
+    }
+    
+    // Initialize RNG
+    SplitMix64 rng = splitmix64_new(args.seed);
+    
+    // Generate openings
+    char fen[1024];
+    for (size_t i = 0; i < args.count; i++) {
+        if (generate_opening(&starts, args.plies, &rng, fen, sizeof(fen))) {
+            printf("info string genfens %s\n", fen);
+        }
+    }
+    
+    // Cleanup
+    free_start_positions(&starts);
+    free(args.book);
 }
