@@ -23,7 +23,7 @@ OBJS := $(SRCS:.c=.o)
 # Standard
 STD := -std=c2x
 
-EVALFILE := beans.bin
+EVALFILE := quantised.bin
 EVALDEF  := -DEVALFILE=\"$(EVALFILE)\"
 
 ifeq ($(OS),Windows_NT)

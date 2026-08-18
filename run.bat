@@ -2,7 +2,7 @@
 setlocal
 
 if "%~1"=="" (
-    set EVALFILE=beans.bin
+    set EVALFILE=quantised.bin
 ) else (
     set EVALFILE=%~1
 )
