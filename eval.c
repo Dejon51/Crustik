@@ -9,10 +9,13 @@
 #include "precomputed.h"
 #include "rook_table.h"
 #include "bishop_table.h"
+#include "incbin.h"
 
-#ifndef NNUE_FILE
-#define NNUE_FILE "beans.bin"
+#ifndef EVALFILE
+#define EVALFILE "beans.bin"
 #endif
+
+INCBIN(EvalFile, EVALFILE);
 
 #define NNUE_INPUT   768   // 12 piece-planes * 64 squares, perspective-relative
 #define NNUE_HL      64    // hidden layer width (per perspective)
@@ -38,36 +41,37 @@ static const int nnue_internalToNnueType[6] = {
     5, // king   -> 5
 };
 
-static int nnue_load(const char *path)
+static int nnue_load(void)
 {
-    FILE *f = fopen(path, "rb");
-    if (!f)
+    const unsigned char *data = gEvalFileData;
+    size_t size = (size_t)gEvalFileSize;
+    size_t offset = 0;
+
+    size_t needed = sizeof(nnue_featureWeights)
+                  + sizeof(nnue_featureBiases)
+                  + sizeof(nnue_outputWeights)
+                  + sizeof(int16_t);
+
+    if (size < needed)
     {
-        fprintf(stderr, "nnue_load: could not open %s\n", path);
+        fprintf(stderr, "nnue_load: embedded network too small (%zu < %zu bytes)\n",
+                size, needed);
         return 1;
     }
 
-    size_t n;
+    memcpy(nnue_featureWeights, data + offset, sizeof(nnue_featureWeights));
+    offset += sizeof(nnue_featureWeights);
 
-    n = fread(nnue_featureWeights, sizeof(int16_t), (size_t)NNUE_INPUT * NNUE_HL, f);
-    if (n != (size_t)NNUE_INPUT * NNUE_HL) { fclose(f); fprintf(stderr, "nnue_load: short read on feature weights (%zu)\n", n); return 2; }
+    memcpy(nnue_featureBiases, data + offset, sizeof(nnue_featureBiases));
+    offset += sizeof(nnue_featureBiases);
 
-    n = fread(nnue_featureBiases, sizeof(int16_t), NNUE_HL, f);
-    if (n != NNUE_HL) { fclose(f); fprintf(stderr, "nnue_load: short read on feature biases (%zu)\n", n); return 3; }
-
-    n = fread(nnue_outputWeights, sizeof(int16_t), 2 * NNUE_HL, f);
-    if (n != 2 * NNUE_HL) { fclose(f); fprintf(stderr, "nnue_load: short read on output weights (%zu)\n", n); return 4; }
+    memcpy(nnue_outputWeights, data + offset, sizeof(nnue_outputWeights));
+    offset += sizeof(nnue_outputWeights);
 
     int16_t bias16 = 0;
-    n = fread(&bias16, sizeof(int16_t), 1, f);
-    if (n != 1) { fclose(f); fprintf(stderr, "nnue_load: short read on output bias (%zu)\n", n); return 5; }
+    memcpy(&bias16, data + offset, sizeof(bias16));
+    offset += sizeof(bias16);
     nnue_outputBias = bias16;
-
-    long pos = ftell(f);
-    fseek(f, 0, SEEK_END);
-    long end = ftell(f);
-    fclose(f);
-
 
     nnue_loaded = 1;
     return 0;
@@ -147,9 +151,9 @@ static int nnue_forward(Position *board)
 
 void init_tables()
 {
-    if (nnue_load(NNUE_FILE) != 0)
+    if (nnue_load() != 0)
     {
-        fprintf(stderr, "FATAL: failed to load NNUE network from \"%s\"\n", NNUE_FILE);
+        fprintf(stderr, "FATAL: failed to load embedded NNUE network (built with EVALFILE=" EVALFILE ")\n");
         exit(1);
     }
 }
