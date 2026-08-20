@@ -6,18 +6,22 @@
 #include <ctype.h>
 
 #include "datagen.h"
-#include "play.h"          
-#include "search.h"        
-#include "eval.h"          
+#include "play.h"
+#include "search.h"
+#include "eval.h"
 #include "tt.h"
 #include "zobrist.h"
-#include "fen.h"          
+#include "fen.h"
 
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
 
-#define OPENING_GEN_TIMEOUT_MS 10000   // bail out of opening generation if we can't find a valid line
-#define SEARCH_MAX_TIME_MS     3000    // hard wall-clock cap per move, independent of node counting
+#define OPENING_GEN_TIMEOUT_MS 10000
+#define SEARCH_MAX_TIME_MS     3000
+
+#define EVAL_FEN_FILTER_ABS    400
+#define EVAL_ADJUDICATE_ABS    2000
+#define EVAL_ADJUDICATE_PLIES  4
 
 static uint64_t rng_state;
 
@@ -44,7 +48,7 @@ static bool is_position_valid(Position *board) {
     int white_kings = 0, black_kings = 0;
     for (int sq = 0; sq < 64; sq++) {
         int piece = piece_on_square(board, sq);
-        if (piece == 5) { // King
+        if (piece == 5) {
             if ((board->color[0] >> sq) & 1) white_kings++;
             else if ((board->color[1] >> sq) & 1) black_kings++;
         }
@@ -116,9 +120,6 @@ static void fen_from_position(Position *board, char *fen) {
 }
 
 static bool parse_fen(Position *board, const char *fen_str) {
-    // Zero the whole board first so any field fenRead doesn't explicitly
-    // touch (padding, flags, etc.) can't carry stale/garbage stack data
-    // into is_position_valid() and cause spurious, silent rejection loops.
     memset(board, 0, sizeof(*board));
 
     char fen_copy[256];
@@ -142,19 +143,9 @@ static bool parse_fen(Position *board, const char *fen_str) {
     return true;
 }
 
-/* -------------------------------------------------------------------- */
-/* Book support (OpenBench genfens "book <None|path>" argument)          */
-/* -------------------------------------------------------------------- */
-
 static char **book_lines = NULL;
 static int book_line_count = 0;
 
-// Loads FEN/EPD lines from `path` into book_lines. A path of NULL or
-// "None" is treated as "no book" and leaves book_line_count at 0.
-// Always reports the number of lines found, matching the reference
-// genfens output format ("info string found N book lines"), even when
-// that number is zero, so tooling that parses stdout has a consistent
-// line to look for regardless of whether a book was supplied.
 static void load_book(const char *path) {
     book_lines = NULL;
     book_line_count = 0;
@@ -169,12 +160,10 @@ static void load_book(const char *path) {
 
             char linebuf[512];
             while (fgets(linebuf, sizeof(linebuf), f)) {
-                // Strip trailing newline / carriage return.
                 size_t len = strlen(linebuf);
                 while (len > 0 && (linebuf[len - 1] == '\n' || linebuf[len - 1] == '\r'))
                     linebuf[--len] = '\0';
 
-                // Skip blank / whitespace-only lines.
                 char *p = linebuf;
                 while (*p == ' ' || *p == '\t') p++;
                 if (*p == '\0') continue;
@@ -208,10 +197,13 @@ static void free_book(void) {
     book_line_count = 0;
 }
 
-/* -------------------------------------------------------------------- */
+typedef struct {
+    uint16_t move;
+    int      score;
+} DatagenSearchResult;
 
-static uint16_t datagen_iterative_deepening(Position *board, stopConditions *stop) {
-    uint16_t best_move_so_far = 0;
+static DatagenSearchResult datagen_iterative_deepening(Position *board, stopConditions *stop) {
+    DatagenSearchResult result = {0, 0};
     int prev_score = 0;
     int aspiration_delta = 25;
     const int ASPIRATION_MAX_DELTA = 500;
@@ -228,7 +220,6 @@ static uint16_t datagen_iterative_deepening(Position *board, stopConditions *sto
         PVLine pv = {0};
         searchOutput out;
         SearchStack no_excl = {0};
-
 
         int alpha, beta;
         bool first_attempt = (depth == 1);
@@ -285,17 +276,14 @@ static uint16_t datagen_iterative_deepening(Position *board, stopConditions *sto
         prev_score = out.score;
 
         if (out.move != 0) {
-            best_move_so_far = out.move;
+            result.move  = out.move;
+            result.score = out.score;
         }
     }
 
-    return best_move_so_far;
+    return result;
 }
 
-// Builds one opening: if a book was supplied, picks a random book line
-// (a FEN or EPD line) and uses it directly. Otherwise falls back to the
-// original random-walk generation from the startpos. Returns false if
-// no valid opening could be produced within OPENING_GEN_TIMEOUT_MS.
 static bool generate_opening(Position *board) {
     long long opening_search_start = get_time_ms();
 
@@ -341,7 +329,7 @@ void datagen_genfens(int argc, char **argv) {
     int N = 0;
     uint64_t seed = 0;
     uint64_t soft_nodes = 5000;
-    char *book_path = NULL; // NULL / "None" => no book
+    char *book_path = NULL;
 
     char *tokens[64];
     int token_count = 0;
@@ -365,11 +353,10 @@ void datagen_genfens(int argc, char **argv) {
         } else if (strcmp(tokens[i], "soft_nodes") == 0 && i + 1 < token_count) {
             soft_nodes = strtoull(tokens[i + 1], NULL, 10);
         } else if (strcmp(tokens[i], "book") == 0 && i + 1 < token_count) {
-            book_path = tokens[i + 1]; // still owned by tokens[]; copy before freeing tokens
+            book_path = tokens[i + 1];
         }
     }
 
-    // load_book() strdup's whatever it needs, so it's safe to free tokens[] after this.
     load_book(book_path);
 
     for (int i = 0; i < token_count; i++) {
@@ -379,14 +366,12 @@ void datagen_genfens(int argc, char **argv) {
     rng_seed(seed);
     int generated = 0;
 
-    // Heap-allocate instead of a 128KB stack array. This buffer sat live
-    // across every recursive search() call at every ply of the game;
-    // combined with per-frame search locals it could plausibly exhaust
-    // a thread's stack (especially the smaller default on Windows),
-    // causing a hard crash rather than a clean error.
     char (*game_fens)[256] = malloc(300 * sizeof(*game_fens));
-    if (!game_fens) {
+    int  *game_evals = malloc(300 * sizeof(*game_evals));
+    if (!game_fens || !game_evals) {
         fprintf(stderr, "info string genfens: allocation failure\n");
+        free(game_fens);
+        free(game_evals);
         free_book();
         return;
     }
@@ -402,11 +387,9 @@ void datagen_genfens(int argc, char **argv) {
 
         int fen_count = 0;
         bool game_finished = false;
+        int consecutive_extreme_evals = 0;
 
         while (!game_finished && fen_count < 300) {
-            fen_from_position(&board, game_fens[fen_count]);
-            fen_count++;
-
             MoveList moves;
             moves.offset = 0;
             legalMoveGen(&board, &moves);
@@ -419,20 +402,33 @@ void datagen_genfens(int argc, char **argv) {
             stop.start_time = get_time_ms();
             stop.soft_nodes = soft_nodes;
             stop.max_nodes  = soft_nodes * 4;
-            stop.max_time   = SEARCH_MAX_TIME_MS;  // wall-clock safety net, independent of node counting
+            stop.max_time   = SEARCH_MAX_TIME_MS;
             stop.nodes      = 0;
             stop.stop       = 0;
 
-            uint16_t best_move = datagen_iterative_deepening(&board, &stop);
+            DatagenSearchResult result = datagen_iterative_deepening(&board, &stop);
 
-            if (best_move == 0) {
+            if (result.move == 0) {
                 game_finished = true;
                 break;
             }
 
+            fen_from_position(&board, game_fens[fen_count]);
+            game_evals[fen_count] = result.score;
+            fen_count++;
+
+            if (abs(result.score) >= EVAL_ADJUDICATE_ABS) {
+                consecutive_extreme_evals++;
+                if (consecutive_extreme_evals >= EVAL_ADJUDICATE_PLIES) {
+                    game_finished = true;
+                }
+            } else {
+                consecutive_extreme_evals = 0;
+            }
+
             int chosen_idx = -1;
             for (unsigned int i = 0; i < moves.offset; i++) {
-                if (moves.movelist[i] == best_move) {
+                if (moves.movelist[i] == result.move) {
                     chosen_idx = (int)i;
                     break;
                 }
@@ -446,11 +442,14 @@ void datagen_genfens(int argc, char **argv) {
 
             if (board.halfmoves >= 100) {
                 game_finished = true;
-                break;
             }
         }
 
         for (int i = 0; i < fen_count && generated < N; i++) {
+            if (abs(game_evals[i]) >= EVAL_FEN_FILTER_ABS) {
+                continue;
+            }
+
             printf("info string genfens %s\n", game_fens[i]);
             fflush(stdout);
             generated++;
@@ -458,5 +457,6 @@ void datagen_genfens(int argc, char **argv) {
     }
 
     free(game_fens);
+    free(game_evals);
     free_book();
 }
