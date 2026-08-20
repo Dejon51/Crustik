@@ -142,6 +142,74 @@ static bool parse_fen(Position *board, const char *fen_str) {
     return true;
 }
 
+/* -------------------------------------------------------------------- */
+/* Book support (OpenBench genfens "book <None|path>" argument)          */
+/* -------------------------------------------------------------------- */
+
+static char **book_lines = NULL;
+static int book_line_count = 0;
+
+// Loads FEN/EPD lines from `path` into book_lines. A path of NULL or
+// "None" is treated as "no book" and leaves book_line_count at 0.
+// Always reports the number of lines found, matching the reference
+// genfens output format ("info string found N book lines"), even when
+// that number is zero, so tooling that parses stdout has a consistent
+// line to look for regardless of whether a book was supplied.
+static void load_book(const char *path) {
+    book_lines = NULL;
+    book_line_count = 0;
+
+    if (path && strcmp(path, "None") != 0) {
+        FILE *f = fopen(path, "r");
+        if (!f) {
+            fprintf(stderr, "info string genfens: failed to open book '%s'\n", path);
+        } else {
+            size_t capacity = 1024;
+            book_lines = malloc(capacity * sizeof(*book_lines));
+
+            char linebuf[512];
+            while (fgets(linebuf, sizeof(linebuf), f)) {
+                // Strip trailing newline / carriage return.
+                size_t len = strlen(linebuf);
+                while (len > 0 && (linebuf[len - 1] == '\n' || linebuf[len - 1] == '\r'))
+                    linebuf[--len] = '\0';
+
+                // Skip blank / whitespace-only lines.
+                char *p = linebuf;
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p == '\0') continue;
+
+                if (book_line_count >= (int)capacity) {
+                    capacity *= 2;
+                    char **grown = realloc(book_lines, capacity * sizeof(*book_lines));
+                    if (!grown) {
+                        fprintf(stderr, "info string genfens: book realloc failure\n");
+                        break;
+                    }
+                    book_lines = grown;
+                }
+
+                book_lines[book_line_count++] = strdup(p);
+            }
+            fclose(f);
+        }
+    }
+
+    fprintf(stderr, "info string found %d book lines\n", book_line_count);
+    fflush(stderr);
+}
+
+static void free_book(void) {
+    for (int i = 0; i < book_line_count; i++) {
+        free(book_lines[i]);
+    }
+    free(book_lines);
+    book_lines = NULL;
+    book_line_count = 0;
+}
+
+/* -------------------------------------------------------------------- */
+
 static uint16_t datagen_iterative_deepening(Position *board, stopConditions *stop) {
     uint16_t best_move_so_far = 0;
     int prev_score = 0;
@@ -224,10 +292,56 @@ static uint16_t datagen_iterative_deepening(Position *board, stopConditions *sto
     return best_move_so_far;
 }
 
+// Builds one opening: if a book was supplied, picks a random book line
+// (a FEN or EPD line) and uses it directly. Otherwise falls back to the
+// original random-walk generation from the startpos. Returns false if
+// no valid opening could be produced within OPENING_GEN_TIMEOUT_MS.
+static bool generate_opening(Position *board) {
+    long long opening_search_start = get_time_ms();
+
+    while (get_time_ms() - opening_search_start < OPENING_GEN_TIMEOUT_MS) {
+        if (book_line_count > 0) {
+            int line_idx = rng_uniform(book_line_count);
+            if (!parse_fen(board, book_lines[line_idx])) {
+                continue;
+            }
+            if (is_position_valid(board)) {
+                return true;
+            }
+            continue;
+        }
+
+        if (!parse_fen(board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")) {
+            continue;
+        }
+
+        int opening_plies = 4 + rng_uniform(7);
+        bool valid_opening = true;
+        for (int p = 0; p < opening_plies; p++) {
+            MoveList moves;
+            moves.offset = 0;
+            legalMoveGen(board, &moves);
+            if (moves.offset == 0) {
+                valid_opening = false;
+                break;
+            }
+            int move_idx = rng_uniform(moves.offset);
+            makeMove(board, &moves, move_idx);
+        }
+
+        if (valid_opening && is_position_valid(board)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void datagen_genfens(int argc, char **argv) {
     int N = 0;
     uint64_t seed = 0;
     uint64_t soft_nodes = 5000;
+    char *book_path = NULL; // NULL / "None" => no book
 
     char *tokens[64];
     int token_count = 0;
@@ -250,8 +364,13 @@ void datagen_genfens(int argc, char **argv) {
             seed = strtoull(tokens[i + 1], NULL, 10);
         } else if (strcmp(tokens[i], "soft_nodes") == 0 && i + 1 < token_count) {
             soft_nodes = strtoull(tokens[i + 1], NULL, 10);
+        } else if (strcmp(tokens[i], "book") == 0 && i + 1 < token_count) {
+            book_path = tokens[i + 1]; // still owned by tokens[]; copy before freeing tokens
         }
     }
+
+    // load_book() strdup's whatever it needs, so it's safe to free tokens[] after this.
+    load_book(book_path);
 
     for (int i = 0; i < token_count; i++) {
         free(tokens[i]);
@@ -268,45 +387,14 @@ void datagen_genfens(int argc, char **argv) {
     char (*game_fens)[256] = malloc(300 * sizeof(*game_fens));
     if (!game_fens) {
         fprintf(stderr, "info string genfens: allocation failure\n");
+        free_book();
         return;
     }
 
     while (generated < N) {
         Position board;
 
-        // Time-boxed opening search: if we can't find a valid random
-        // opening within OPENING_GEN_TIMEOUT_MS, stop spinning silently
-        // (which is what was producing the "stalled" abort with zero
-        // output) and bail out cleanly instead.
-        long long opening_search_start = get_time_ms();
-        bool found_opening = false;
-
-        while (get_time_ms() - opening_search_start < OPENING_GEN_TIMEOUT_MS) {
-            if (!parse_fen(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")) {
-                continue;
-            }
-
-            int opening_plies = 4 + rng_uniform(7);
-            bool valid_opening = true;
-            for (int p = 0; p < opening_plies; p++) {
-                MoveList moves;
-                moves.offset = 0;
-                legalMoveGen(&board, &moves);
-                if (moves.offset == 0) {
-                    valid_opening = false;
-                    break;
-                }
-                int move_idx = rng_uniform(moves.offset);
-                makeMove(&board, &moves, move_idx);
-            }
-
-            if (valid_opening && is_position_valid(&board)) {
-                found_opening = true;
-                break;
-            }
-        }
-
-        if (!found_opening) {
+        if (!generate_opening(&board)) {
             fprintf(stderr,
                 "info string genfens: timed out generating a valid opening, aborting\n");
             break;
@@ -370,4 +458,5 @@ void datagen_genfens(int argc, char **argv) {
     }
 
     free(game_fens);
+    free_book();
 }
