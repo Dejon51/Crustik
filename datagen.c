@@ -16,6 +16,9 @@
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
 
+#define OPENING_GEN_TIMEOUT_MS 10000   // bail out of opening generation if we can't find a valid line
+#define SEARCH_MAX_TIME_MS     3000    // hard wall-clock cap per move, independent of node counting
+
 static uint64_t rng_state;
 
 static void rng_seed(uint64_t seed) {
@@ -113,6 +116,11 @@ static void fen_from_position(Position *board, char *fen) {
 }
 
 static bool parse_fen(Position *board, const char *fen_str) {
+    // Zero the whole board first so any field fenRead doesn't explicitly
+    // touch (padding, flags, etc.) can't carry stale/garbage stack data
+    // into is_position_valid() and cause spurious, silent rejection loops.
+    memset(board, 0, sizeof(*board));
+
     char fen_copy[256];
     strncpy(fen_copy, fen_str, sizeof(fen_copy) - 1);
     fen_copy[sizeof(fen_copy) - 1] = '\0';
@@ -252,29 +260,58 @@ void datagen_genfens(int argc, char **argv) {
     rng_seed(seed);
     int generated = 0;
 
+    // Heap-allocate instead of a 128KB stack array. This buffer sat live
+    // across every recursive search() call at every ply of the game;
+    // combined with per-frame search locals it could plausibly exhaust
+    // a thread's stack (especially the smaller default on Windows),
+    // causing a hard crash rather than a clean error.
+    char (*game_fens)[256] = malloc(300 * sizeof(*game_fens));
+    if (!game_fens) {
+        fprintf(stderr, "info string genfens: allocation failure\n");
+        return;
+    }
+
     while (generated < N) {
         Position board;
-        if (!parse_fen(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")) {
-            continue;
-        }
 
-        int opening_plies = 4 + rng_uniform(7);
-        bool valid_opening = true;
-        for (int p = 0; p < opening_plies; p++) {
-            MoveList moves;
-            moves.offset = 0;
-            legalMoveGen(&board, &moves);
-            if (moves.offset == 0) {
-                valid_opening = false;
+        // Time-boxed opening search: if we can't find a valid random
+        // opening within OPENING_GEN_TIMEOUT_MS, stop spinning silently
+        // (which is what was producing the "stalled" abort with zero
+        // output) and bail out cleanly instead.
+        long long opening_search_start = get_time_ms();
+        bool found_opening = false;
+
+        while (get_time_ms() - opening_search_start < OPENING_GEN_TIMEOUT_MS) {
+            if (!parse_fen(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")) {
+                continue;
+            }
+
+            int opening_plies = 4 + rng_uniform(7);
+            bool valid_opening = true;
+            for (int p = 0; p < opening_plies; p++) {
+                MoveList moves;
+                moves.offset = 0;
+                legalMoveGen(&board, &moves);
+                if (moves.offset == 0) {
+                    valid_opening = false;
+                    break;
+                }
+                int move_idx = rng_uniform(moves.offset);
+                makeMove(&board, &moves, move_idx);
+            }
+
+            if (valid_opening && is_position_valid(&board)) {
+                found_opening = true;
                 break;
             }
-            int move_idx = rng_uniform(moves.offset);
-            makeMove(&board, &moves, move_idx);
         }
 
-        if (!valid_opening || !is_position_valid(&board)) continue;
+        if (!found_opening) {
+            fprintf(stderr,
+                "info string genfens: timed out generating a valid opening, aborting\n");
+            break;
+        }
 
-        char game_fens[500][256];
         int fen_count = 0;
         bool game_finished = false;
 
@@ -293,7 +330,8 @@ void datagen_genfens(int argc, char **argv) {
             stopConditions stop = {0};
             stop.start_time = get_time_ms();
             stop.soft_nodes = soft_nodes;
-            stop.max_nodes  = soft_nodes * 4; 
+            stop.max_nodes  = soft_nodes * 4;
+            stop.max_time   = SEARCH_MAX_TIME_MS;  // wall-clock safety net, independent of node counting
             stop.nodes      = 0;
             stop.stop       = 0;
 
@@ -330,4 +368,6 @@ void datagen_genfens(int argc, char **argv) {
             generated++;
         }
     }
+
+    free(game_fens);
 }
