@@ -18,7 +18,7 @@
 INCBIN(EvalFile, EVALFILE);
 
 #define NNUE_INPUT   768   // 12 piece-planes * 64 squares, perspective-relative
-#define NNUE_HL      8    // hidden layer width (per perspective)
+#define NNUE_HL      16    // hidden layer width (per perspective)
 #define NNUE_QA      255   // input/hidden quantization
 #define NNUE_QB      64    // output layer quantization
 #define NNUE_SCALE   400   // final centipawn scale
