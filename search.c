@@ -31,10 +31,23 @@ static int butterfly_hist[2][64][64];
 static uint16_t killer_moves[MAX_GAME_PLY][2];
 static int eval_stack[MAX_GAME_PLY];
 
+static int cont_hist[2][6][64][6][64];
+
+typedef struct
+{
+    int piece;
+    int to;
+    bool valid;
+} ContRecord;
+
+static ContRecord cont_stack[MAX_SEARCH_PLY];
+
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
+    memset(cont_hist, 0, sizeof cont_hist);
+    memset(cont_stack, 0, sizeof cont_stack);
     for (int i = 0; i < MAX_GAME_PLY; i++)
         eval_stack[i] = NO_EVAL;
 }
@@ -201,6 +214,10 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     const int CAPTURE_BASE = 90000000;
     const int KILLER_BASE = 80000000;
 
+    bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid);
+    int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
+    int cont_to = have_cont ? cont_stack[ply - 1].to : 0;
+
     for (unsigned int i = 0; i < ordered.offset; i++)
     {
         uint16_t move = ordered.movelist[i];
@@ -236,7 +253,12 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
         if (!is_killer)
         {
-            scores[i] = butterfly_hist[board->turn][from][to];
+            int score = butterfly_hist[board->turn][from][to];
+
+            if (have_cont && attacker != -1)
+                score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
+
+            scores[i] = score;
         }
     }
 
@@ -461,6 +483,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             Position copy = *board;
             make_null_move(&copy);
 
+            if (ply < MAX_SEARCH_PLY)
+                cont_stack[ply].valid = false;
+
             int score = -search(&copy, depth - R - 1,
                                 ply + 1, -beta, -beta + 1,
                                 stop, NULL, &no_excl)
@@ -596,8 +621,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
         }
 
+        int moved_piece = piece_on_square(board, move_from(move));
+
         Position copy = *board;
         makeMove(&copy, &move_list, i);
+
+        if (ply < MAX_SEARCH_PLY)
+        {
+            cont_stack[ply].piece = moved_piece;
+            cont_stack[ply].to = move_to(move);
+            cont_stack[ply].valid = true;
+        }
 
         PVLine child_pv = {0};
         int score;
@@ -697,6 +731,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     malus -
                     butterfly_hist[board->turn][from][to] *
                         abs(malus) / MAX_HISTORY;
+
+                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+                {
+                    int pp = cont_stack[ply - 1].piece;
+                    int pt = cont_stack[ply - 1].to;
+                    int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
+                    *ch += malus - *ch * abs(malus) / MAX_HISTORY;
+                }
             }
         }
 
@@ -709,6 +751,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
                 butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
+
+                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+                {
+                    int pp = cont_stack[ply - 1].piece;
+                    int pt = cont_stack[ply - 1].to;
+                    int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
+                    *ch += clampedBonus - *ch * abs(clampedBonus) / MAX_HISTORY;
+                }
 
                 if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
                 {
