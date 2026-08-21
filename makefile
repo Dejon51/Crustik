@@ -24,7 +24,7 @@ OBJS := $(SRCS:.c=.o)
 # Standard
 STD := -std=c2x
 
-EVALFILE := quant32hl.bin
+EVALFILE := quant64hl.bin
 EVALDEF  := -DEVALFILE=\"$(EVALFILE)\"
 
 ifeq ($(OS),Windows_NT)
