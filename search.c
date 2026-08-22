@@ -497,18 +497,18 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (score >= beta)
                 return (searchOutput){.score = beta, .move = 0};
         }
-    }
 
-    if (!root_node && depth <= 4 && !is_mate_score(alpha))
-    {
-        int razor_margin = 512 + 293 * depth * depth;
-        if (static_eval + razor_margin < alpha)
+        if (!root_node && depth <= 4 && !is_mate_score(alpha))
         {
-            int qscore = quiesce(board, alpha - 1, alpha, ply, stop);
-            if (stop->stop)
-                return (searchOutput){0};
-            if (qscore < alpha && abs(qscore) < 31000)
-                return (searchOutput){.score = qscore, .move = 0};
+            int razor_margin = 512 + 293 * depth * depth;
+            if (static_eval + razor_margin < alpha)
+            {
+                int qscore = quiesce(board, alpha - 1, alpha, ply, stop);
+                if (stop->stop)
+                    return (searchOutput){0};
+                if (qscore < alpha && abs(qscore) < 31000)
+                    return (searchOutput){.score = qscore, .move = 0};
+            }
         }
     }
 
