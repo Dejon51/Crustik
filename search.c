@@ -511,7 +511,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     }
 
     int best_score = -MATE_SCORE;
-    uint16_t best_move = 0;
+
+    uint16_t best_move = move_list.movelist[0];
 
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
