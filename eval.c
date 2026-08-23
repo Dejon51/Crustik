@@ -17,11 +17,11 @@
 
 INCBIN(EvalFile, EVALFILE);
 
-#define NNUE_INPUT   768   // 12 piece-planes * 64 squares, perspective-relative
-#define NNUE_HL      128    // hidden layer width (per perspective)
-#define NNUE_QA      255   // input/hidden quantization
-#define NNUE_QB      64    // output layer quantization
-#define NNUE_SCALE   400   // final centipawn scale
+#define NNUE_INPUT   768
+#define NNUE_HL      128
+#define NNUE_QA      255
+#define NNUE_QB      64
+#define NNUE_SCALE   400
 
 #define NNUE_FLIP(sq) ((sq) ^ 56)
 
@@ -33,18 +33,16 @@ static int32_t nnue_outputBias;
 static int nnue_loaded = 0;
 
 static const int nnue_internalToNnueType[6] = {
-    0, // pawn   -> 0
-    2, // bishop -> 2
-    1, // knight -> 1
-    3, // rook   -> 3
-    4, // queen  -> 4
-    5, // king   -> 5
+    0,
+    2,
+    1,
+    3,
+    4,
+    5,
 };
 
-// ---- the accumulator stack, entirely private to eval.c ----------------
-
 typedef struct {
-    int16_t v[2][NNUE_HL];   // v[0] = white-perspective, v[1] = black-perspective
+    int16_t v[2][NNUE_HL];
 } NnueAccumulator;
 
 static NnueAccumulator nnue_stack[NNUE_MAX_PLY];
@@ -55,8 +53,6 @@ static inline int nnue_clampPly(int ply)
     if (ply >= NNUE_MAX_PLY) return NNUE_MAX_PLY - 1;
     return ply;
 }
-
-// ---- loading ------------------------------------------------------------
 
 static int nnue_load(void)
 {
@@ -102,8 +98,6 @@ static inline int nnue_screlu(int16_t x)
     return v * v;
 }
 
-// ---- feature index + accumulator primitives ----------------------------
-
 static inline int nnue_featureIndex(int persp, int pieceIsOwn, int internalPiece, int sq)
 {
     int nnueType = nnue_internalToNnueType[internalPiece];
@@ -123,8 +117,6 @@ static inline void nnue_subFeature(int16_t acc[NNUE_HL], int featIdx)
         acc[h] -= nnue_featureWeights[featIdx][h];
 }
 
-// internalPiece: board->pieces[] index (0=pawn,1=bishop,2=knight,3=rook,4=queen,5=king)
-// color: which side owns the piece; sign: +1 place it, -1 remove it
 static void nnue_touchPiece(NnueAccumulator *acc, int internalPiece, int color, int sq, int sign)
 {
     for (int persp = 0; persp < 2; persp++)
@@ -137,8 +129,6 @@ static void nnue_touchPiece(NnueAccumulator *acc, int internalPiece, int color, 
             nnue_subFeature(acc->v[persp], featIdx);
     }
 }
-
-// ---- full rebuild --------------------------------------------------------
 
 static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL])
 {
@@ -194,11 +184,6 @@ void nnue_copy(int parentPly, int childPly)
     memcpy(&nnue_stack[childPly], &nnue_stack[parentPly], sizeof(NnueAccumulator));
 }
 
-// ---- incremental update --------------------------------------------------
-//
-// Call this BEFORE mutating the board (before makeMove). Reads
-// board->mailbox / epsquare / turn in their PRE-MOVE state.
-
 void nnue_update(Position *board, uint16_t move, int parentPly, int childPly)
 {
     parentPly = nnue_clampPly(parentPly);
@@ -219,7 +204,7 @@ void nnue_update(Position *board, uint16_t move, int parentPly, int childPly)
     int piece  = board->mailbox[from];
     int victim = board->mailbox[to];
 
-    if (piece == 6) return; // malformed move, nothing to update
+    if (piece == 6) return;
 
     nnue_touchPiece(acc, piece, c, from, -1);
 
@@ -245,26 +230,24 @@ void nnue_update(Position *board, uint16_t move, int parentPly, int childPly)
 
     switch (flag)
     {
-        case 1: // white kingside:  H1 -> F1
+        case 1:
             nnue_touchPiece(acc, ROOKNUMBER, c, H1, -1);
             nnue_touchPiece(acc, ROOKNUMBER, c, F1, +1);
             break;
-        case 2: // white queenside: A1 -> D1
+        case 2:
             nnue_touchPiece(acc, ROOKNUMBER, c, A1, -1);
             nnue_touchPiece(acc, ROOKNUMBER, c, D1, +1);
             break;
-        case 4: // black kingside:  H8 -> F8
+        case 4:
             nnue_touchPiece(acc, ROOKNUMBER, c, H8, -1);
             nnue_touchPiece(acc, ROOKNUMBER, c, F8, +1);
             break;
-        case 3: // black queenside: A8 -> D8
+        case 3:
             nnue_touchPiece(acc, ROOKNUMBER, c, A8, -1);
             nnue_touchPiece(acc, ROOKNUMBER, c, D8, +1);
             break;
     }
 }
-
-// ---- forward pass ---------------------------------------------------------
 
 static int nnue_forward(Position *board, int ply)
 {
