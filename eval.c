@@ -41,6 +41,23 @@ static const int nnue_internalToNnueType[6] = {
     5, // king   -> 5
 };
 
+// ---- the accumulator stack, entirely private to eval.c ----------------
+
+typedef struct {
+    int16_t v[2][NNUE_HL];   // v[0] = white-perspective, v[1] = black-perspective
+} NnueAccumulator;
+
+static NnueAccumulator nnue_stack[NNUE_MAX_PLY];
+
+static inline int nnue_clampPly(int ply)
+{
+    if (ply < 0) return 0;
+    if (ply >= NNUE_MAX_PLY) return NNUE_MAX_PLY - 1;
+    return ply;
+}
+
+// ---- loading ------------------------------------------------------------
+
 static int nnue_load(void)
 {
     const unsigned char *data = gEvalFileData;
@@ -85,7 +102,45 @@ static inline int nnue_screlu(int16_t x)
     return v * v;
 }
 
-static void nnue_buildAccumulator(Position *board, int ownSide, int16_t acc[NNUE_HL])
+// ---- feature index + accumulator primitives ----------------------------
+
+static inline int nnue_featureIndex(int persp, int pieceIsOwn, int internalPiece, int sq)
+{
+    int nnueType = nnue_internalToNnueType[internalPiece];
+    int relSq = (persp == 0) ? NNUE_FLIP(sq) : sq;
+    return (pieceIsOwn ? nnueType : nnueType + 6) * 64 + relSq;
+}
+
+static inline void nnue_addFeature(int16_t acc[NNUE_HL], int featIdx)
+{
+    for (int h = 0; h < NNUE_HL; h++)
+        acc[h] += nnue_featureWeights[featIdx][h];
+}
+
+static inline void nnue_subFeature(int16_t acc[NNUE_HL], int featIdx)
+{
+    for (int h = 0; h < NNUE_HL; h++)
+        acc[h] -= nnue_featureWeights[featIdx][h];
+}
+
+// internalPiece: board->pieces[] index (0=pawn,1=bishop,2=knight,3=rook,4=queen,5=king)
+// color: which side owns the piece; sign: +1 place it, -1 remove it
+static void nnue_touchPiece(NnueAccumulator *acc, int internalPiece, int color, int sq, int sign)
+{
+    for (int persp = 0; persp < 2; persp++)
+    {
+        int pieceIsOwn = (color == persp);
+        int featIdx = nnue_featureIndex(persp, pieceIsOwn, internalPiece, sq);
+        if (sign > 0)
+            nnue_addFeature(acc->v[persp], featIdx);
+        else
+            nnue_subFeature(acc->v[persp], featIdx);
+    }
+}
+
+// ---- full rebuild --------------------------------------------------------
+
+static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL])
 {
     for (int h = 0; h < NNUE_HL; h++)
         acc[h] = nnue_featureBiases[h];
@@ -101,7 +156,6 @@ static void nnue_buildAccumulator(Position *board, int ownSide, int16_t acc[NNUE
         {
             int sq = __builtin_ctzll(bb);
             bb &= bb - 1;
-
 
             int relSq = (ownSide == 0) ? NNUE_FLIP(sq) : sq;
             int featIdx = nnueType * 64 + relSq;
@@ -125,15 +179,98 @@ static void nnue_buildAccumulator(Position *board, int ownSide, int16_t acc[NNUE
     }
 }
 
-static int nnue_forward(Position *board)
+void nnue_refresh(Position *board, int ply)
 {
+    ply = nnue_clampPly(ply);
+    nnue_buildSide(board, 0, nnue_stack[ply].v[0]);
+    nnue_buildSide(board, 1, nnue_stack[ply].v[1]);
+}
 
+void nnue_copy(int parentPly, int childPly)
+{
+    parentPly = nnue_clampPly(parentPly);
+    childPly  = nnue_clampPly(childPly);
+    if (parentPly == childPly) return;
+    memcpy(&nnue_stack[childPly], &nnue_stack[parentPly], sizeof(NnueAccumulator));
+}
 
-    int16_t accUs[NNUE_HL];
-    int16_t accThem[NNUE_HL];
+// ---- incremental update --------------------------------------------------
+//
+// Call this BEFORE mutating the board (before makeMove). Reads
+// board->mailbox / epsquare / turn in their PRE-MOVE state.
 
-    nnue_buildAccumulator(board, board->turn, accUs);
-    nnue_buildAccumulator(board, board->turn ^ 1, accThem);
+void nnue_update(Position *board, uint16_t move, int parentPly, int childPly)
+{
+    parentPly = nnue_clampPly(parentPly);
+    childPly  = nnue_clampPly(childPly);
+
+    if (parentPly != childPly)
+        memcpy(&nnue_stack[childPly], &nnue_stack[parentPly], sizeof(NnueAccumulator));
+
+    NnueAccumulator *acc = &nnue_stack[childPly];
+
+    int to   = move & 0x3F;
+    int from = (move >> 6) & 0x3F;
+    int flag = (move >> 12) & 0xF;
+
+    int c    = board->turn;
+    int them = !c;
+
+    int piece  = board->mailbox[from];
+    int victim = board->mailbox[to];
+
+    if (piece == 6) return; // malformed move, nothing to update
+
+    nnue_touchPiece(acc, piece, c, from, -1);
+
+    if (piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1)
+    {
+        int capSq = to + (c == 0 ? 8 : -8);
+        nnue_touchPiece(acc, PAWNNUMBER, them, capSq, -1);
+    }
+    else if (victim != 6)
+    {
+        nnue_touchPiece(acc, victim, them, to, -1);
+    }
+
+    int placedPiece = piece;
+    switch (flag)
+    {
+        case 5: placedPiece = BISHOPNUMBER; break;
+        case 6: placedPiece = HORSENUMBER;  break;
+        case 7: placedPiece = ROOKNUMBER;   break;
+        case 8: placedPiece = QUEENNUMBER;  break;
+    }
+    nnue_touchPiece(acc, placedPiece, c, to, +1);
+
+    switch (flag)
+    {
+        case 1: // white kingside:  H1 -> F1
+            nnue_touchPiece(acc, ROOKNUMBER, c, H1, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, c, F1, +1);
+            break;
+        case 2: // white queenside: A1 -> D1
+            nnue_touchPiece(acc, ROOKNUMBER, c, A1, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, c, D1, +1);
+            break;
+        case 4: // black kingside:  H8 -> F8
+            nnue_touchPiece(acc, ROOKNUMBER, c, H8, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, c, F8, +1);
+            break;
+        case 3: // black queenside: A8 -> D8
+            nnue_touchPiece(acc, ROOKNUMBER, c, A8, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, c, D8, +1);
+            break;
+    }
+}
+
+// ---- forward pass ---------------------------------------------------------
+
+static int nnue_forward(Position *board, int ply)
+{
+    ply = nnue_clampPly(ply);
+    int16_t *accUs   = nnue_stack[ply].v[board->turn];
+    int16_t *accThem = nnue_stack[ply].v[board->turn ^ 1];
 
     long long unscaled = 0;
     for (int h = 0; h < NNUE_HL; h++)
@@ -149,7 +286,7 @@ static int nnue_forward(Position *board)
     return (int)step;
 }
 
-void init_tables()
+void init_tables(void)
 {
     if (nnue_load() != 0)
     {
@@ -158,7 +295,7 @@ void init_tables()
     }
 }
 
-int eval(Position *board)
+int eval(Position *board, int ply)
 {
-    return nnue_forward(board);
+    return nnue_forward(board, ply);
 }
