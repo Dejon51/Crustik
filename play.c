@@ -1644,6 +1644,8 @@ bool see_ge(Position *board, uint16_t move, int threshold)
     if (gain[d] < threshold) return false;
 
     uint64_t occ = board->color[0] | board->color[1];
+    uint64_t attackers = get_attackers(board, to, occ);
+
     occ &= ~(1ULL << from);
 
     if (from_piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1) {
@@ -1654,14 +1656,6 @@ bool see_ge(Position *board, uint16_t move, int threshold)
     /* Invariant across the whole exchange - hoist out of the loop */
     const uint64_t diag_pieces = board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER];
     const uint64_t orth_pieces = board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER];
-
-    /* Build attackers directly against post-from-removal occ (skip the
-     * redundant pre-removal get_attackers() call the old version made). */
-    uint64_t attackers = 0ULL;
-    attackers |= white_pawn_attacks[to] & board->pieces[PAWNNUMBER] & board->color[0];
-    attackers |= black_pawn_attacks[to] & board->pieces[PAWNNUMBER] & board->color[1];
-    attackers |= knighttable[to] & board->pieces[HORSENUMBER];
-    attackers |= kingtable[to] & board->pieces[KINGNUMBER];
 
     uint64_t bishops_queens = diag_pieces & occ;
     uint64_t rooks_queens   = orth_pieces & occ;
@@ -1691,26 +1685,12 @@ bool see_ge(Position *board, uint16_t move, int threshold)
 
         occ &= ~(1ULL << lva_sq);
 
-        /* Only redo slider lookups if a slider actually left the board -
-         * knight/king/pawn captures never reveal new diagonal/orthogonal
-         * attackers, so skip the magic-bitboard calls in that case. */
-        bool slider_left = (next_piece == BISHOPNUMBER || next_piece == ROOKNUMBER ||
-                            next_piece == QUEENNUMBER);
+        bishops_queens = diag_pieces & occ;
+        rooks_queens   = orth_pieces & occ;
 
-        if (slider_left)
-        {
-            bishops_queens = diag_pieces & occ;
-            rooks_queens   = orth_pieces & occ;
-
-            attackers &= ~(1ULL << lva_sq);
-            if (bishops_queens) attackers |= (getbishopAttacks(to, occ) & bishops_queens);
-            if (rooks_queens)   attackers |= (getrookAttacks(to, occ)   & rooks_queens);
-            attackers &= occ;
-        }
-        else
-        {
-            attackers &= occ;
-        }
+        if (bishops_queens) attackers |= (getbishopAttacks(to, occ) & bishops_queens);
+        if (rooks_queens)   attackers |= (getrookAttacks(to, occ)   & rooks_queens);
+        attackers &= occ;
 
         attacking_piece = next_piece;
         side = !side;
