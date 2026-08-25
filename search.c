@@ -402,7 +402,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return output;
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return (searchOutput){.score = eval(board,ply), .move = 0};
+        return (searchOutput){.score = eval(board, ply), .move = 0};
 
     if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
@@ -433,6 +433,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int in_check = king_in_check(board, board->turn);
     bool root_node = (ply == 0);
 
+    bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid);
+    int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
+    int cont_to = have_cont ? cont_stack[ply - 1].to : 0;
     if (in_check && ply < MAX_GAME_PLY)
         eval_stack[ply] = NO_EVAL;
 
@@ -450,7 +453,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!in_check)
     {
 
-        static_eval = eval(board,ply);
+        static_eval = eval(board, ply);
 
         if (ply < MAX_GAME_PLY)
         {
@@ -624,8 +627,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         int moved_piece = piece_on_square(board, move_from(move));
-        
-        nnue_update(board, move, ply, ply + 1); 
+
+        nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -654,15 +657,25 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 int from = move_from(move);
                 int to = move_to(move);
                 int hist = butterfly_hist[board->turn][from][to];
+
+                int cont_score = 0;
+                if (have_cont)
+                    cont_score = cont_hist[board->turn][cont_piece][cont_to][moved_piece][to];
+
                 reduction = lmr_reduction(depth, i + 1);
                 int is_pv_node = (beta - alpha) > 1;
 
                 if (is_pv_node)
                     reduction -= 1;
+
                 if (hist > 4000)
                     reduction--;
-
                 if (hist < -4000)
+                    reduction++;
+
+                if (cont_score > 4000)
+                    reduction--;
+                if (cont_score < -4000)
                     reduction++;
 
                 if (reduction < 0)
