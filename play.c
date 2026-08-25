@@ -1633,94 +1633,57 @@ bool see_ge(Position *board, uint16_t move, int threshold)
         if (flag == 8) promo_piece = QUEENNUMBER;
     }
 
-    int gain[32];
-    int d = 0;
+    int next_victim = (promo_piece != -1) ? promo_piece : from_piece;
 
-    gain[d] = PIECE_VALUES[target_piece];
-    if (promo_piece != -1) {
-        gain[d] += PIECE_VALUES[promo_piece] - PIECE_VALUES[PAWNNUMBER];
-    }
+    int balance = PIECE_VALUES[target_piece] - threshold;
+    if (promo_piece != -1)
+        balance += PIECE_VALUES[promo_piece] - PIECE_VALUES[PAWNNUMBER];
 
-    if (gain[d] < threshold) return false;
+    if (balance < 0) return false;
+
+    balance -= PIECE_VALUES[next_victim];
+    if (balance >= 0) return true;
 
     uint64_t occ = board->color[0] | board->color[1];
-    occ &= ~(1ULL << from);
+    occ = (occ ^ (1ULL << from)) | (1ULL << to);
 
     if (from_piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1) {
         int cap_sq = to + (board->turn == 0 ? 8 : -8);
-        occ &= ~(1ULL << cap_sq);
+        occ ^= (1ULL << cap_sq);
     }
 
-    /* Invariant across the whole exchange - hoist out of the loop */
     const uint64_t diag_pieces = board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER];
     const uint64_t orth_pieces = board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER];
 
-    /* Build attackers directly against post-from-removal occ (skip the
-     * redundant pre-removal get_attackers() call the old version made). */
-    uint64_t attackers = 0ULL;
-    attackers |= white_pawn_attacks[to] & board->pieces[PAWNNUMBER] & board->color[0];
-    attackers |= black_pawn_attacks[to] & board->pieces[PAWNNUMBER] & board->color[1];
-    attackers |= knighttable[to] & board->pieces[HORSENUMBER];
-    attackers |= kingtable[to] & board->pieces[KINGNUMBER];
-
-    uint64_t bishops_queens = diag_pieces & occ;
-    uint64_t rooks_queens   = orth_pieces & occ;
-
-    if (bishops_queens) attackers |= (getbishopAttacks(to, occ) & bishops_queens);
-    if (rooks_queens)   attackers |= (getrookAttacks(to, occ)   & rooks_queens);
-    attackers &= occ;
+    uint64_t attackers = get_attackers(board, to, occ) & occ;
 
     int side = !board->turn;
-    int attacking_piece = (promo_piece != -1) ? promo_piece : from_piece;
 
     while (1) {
-        int next_piece = -1;
-        int lva_sq = get_lva(board, attackers, side, &next_piece);
-        if (lva_sq == -1) break;
-
-        if (next_piece == KINGNUMBER) {
-            if (attackers & board->color[!side]) {
-                break;
-            }
-        }
-
-        d++;
-        gain[d] = PIECE_VALUES[attacking_piece] - gain[d - 1];
-
-        if (gain[d] < threshold && -gain[d - 1] >= threshold) break;
+        int piece_type = -1;
+        int lva_sq = get_lva(board, attackers, side, &piece_type);
+        if (lva_sq == -1) break; 
 
         occ &= ~(1ULL << lva_sq);
 
-        /* Only redo slider lookups if a slider actually left the board -
-         * knight/king/pawn captures never reveal new diagonal/orthogonal
-         * attackers, so skip the magic-bitboard calls in that case. */
-        bool slider_left = (next_piece == BISHOPNUMBER || next_piece == ROOKNUMBER ||
-                            next_piece == QUEENNUMBER);
+        if (piece_type == PAWNNUMBER || piece_type == BISHOPNUMBER || piece_type == QUEENNUMBER)
+            attackers |= getbishopAttacks(to, occ) & diag_pieces;
 
-        if (slider_left)
-        {
-            bishops_queens = diag_pieces & occ;
-            rooks_queens   = orth_pieces & occ;
+        if (piece_type == ROOKNUMBER || piece_type == QUEENNUMBER)
+            attackers |= getrookAttacks(to, occ) & orth_pieces;
 
-            attackers &= ~(1ULL << lva_sq);
-            if (bishops_queens) attackers |= (getbishopAttacks(to, occ) & bishops_queens);
-            if (rooks_queens)   attackers |= (getrookAttacks(to, occ)   & rooks_queens);
-            attackers &= occ;
-        }
-        else
-        {
-            attackers &= occ;
-        }
+        attackers &= occ;
 
-        attacking_piece = next_piece;
         side = !side;
+        balance = -balance - 1 - PIECE_VALUES[next_victim];
+        next_victim = piece_type;
+
+        if (balance >= 0) {
+            if (next_victim == KINGNUMBER && (attackers & board->color[side]))
+                side = !side;
+            break;
+        }
     }
 
-    while (d > 0) {
-        int negated = -gain[d];
-        gain[d - 1] = (gain[d - 1] < negated) ? gain[d - 1] : negated;
-        d--;
-    }
-
-    return gain[0] >= threshold;
+    return board->turn != side;
 }
