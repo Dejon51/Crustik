@@ -402,7 +402,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return output;
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return (searchOutput){.score = eval(board,ply), .move = 0};
+        return (searchOutput){.score = eval(board, ply), .move = 0};
 
     if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
@@ -414,9 +414,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
     TTEntry *entry = tt_probe(board->hash);
+    bool tt_capture = false;
     if (entry)
     {
         tt_move = entry->move;
+        tt_capture = tt_move != 0 && is_capture_move(board, tt_move);
 
         if (entry->depth >= depth && !pv && stack->excluded_move == 0)
         {
@@ -450,7 +452,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!in_check)
     {
 
-        static_eval = eval(board,ply);
+        static_eval = eval(board, ply);
 
         if (ply < MAX_GAME_PLY)
         {
@@ -624,8 +626,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         int moved_piece = piece_on_square(board, move_from(move));
-        
-        nnue_update(board, move, ply, ply + 1); 
+
+        nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -663,6 +665,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     reduction--;
 
                 if (hist < -4000)
+                    reduction++;
+
+                if (tt_capture)
                     reduction++;
 
                 if (reduction < 0)
