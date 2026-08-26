@@ -673,10 +673,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 if (hist < -4000)
                     reduction++;
 
-                if (cont_score > 4000)
+                if (cont_score > 8000)
                     reduction--;
-                if (cont_score < -4000)
-                    reduction++;
+
 
                 if (reduction < 0)
                     reduction = 0;
