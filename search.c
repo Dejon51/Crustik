@@ -33,6 +33,9 @@ static int eval_stack[MAX_GAME_PLY];
 
 static int cont_hist[2][6][64][6][64];
 
+// capture history: [side][moving_piece][to][captured_piece]
+static int capture_hist[2][6][64][6];
+
 typedef struct
 {
     int piece;
@@ -48,6 +51,7 @@ void reset_history(void)
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(cont_stack, 0, sizeof cont_stack);
+    memset(capture_hist, 0, sizeof capture_hist);
     for (int i = 0; i < MAX_GAME_PLY; i++)
         eval_stack[i] = NO_EVAL;
 }
@@ -236,7 +240,8 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         if (victim != -1 && attacker != -1)
         {
             int mvv_lva = piece_value_lva(victim) * 10 - piece_value_lva(attacker);
-            scores[i] = CAPTURE_BASE + mvv_lva;
+            int ch_score = capture_hist[board->turn][attacker][to][victim];
+            scores[i] = CAPTURE_BASE + mvv_lva * 32 + ch_score;
             continue;
         }
 
@@ -532,6 +537,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         bool is_capture = is_capture_move(board, move);
+        int captured_piece = is_capture ? piece_on_square(board, move_to(move)) : -1;
         bool is_killer =
             move == killer_moves[ply][0] ||
             move == killer_moves[ply][1];
@@ -743,6 +749,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     *ch += malus - *ch * abs(malus) / MAX_HISTORY;
                 }
             }
+            else if (is_capture && captured_piece != -1)
+            {
+                int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
+                int *ch = &capture_hist[board->turn][moved_piece][to][captured_piece];
+                *ch += malus - *ch * abs(malus) / MAX_HISTORY;
+            }
         }
 
         if (alpha >= beta)
@@ -768,6 +780,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     killer_moves[ply][1] = killer_moves[ply][0];
                     killer_moves[ply][0] = move;
                 }
+            }
+            else if (is_capture && captured_piece != -1)
+            {
+                int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
+                int *ch = &capture_hist[board->turn][moved_piece][to][captured_piece];
+                *ch += clampedBonus - *ch * abs(clampedBonus) / MAX_HISTORY;
             }
 
             break;
