@@ -1,4 +1,8 @@
-- Transposition tables
-- PVS and move ordering
-- Null move pruning
-- Better eval
+- SIMD NNUE
+- 256HL Net
+- Cut Node
+- More improving Heuristic
+- Fix PV 3fold and 50mv
+- Multithread SMP
+- TT aging
+- Qsearch TT

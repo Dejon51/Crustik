@@ -5,11 +5,12 @@
 ### Crustik Chess Engine
 
 #### Plays like a human
-###### Won't ever
+###### Depends on what you consider human.
 
 
 ##### Summary
-- Each piece has its own eval and takes decisions by itself and consults or pieces.
+- ~~Each piece has its own eval and takes decisions by itself and consults or pieces.~~ 
+    - Very old architecture
 - Uses strategies just like humans.
 - Runs on a potato.
 - Works on any system easily because it doesnt really need too many libraries.
@@ -41,3 +42,7 @@ if you have the expertise you can use any other C compiler by editing the .sh fi
 - Aleks Peshkov
 - tsoj
 - aeth
+- jb1729
+- MasterStruct 👌
+- ### Andrew (AGE)
+
