@@ -1,6 +1,3 @@
-#include <stdio.h>
-#include "text.h"
-
 const char *HELP_TEXT =
 
 "uci              -> init engine\n"
@@ -16,8 +13,18 @@ const char *HELP_TEXT =
 "go depth <n>     -> search fixed depth\n"
 "go movetime <ms> -> search fixed time\n"
 "go perft <n>     -> perft test\n"
+"go perft <n> bulk -> bulk perft test\n"
+"go perft <n> divide <n>\n"
+"                 -> perft divide test\n"
 "go wtime/btime/winc/binc\n"
 "                 -> timed search\n"
+"go infinite      -> search indefinitely\n"
+"\n"
+"setoption name Hash value <mb>\n"
+"                 -> set transposition table size\n"
+"setoption name SoftNodes value <true|false>\n"
+"                 -> enable/disable soft node limit\n"
 "\n"
 "d                -> display board\n"
-"pml <i>          -> test move list entry\n";
+"pml <i>          -> test move list entry\n"
+"help             -> display this help menu\n";
