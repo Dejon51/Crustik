@@ -621,6 +621,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 return (searchOutput){.score = beta, .move = 0};
             }
+            else if (tt_score >= beta)
+	    {
+	    	extension = -1;
+	    }
         }
 
         int moved_piece = piece_on_square(board, move_from(move));
