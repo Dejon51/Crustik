@@ -410,9 +410,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (ply > 0 && is_repetition_or_fifty(board, ply))
         return (searchOutput){.score = 0, .move = 0};
 
-    if (depth <= 0)
-        return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
-
     TTEntry *entry = tt_probe(board->hash);
     if (entry)
     {
@@ -430,6 +427,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = tt_score, .move = tt_move};
         }
     }
+
+    if (depth <= 0)
+        return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
+
     int in_check = king_in_check(board, board->turn);
     bool root_node = (ply == 0);
 
