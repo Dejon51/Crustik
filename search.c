@@ -33,6 +33,8 @@ static int eval_stack[MAX_GAME_PLY];
 
 static int cont_hist[2][6][64][6][64];
 
+static int cap_hist[2][6][64][6];
+
 typedef struct
 {
     int piece;
@@ -47,6 +49,7 @@ void reset_history(void)
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
+    memset(cap_hist, 0, sizeof cap_hist);
     memset(cont_stack, 0, sizeof cont_stack);
     for (int i = 0; i < MAX_GAME_PLY; i++)
         eval_stack[i] = NO_EVAL;
@@ -236,7 +239,8 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         if (victim != -1 && attacker != -1)
         {
             int mvv_lva = piece_value_lva(victim) * 10 - piece_value_lva(attacker);
-            scores[i] = CAPTURE_BASE + mvv_lva;
+            int ch = cap_hist[board->turn][attacker][to][victim];
+            scores[i] = CAPTURE_BASE + mvv_lva + ch / 32;
             continue;
         }
 
@@ -629,7 +633,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         int moved_piece = piece_on_square(board, move_from(move));
-        
+        int captured_piece = piece_on_square(board, move_to(move));
+
         nnue_update(board, move, ply, ply + 1); 
         Position copy = *board;
         makeMove(&copy, &move_list, i);
@@ -654,11 +659,21 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int reduction = 0;
             if (!root_node && !in_check && depth >= 3 && i >= 4 &&
-                !is_capture && !is_promotion && move != tt_move)
+                !is_promotion && move != tt_move)
             {
                 int from = move_from(move);
                 int to = move_to(move);
-                int hist = butterfly_hist[board->turn][from][to];
+                int hist;
+
+                if (is_capture)
+                {
+                    hist = (captured_piece != -1) ? cap_hist[board->turn][moved_piece][to][captured_piece] : 0;
+                }
+                else
+                {
+                    hist = butterfly_hist[board->turn][from][to];
+                }
+
                 reduction = lmr_reduction(depth, i + 1);
                 int is_pv_node = (beta - alpha) > 1;
 
@@ -748,6 +763,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     *ch += malus - *ch * abs(malus) / MAX_HISTORY;
                 }
             }
+            else if (is_capture && !is_promotion && captured_piece != -1)
+            {
+                int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
+
+                int *ch = &cap_hist[board->turn][moved_piece][to][captured_piece];
+                *ch += malus - *ch * abs(malus) / MAX_HISTORY;
+            }
         }
 
         if (alpha >= beta)
@@ -773,6 +795,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     killer_moves[ply][1] = killer_moves[ply][0];
                     killer_moves[ply][0] = move;
                 }
+            }
+            else if (is_capture && !is_promotion && captured_piece != -1)
+            {
+                int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
+
+                int *ch = &cap_hist[board->turn][moved_piece][to][captured_piece];
+                *ch += clampedBonus - *ch * abs(clampedBonus) / MAX_HISTORY;
             }
 
             break;
@@ -960,4 +989,3 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     return best_move_so_far;
 }
-
