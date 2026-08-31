@@ -960,3 +960,4 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     return best_move_so_far;
 }
+
