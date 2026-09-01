@@ -731,7 +731,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int from = (move >> 6) & 0x3F;
             int to = move & 0x3F;
 
-            if (!is_capture && !is_promotion)
+            if (!is_capture)
             {
                 int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
 
@@ -755,7 +755,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int from = move_from(move);
             int to = move_to(move);
 
-            if (!is_capture && !is_promotion)
+            if (!is_capture)
             {
                 int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
                 butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
