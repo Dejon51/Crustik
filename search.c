@@ -307,7 +307,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     uint16_t tt_move = 0;
 
     TTEntry *entry = tt_probe(board->hash);
-    if (entry)
+    if (entry )
     {
         int tt_score = score_from_tt(entry->score, ply);
 
@@ -442,7 +442,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return (searchOutput){.score = 0, .move = 0};
 
     TTEntry *entry = tt_probe(board->hash);
-    if (entry)
+    if (entry && !entry->is_qsearch)
     {
         tt_move = entry->move;
 
