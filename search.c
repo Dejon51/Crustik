@@ -300,10 +300,28 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     if (stop->max_nodes && stop->nodes >= stop->max_nodes)
         stop->stop = 1;
 
-    int static_eval = eval(board, ply);
-
     if (stop->stop)
-        return static_eval;
+        return eval(board, ply);
+
+    int alpha_orig = alpha;
+    uint16_t tt_move = 0;
+
+    TTEntry *entry = tt_probe(board->hash);
+    if (entry)
+    {
+        int tt_score = score_from_tt(entry->score, ply);
+
+        if (entry->flag == TT_EXACT)
+            return tt_score;
+        if (entry->flag == TT_ALPHA && tt_score <= alpha)
+            return tt_score;
+        if (entry->flag == TT_BETA && tt_score >= beta)
+            return tt_score;
+
+        tt_move = entry->move;
+    }
+
+    int static_eval = eval(board, ply);
 
     if (static_eval >= beta)
         return static_eval;
@@ -317,9 +335,10 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     MoveList move_list = {0};
 
     qsearchMoves(board, &move_list, board->turn);
-    move_list = ordermoves(board, &move_list, ply, 0);
+    move_list = ordermoves(board, &move_list, ply, tt_move);
 
     int best_score = static_eval;
+    uint16_t best_move = 0;
 
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
@@ -360,13 +379,25 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
             break;
 
         if (score > best_score)
+        {
             best_score = score;
+            best_move = move;
+        }
 
         if (score >= beta)
+        {
+            tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1);
             return score;
+        }
 
         if (score > alpha)
             alpha = score;
+    }
+
+    if (!stop->stop)
+    {
+        int qflag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, 0, qflag, 1);
     }
 
     return best_score;
@@ -795,7 +826,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (tt_depth < 0)
             tt_depth = 0;
 
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag);
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag,0);
     }
 
     output.score = best_score;

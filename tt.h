@@ -18,6 +18,7 @@ typedef struct {
     uint16_t move;
     uint8_t  depth;
     uint8_t  flag;
+    uint8_t  is_qsearch; 
     uint8_t  valid;
 } TTEntry;
 
@@ -25,7 +26,7 @@ void     tt_init(size_t mb);
 void     tt_resize(size_t mb);
 void     tt_free(void);
 void     tt_clear(void);
-void     tt_store(uint64_t key, int score, uint16_t move, int depth, int flag);
+void     tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int is_qsearch);
 TTEntry *tt_probe(uint64_t key);
 size_t   tt_size_mb(void);
 
