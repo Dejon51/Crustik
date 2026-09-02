@@ -386,7 +386,6 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         if (score >= beta)
         {
-            tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1);
             return score;
         }
 
@@ -394,11 +393,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
             alpha = score;
     }
 
-    if (!stop->stop)
-    {
-        int qflag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, 0, qflag, 1);
-    }
+
 
     return best_score;
 }
