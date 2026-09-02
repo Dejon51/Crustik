@@ -1140,6 +1140,9 @@ static inline void makeMove##COLOR(Position *board, MoveList *list, int move)  \
         board->epsquare = -1;                                                  \
                                                                                \
         board->hash ^= zobrist_table[(c * 384) + (moving_piece * 64) + from];  \
+        if (moving_piece == 0)                                                 \
+            board->pawn_hash ^= zobrist_table[(c * 384) + (0 * 64) + from];    \
+        /* PAWNHASH: pawn leaves 'from' */                                     \
                                                                                \
         if (moving_piece == 0) board->halfmoves = 0;                           \
         else                  board->halfmoves++;                               \
@@ -1165,6 +1168,8 @@ static inline void makeMove##COLOR(Position *board, MoveList *list, int move)  \
         board->mailbox[to]          = piece;                                   \
                                                                                \
         board->hash ^= zobrist_table[(c * 384) + (moving_piece * 64) + to];    \
+        if (moving_piece == 0)                                                 \
+            board->pawn_hash ^= zobrist_table[(c * 384) + (0 * 64) + to];      \
                                                                                \
         if (to == H1) board->castling &= ~(1U << WHITE_KINGSIDE);              \
         if (to == A1) board->castling &= ~(1U << WHITE_QUEENSIDE);             \
@@ -1188,16 +1193,20 @@ static inline void makeMove##COLOR(Position *board, MoveList *list, int move)  \
         return;                                                                \
     }                                                                          \
                                                                                \
-    /* general move (captures, promotions, castling, ep) */                    \
     board->hash ^= zobrist_table[769 + old_castling];                          \
     if (old_epsquare != -1)                                                    \
         board->hash ^= zobrist_table[785 + (old_epsquare & 7)];                \
     board->epsquare = -1;                                                      \
                                                                                \
     board->hash ^= zobrist_table[(c * 384) + (moving_piece * 64) + from];      \
+    if (moving_piece == 0)                                                     \
+        board->pawn_hash ^= zobrist_table[(c * 384) + (0 * 64) + from];        \
                                                                                \
-    if (victim != 6)                                                           \
+    if (victim != 6) {                                                         \
         board->hash ^= zobrist_table[(!c * 384) + (victim * 64) + to];         \
+        if (victim == 0)                                                       \
+            board->pawn_hash ^= zobrist_table[(!c * 384) + (0 * 64) + to];     \
+    }                                                                          \
                                                                                \
     bool is_capture    = (victim != 6);                                         \
     bool is_pawn_move  = (moving_piece == 0);                                  \
@@ -1283,6 +1292,7 @@ static inline void makeMove##COLOR(Position *board, MoveList *list, int move)  \
         board->color[!c]       &= ~capBB;                                      \
         board->mailbox[captured_sq] = 6;                                       \
         board->hash ^= zobrist_table[(!c * 384) + (0 * 64) + captured_sq];     \
+        board->pawn_hash ^= zobrist_table[(!c * 384) + (0 * 64) + captured_sq];\
     }                                                                          \
                                                                                \
     if (victim != 6) board->pieces[victim] &= ~tobb;                           \
@@ -1293,6 +1303,8 @@ static inline void makeMove##COLOR(Position *board, MoveList *list, int move)  \
     board->mailbox[to]    = piece;                                             \
                                                                                \
     board->hash ^= zobrist_table[(c * 384) + (piece * 64) + to];               \
+    if (piece == 0)                                                            \
+        board->pawn_hash ^= zobrist_table[(c * 384) + (0 * 64) + to];          \
                                                                                \
     if (to == H1) board->castling &= ~(1U << WHITE_KINGSIDE);                  \
     if (to == A1) board->castling &= ~(1U << WHITE_QUEENSIDE);                 \

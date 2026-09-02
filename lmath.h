@@ -34,6 +34,7 @@ typedef struct {
     uint8_t halfmoves;   // half-move clock
     uint8_t fullmoves; 
     uint64_t hash;
+    uint64_t pawn_hash; 
     bool turn;
 } Position;
 
