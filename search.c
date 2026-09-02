@@ -321,7 +321,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         tt_move = entry->move;
     }
 
-    int static_eval = eval(board, ply);
+    int static_eval = (entry && entry->eval != NO_EVAL) ? entry->eval : eval(board, ply);
 
     if (static_eval >= beta)
         return static_eval;
@@ -386,7 +386,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         if (score >= beta)
         {
-            tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1);
+            tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1, static_eval);
             return score;
         }
 
@@ -397,7 +397,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     if (!stop->stop)
     {
         int qflag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, 0, qflag, 1);
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, 0, qflag, 1, static_eval);
     }
 
     return best_score;
@@ -481,8 +481,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (!in_check)
     {
-
-        static_eval = eval(board,ply);
+        if (entry && entry->eval != NO_EVAL)
+            static_eval = entry->eval;
+        else
+            static_eval = eval(board, ply);
 
         if (ply < MAX_GAME_PLY)
         {
@@ -826,7 +828,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (tt_depth < 0)
             tt_depth = 0;
 
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag,0);
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag, 0,
+                 in_check ? NO_EVAL : static_eval);
     }
 
     output.score = best_score;
@@ -991,4 +994,3 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     return best_move_so_far;
 }
-

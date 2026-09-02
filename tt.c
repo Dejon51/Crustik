@@ -1,6 +1,7 @@
 #include "tt.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #if defined(__SIZEOF_INT128__)
 #define HAVE_INT128 1
@@ -74,7 +75,7 @@ void tt_clear(void)
     memset(tt, 0, tt_num_entries * sizeof(TTEntry));
 }
 
-void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int is_qsearch)
+void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int is_qsearch, int eval)
 {
     if (!tt || !tt_num_entries) return;
 
@@ -83,7 +84,9 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
     if (e->valid && e->key != key && is_qsearch && !e->is_qsearch)
         return;
 
-    if (!e->valid || e->key != key || depth >= e->depth)
+    bool same_key = e->valid && e->key == key;
+
+    if (!e->valid || !same_key || depth >= e->depth)
     {
         e->key        = key;
         e->score      = (int16_t)score;
@@ -92,6 +95,11 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
         e->flag       = (uint8_t)flag;
         e->is_qsearch = (uint8_t)is_qsearch;
         e->valid      = 1;
+        e->eval       = (int16_t)eval;
+    }
+    else if (same_key)
+    {
+        e->eval = (int16_t)eval;
     }
 }
 
