@@ -52,6 +52,12 @@ void reset_history(void)
         eval_stack[i] = NO_EVAL;
 }
 
+static inline bool is_pv_node_flag(int alpha, int beta)
+{
+    return (beta - alpha) > 1;
+}
+
+
 int lmr_table[MAX_DEPTH + 1][MAX_LMR_MOVES + 1];
 
 void init_lmr()
@@ -648,6 +654,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (se_result.score < singular_beta)
             {
                 extension = 1;
+                extension += (!is_pv_node_flag(alpha, beta) && se_result.score <= singular_beta - 21);
             }
             else if (se_result.score >= beta && (beta - alpha) == 1)
             {
