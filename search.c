@@ -22,6 +22,11 @@
 
 #define MAX_SEARCH_PLY 128
 
+#define CORR_HIST_SIZE 16384
+#define CORR_HIST_MASK (CORR_HIST_SIZE - 1)
+#define CORR_HIST_SCALE 256
+#define MAX_CORR_HIST (CORR_HIST_SCALE * 32)
+
 uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
 
@@ -32,6 +37,7 @@ static uint16_t killer_moves[MAX_GAME_PLY][2];
 static int eval_stack[MAX_GAME_PLY];
 
 static int cont_hist[2][6][64][6][64];
+static int pawn_corr_hist[2][CORR_HIST_SIZE];
 
 typedef struct
 {
@@ -48,6 +54,7 @@ void reset_history(void)
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(cont_stack, 0, sizeof cont_stack);
+    memset(pawn_corr_hist, 0, sizeof pawn_corr_hist);
     for (int i = 0; i < MAX_GAME_PLY; i++)
         eval_stack[i] = NO_EVAL;
 }
@@ -134,17 +141,17 @@ static int piece_value_lva(int piece)
     switch (piece)
     {
     case 0:
-        return 100; // pawn
+        return 100;
     case 1:
-        return 330; // bishop
+        return 330;
     case 2:
-        return 320; // horse/knight
+        return 320;
     case 3:
-        return 500; // rook
+        return 500;
     case 4:
-        return 900; // queen
+        return 900;
     case 5:
-        return 20000; // king
+        return 20000;
     }
     return 0;
 }
@@ -172,6 +179,38 @@ static inline int lmr_reduction(int depth, int move_number)
         move_number = MAX_LMR_MOVES;
 
     return lmr_table[depth][move_number];
+}
+
+static inline int corr_hist_index(uint64_t pawn_hash)
+{
+    return (int)(pawn_hash & CORR_HIST_MASK);
+}
+
+static inline int correct_eval(Position *board, int raw_eval)
+{
+    int idx = corr_hist_index(board->pawn_hash);
+    int correction = pawn_corr_hist[board->turn][idx] / CORR_HIST_SCALE;
+    int corrected = raw_eval + correction;
+
+    if (corrected > 31000)
+        corrected = 31000;
+    if (corrected < -31000)
+        corrected = -31000;
+    return corrected;
+}
+
+static inline void update_corr_hist(Position *board, int raw_eval, int best_score, int depth)
+{
+    if (is_mate_score(best_score) || is_mate_score(raw_eval))
+        return;
+
+    int idx = corr_hist_index(board->pawn_hash);
+    int *ch = &pawn_corr_hist[board->turn][idx];
+
+    int weight = depth > 16 ? 16 : depth;
+    int bonus = clamp_int((best_score - raw_eval) * weight, -MAX_CORR_HIST, MAX_CORR_HIST);
+
+    *ch += bonus - *ch * abs(bonus) / MAX_CORR_HIST;
 }
 
 static bool is_repetition_or_fifty(Position *board, int ply)
@@ -204,7 +243,6 @@ static bool is_repetition_or_fifty(Position *board, int ply)
     return false;
 }
 
-// 145 elo moveordering
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList ordered = *move_list;
@@ -285,7 +323,6 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     return ordered;
 }
 
-// 361 elo qsearch
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 {
     stop->nodes++;
@@ -322,22 +359,23 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     }
 
     int static_eval = eval(board, ply);
+    int corrected_eval = correct_eval(board, static_eval);
 
-    if (static_eval >= beta)
-        return static_eval;
+    if (corrected_eval >= beta)
+        return corrected_eval;
 
-    if (static_eval > alpha)
-        alpha = static_eval;
+    if (corrected_eval > alpha)
+        alpha = corrected_eval;
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return static_eval;
+        return corrected_eval;
 
     MoveList move_list = {0};
 
     qsearchMoves(board, &move_list, board->turn);
     move_list = ordermoves(board, &move_list, ply, tt_move);
 
-    int best_score = static_eval;
+    int best_score = corrected_eval;
     uint16_t best_move = 0;
 
     for (unsigned int i = 0; i < move_list.offset; i++)
@@ -477,20 +515,21 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     }
 
     int static_eval = 0;
+    int corrected_eval = 0;
     bool improving = false;
 
     if (!in_check)
     {
-
         static_eval = eval(board,ply);
+        corrected_eval = correct_eval(board, static_eval);
 
         if (ply < MAX_GAME_PLY)
         {
             improving = (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
-                            ? static_eval > eval_stack[ply - 2]
+                            ? corrected_eval > eval_stack[ply - 2]
                             : true;
 
-            eval_stack[ply] = static_eval;
+            eval_stack[ply] = corrected_eval;
         }
 
         if (!root_node &&
@@ -499,16 +538,16 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int margin = 100 * depth;
 
-            if (static_eval - margin >= beta)
+            if (corrected_eval - margin >= beta)
             {
                 return (searchOutput){
-                    .score = (static_eval + beta) / 2,
+                    .score = (corrected_eval + beta) / 2,
                     .move = 0};
             }
         }
-        if (depth >= 3 && !root_node && static_eval >= beta)
+        if (depth >= 3 && !root_node && corrected_eval >= beta)
         {
-            int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
+            int R = 3 + depth / 6 + (corrected_eval - beta > 300 ? 1 : 0);
             if (R > depth - 1)
                 R = depth - 1;
 
@@ -610,7 +649,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (depth <= 1 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
             int futility_margin = 120;
-            if (static_eval + futility_margin <= alpha)
+            if (corrected_eval + futility_margin <= alpha)
             {
 
                 if (!is_capture && !is_promotion)
@@ -827,6 +866,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             tt_depth = 0;
 
         tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag,0);
+
+        if (!in_check && flag != TT_ALPHA)
+            update_corr_hist(board, static_eval, best_score, depth);
     }
 
     output.score = best_score;
@@ -991,4 +1033,3 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     return best_move_so_far;
 }
-
