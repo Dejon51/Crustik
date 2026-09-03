@@ -506,7 +506,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     .move = 0};
             }
         }
-        if (depth >= 3 && !root_node && static_eval >= beta)
+        if (depth >= 3 && !root_node && static_eval >= beta )
         {
             int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
             if (R > depth - 1)
@@ -576,7 +576,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             depth <= 3 &&
             !is_capture &&
             !is_killer &&
-            (int)i >= (improving ? 24 : 16))
+            (int)i >= (improving ? 24 : 16) &&
+            move != tt_move)
         {
             continue;
         }
@@ -609,7 +610,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 continue;
         }
 
-        if (depth <= 1 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
+        if (depth <= 1 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta) && move != tt_move)
         {
             int futility_margin = 120;
             if (static_eval + futility_margin <= alpha)
@@ -632,7 +633,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             depth >= 8 &&
             entry->depth >= depth - 3 &&
             entry->flag != TT_ALPHA &&
-            !is_mate_score(entry->score))
+            !is_mate_score(entry->score) && 
+            move != tt_move)
         {
             int tt_score = score_from_tt(entry->score, ply);
             int singular_beta = tt_score - 2 * depth;
