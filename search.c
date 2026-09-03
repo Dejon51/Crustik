@@ -547,6 +547,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     uint16_t best_move = move_list.movelist[0];
 
+    int searched_any = 0;  
+
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
@@ -664,6 +666,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         nnue_update(board, move, ply, ply + 1); 
         Position copy = *board;
         makeMove(&copy, &move_list, i);
+        searched_any = 1;  
 
         if (ply < MAX_SEARCH_PLY)
         {
@@ -809,6 +812,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             break;
         }
     }
+    if (!searched_any)
+        return (searchOutput){.score = in_check ? eval(board, ply) : static_eval,
+                              .move = 0};
 
     if (!stop->stop && stack->excluded_move == 0)
     {
