@@ -307,7 +307,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     uint16_t tt_move = 0;
 
     TTEntry *entry = tt_probe(board->hash);
-    if (entry )
+    if (entry)
     {
         int tt_score = score_from_tt(entry->score, ply);
 
@@ -321,23 +321,39 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         tt_move = entry->move;
     }
 
+    bool in_check = king_in_check(board, board->turn);
+
     int static_eval = eval(board, ply);
+    int best_score;
 
-    if (static_eval >= beta)
-        return static_eval;
+    MoveList move_list = {0};
 
-    if (static_eval > alpha)
-        alpha = static_eval;
+    if (in_check)
+    {
+        best_score = -MATE_SCORE + ply;
+        legalMoveGen(board, &move_list);
+
+        if (move_list.offset == 0)
+            return -MATE_SCORE + ply;
+    }
+    else
+    {
+        best_score = static_eval;
+
+        if (static_eval >= beta)
+            return static_eval;
+
+        if (static_eval > alpha)
+            alpha = static_eval;
+
+        qsearchMoves(board, &move_list, board->turn);
+    }
 
     if (ply >= MAX_SEARCH_PLY - 1)
         return static_eval;
 
-    MoveList move_list = {0};
-
-    qsearchMoves(board, &move_list, board->turn);
     move_list = ordermoves(board, &move_list, ply, tt_move);
 
-    int best_score = static_eval;
     uint16_t best_move = 0;
 
     for (unsigned int i = 0; i < move_list.offset; i++)
@@ -347,24 +363,28 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         uint16_t move = move_list.movelist[i];
 
-        int to = move_to(move);
-        int victim = piece_on_square(board, to);
-        int flag = (move >> 12) & 0xF;
-        bool is_promo = flag >= 5 && flag <= 8;
-        int delta_margin = 200;
-        if (!is_mate_score(alpha) && !is_mate_score(beta))
+        if (!in_check)
         {
-            int gain = (victim != -1) ? piece_value_lva(victim) : 0;
+            int to = move_to(move);
+            int victim = piece_on_square(board, to);
+            int flag = (move >> 12) & 0xF;
+            bool is_promo = flag >= 5 && flag <= 8;
+            int delta_margin = 200;
+            if (!is_mate_score(alpha) && !is_mate_score(beta))
+            {
+                int gain = (victim != -1) ? piece_value_lva(victim) : 0;
 
-            if (is_promo)
-                gain += piece_value_lva(4) - piece_value_lva(0);
+                if (is_promo)
+                    gain += piece_value_lva(4) - piece_value_lva(0);
 
-            if (static_eval + gain + delta_margin <= alpha)
+                if (static_eval + gain + delta_margin <= alpha)
+                    continue;
+            }
+
+            if (!see_ge(board, move, 0))
                 continue;
         }
 
-        if (!see_ge(board, move, 0))
-            continue;
         nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
@@ -433,7 +453,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return output;
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return (searchOutput){.score = eval(board,ply), .move = 0};
+        return (searchOutput){.score = eval(board, ply), .move = 0};
 
     if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
@@ -482,7 +502,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!in_check)
     {
 
-        static_eval = eval(board,ply);
+        static_eval = eval(board, ply);
 
         if (ply < MAX_GAME_PLY)
         {
@@ -547,7 +567,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     uint16_t best_move = move_list.movelist[0];
 
-    int searched_any = 0;  
+    int searched_any = 0;
 
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
@@ -656,17 +676,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
             }
             else if (tt_score >= beta)
-	    {
-	    	extension = -1;
-	    }
+            {
+                extension = -1;
+            }
         }
 
         int moved_piece = piece_on_square(board, move_from(move));
-        
-        nnue_update(board, move, ply, ply + 1); 
+
+        nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
-        searched_any = 1;  
+        searched_any = 1;
 
         if (ply < MAX_SEARCH_PLY)
         {
@@ -832,7 +852,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (tt_depth < 0)
             tt_depth = 0;
 
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag,0);
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag, 0);
     }
 
     output.score = best_score;
@@ -997,4 +1017,3 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     return best_move_so_far;
 }
-
