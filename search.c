@@ -531,7 +531,57 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
         }
     }
+    if (!root_node && !pv && depth >= 6 && !in_check &&
+        stack->excluded_move == 0 &&
+        !is_mate_score(beta) && !is_mate_score(static_eval))
+    {
+        int raised_beta = beta + 300; 
 
+        MoveList cap_list = {0};
+        qsearchMoves(board, &cap_list, board->turn);
+
+        for (unsigned int i = 0; i < cap_list.offset; i++)
+        {
+            uint16_t move = cap_list.movelist[i];
+
+            int to = move_to(move);
+            int victim = piece_on_square(board, to);
+            int flag = (move >> 12) & 0xF;
+            bool is_promo = flag >= 5 && flag <= 8;
+
+            if (!is_promo && (victim == -1 || piece_value_lva(victim) < 500))
+                continue;
+
+            if (!see_ge(board, move, raised_beta - static_eval))
+                continue;
+
+            nnue_update(board, move, ply, ply + 1);
+            Position copy = *board;
+            makeMove(&copy, &cap_list, i);
+
+            uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+            if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
+                continue;
+
+            int score = -quiesce(&copy, -raised_beta, -raised_beta + 1,
+                                 ply + 1, stop);
+            if (stop->stop)
+                return (searchOutput){0};
+
+            if (score >= raised_beta)
+            {
+                score = -search(&copy, depth - 3, ply + 1,
+                                -raised_beta, -raised_beta + 1,
+                                stop, NULL, &no_excl)
+                             .score;
+                if (stop->stop)
+                    return (searchOutput){0};
+
+                if (score >= raised_beta)
+                    return (searchOutput){.score = beta, .move = 0};
+            }
+        }
+    }
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
     move_list = ordermoves(board, &move_list, ply, tt_move);
