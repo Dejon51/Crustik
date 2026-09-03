@@ -688,7 +688,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int reduction = 0;
             if (!root_node && !in_check && depth >= 3 && i >= 4 &&
-                !is_capture && !is_promotion && move != tt_move)
+                !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
                 int from = move_from(move);
                 int to = move_to(move);
