@@ -586,7 +586,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !in_check &&
             depth <= 8 &&
             !is_mate_score(alpha) &&
-            !is_mate_score(beta))
+            !is_mate_score(beta) &&
+            move != tt_move)
         {
             int see_threshold = is_capture ? -90 * depth : -50 * depth;
             if (!see_ge(board, move, see_threshold))
