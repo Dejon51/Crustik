@@ -307,7 +307,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     uint16_t tt_move = 0;
 
     TTEntry *entry = tt_probe(board->hash);
-    if (entry )
+    if (entry)
     {
         int tt_score = score_from_tt(entry->score, ply);
 
@@ -433,7 +433,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return output;
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return (searchOutput){.score = eval(board,ply), .move = 0};
+        return (searchOutput){.score = eval(board, ply), .move = 0};
 
     if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
@@ -482,7 +482,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!in_check)
     {
 
-        static_eval = eval(board,ply);
+        static_eval = eval(board, ply);
 
         if (ply < MAX_GAME_PLY)
         {
@@ -654,14 +654,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
             }
             else if (tt_score >= beta)
-	    {
-	    	extension = -1;
-	    }
+            {
+                extension = -1;
+            }
+            else if (in_check){
+                extension = 1;
+            }
         }
 
         int moved_piece = piece_on_square(board, move_from(move));
-        
-        nnue_update(board, move, ply, ply + 1); 
+
+        nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -826,7 +829,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (tt_depth < 0)
             tt_depth = 0;
 
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag,0);
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag, 0);
     }
 
     output.score = best_score;
@@ -991,4 +994,3 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     return best_move_so_far;
 }
-
