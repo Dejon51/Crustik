@@ -468,7 +468,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (in_check && ply < MAX_GAME_PLY)
         eval_stack[ply] = NO_EVAL;
 
-    if (in_check && depth < MAX_DEPTH)
+    if (in_check && depth <= 2)
         depth++;
 
     if (depth >= 4 && tt_move == 0 && !in_check)
