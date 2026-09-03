@@ -468,9 +468,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (in_check && ply < MAX_GAME_PLY)
         eval_stack[ply] = NO_EVAL;
 
-    if (in_check && depth < MAX_DEPTH)
-        depth++;
-
     if (depth >= 4 && tt_move == 0 && !in_check)
     {
         depth--;
@@ -622,6 +619,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         int extension = 0;
 
+        if (in_check)
+        {
+            extension = 1;
+        }
+
         if (!root_node &&
             stack->excluded_move == 0 &&
             move == tt_move &&
@@ -644,7 +646,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (stop->stop)
                 return (searchOutput){0};
-
             if (se_result.score < singular_beta)
             {
                 extension = 1;
@@ -656,9 +657,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             else if (tt_score >= beta)
             {
                 extension = -1;
-            }
-            else if (in_check){
-                extension = 1;
             }
         }
 
