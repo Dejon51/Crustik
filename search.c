@@ -42,12 +42,62 @@ typedef struct
 
 static ContRecord cont_stack[MAX_SEARCH_PLY];
 
+/* corrhist -------------------------------------------------------------- */
+#define CORR_SIZE  16384               /* power of 2 */
+#define CORR_GRAIN 256
+#define CORR_MAX   (32 * CORR_GRAIN)   /* 8192 stored units = 32 cp */
+
+static int16_t pawn_corr_hist[2][CORR_SIZE];
+static uint64_t corr_pawn_zob[2][64];
+
+static void init_corr_keys(void)
+{
+    uint64_t s = 0x2545F4914F6CDD1DULL;
+    for (int c = 0; c < 2; c++)
+        for (int sq = 0; sq < 64; sq++)
+        {
+            s ^= s >> 12; s ^= s << 25; s ^= s >> 27;
+            corr_pawn_zob[c][sq] = s * 2685821657736338717ULL;
+        }
+}
+
+static inline uint64_t pawn_corr_key(Position *b)
+{
+    uint64_t k = 0, bb;
+    bb = b->pieces[0] & b->color[0];
+    while (bb) { k ^= corr_pawn_zob[0][__builtin_ctzll(bb)]; bb &= bb - 1; }
+    bb = b->pieces[0] & b->color[1];
+    while (bb) { k ^= corr_pawn_zob[1][__builtin_ctzll(bb)]; bb &= bb - 1; }
+    return k;
+}
+
+static inline int corrected_eval(Position *b, int ply)
+{
+    int e = eval(b, ply);
+    e += pawn_corr_hist[b->turn][pawn_corr_key(b) & (CORR_SIZE - 1)] / CORR_GRAIN;
+    return e;
+}
+
+static inline void update_pawn_corr(Position *b, int diff)
+{
+    int16_t *e = &pawn_corr_hist[b->turn][pawn_corr_key(b) & (CORR_SIZE - 1)];
+    int w = diff * CORR_GRAIN / 16;
+    if (w >  CORR_MAX) w =  CORR_MAX;
+    if (w < -CORR_MAX) w = -CORR_MAX;
+    int v = *e + w - *e * abs(w) / CORR_MAX;
+    if (v >  CORR_MAX) v =  CORR_MAX;
+    if (v < -CORR_MAX) v = -CORR_MAX;
+    *e = (int16_t)v;
+}
+/* ----------------------------------------------------------------------- */
+
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(cont_stack, 0, sizeof cont_stack);
+    memset(pawn_corr_hist, 0, sizeof pawn_corr_hist); /* corrhist */
     for (int i = 0; i < MAX_GAME_PLY; i++)
         eval_stack[i] = NO_EVAL;
 }
@@ -301,7 +351,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         stop->stop = 1;
 
     if (stop->stop)
-        return eval(board, ply);
+        return corrected_eval(board, ply); /* corrhist */
 
     int alpha_orig = alpha;
     uint16_t tt_move = 0;
@@ -321,7 +371,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         tt_move = entry->move;
     }
 
-    int static_eval = eval(board, ply);
+    int static_eval = corrected_eval(board, ply); /* corrhist */
 
     if (static_eval >= beta)
         return static_eval;
@@ -433,7 +483,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return output;
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return (searchOutput){.score = eval(board,ply), .move = 0};
+        return (searchOutput){.score = corrected_eval(board, ply), .move = 0}; /* corrhist */
 
     if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
@@ -482,7 +532,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!in_check)
     {
 
-        static_eval = eval(board,ply);
+        static_eval = corrected_eval(board, ply); /* corrhist */
 
         if (ply < MAX_GAME_PLY)
         {
@@ -656,9 +706,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
             }
             else if (tt_score >= beta)
-	    {
-	    	extension = -1;
-	    }
+        {
+        	extension = -1;
+        }
         }
 
         int moved_piece = piece_on_square(board, move_from(move));
@@ -813,8 +863,15 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
     if (!searched_any)
-        return (searchOutput){.score = in_check ? eval(board, ply) : static_eval,
+        return (searchOutput){.score = in_check ? corrected_eval(board, ply) : static_eval, /* corrhist */
                               .move = 0};
+
+    /* corrhist: update from real search results only */
+    if (!stop->stop && stack->excluded_move == 0 && !in_check &&
+        !is_mate_score(best_score))
+    {
+        update_pawn_corr(board, best_score - static_eval);
+    }
 
     if (!stop->stop && stack->excluded_move == 0)
     {
@@ -997,4 +1054,3 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     return best_move_so_far;
 }
-
