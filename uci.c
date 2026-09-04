@@ -181,6 +181,8 @@ void d(Position *board) // Displays board or something
 void uciStart()
 {
     init_lmr();
+    init_corr_keys();
+
     tt_init(TT_DEFAULT_MB);
 
     Position board = {0};

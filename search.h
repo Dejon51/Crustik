@@ -36,6 +36,8 @@ typedef struct {
 
 void init_lmr();
 
+void init_corr_keys(void);
+
 void reset_history(void);
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *pv, SearchStack *stack);

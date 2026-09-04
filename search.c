@@ -50,7 +50,7 @@ static ContRecord cont_stack[MAX_SEARCH_PLY];
 static int16_t pawn_corr_hist[2][CORR_SIZE];
 static uint64_t corr_pawn_zob[2][64];
 
-static void init_corr_keys(void)
+void init_corr_keys(void)
 {
     uint64_t s = 0x2545F4914F6CDD1DULL;
     for (int c = 0; c < 2; c++)
