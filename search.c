@@ -612,6 +612,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (depth <= 3 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
             int futility_margin = 120 + 90 * depth;
+            if (!improving) futility_margin += 80;  
             if (static_eval + futility_margin <= alpha)
             {
 
