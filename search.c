@@ -542,7 +542,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 uint16_t move = cap_list.movelist[j];
 
-                int victim = get_victim_piece(board, move);
+                int victim = piece_on_square(board, move_to(move));
                 if (victim == -1 || !see_ge(board, move, 0))
                     continue;
 
