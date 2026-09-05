@@ -530,6 +530,57 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (score >= beta)
                 return (searchOutput){.score = beta, .move = 0};
         }
+
+        if (!root_node && depth >= 5 && (beta - alpha) == 1 &&
+            !is_mate_score(beta) && stack->excluded_move == 0)
+        {
+            MoveList cap_list = {0};
+            qsearchMoves(board, &cap_list, board->turn);
+            cap_list = ordermoves(board, &cap_list, ply, tt_move);
+
+            for (unsigned int j = 0; j < cap_list.offset; j++)
+            {
+                uint16_t move = cap_list.movelist[j];
+
+                int victim = get_victim_piece(board, move);
+                if (victim == -1 || !see_ge(board, move, 0))
+                    continue;
+
+                if (static_eval + piece_value_lva(victim) + 200 < beta)
+                    continue;
+
+                nnue_update(board, move, ply, ply + 1);
+
+                if (ply < MAX_SEARCH_PLY)
+                {
+                    cont_stack[ply].piece = piece_on_square(board, move_from(move));
+                    cont_stack[ply].to = move_to(move);
+                    cont_stack[ply].valid = true;
+                }
+
+                Position copy = *board;
+                makeMove(&copy, &cap_list, j);
+
+                uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+                if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
+                    continue;
+
+                int score = -search(&copy, depth - 4, ply + 1,
+                                    -beta, -beta + 1,
+                                    stop, NULL, &no_excl)
+                                 .score;
+
+                if (stop->stop)
+                    return (searchOutput){0};
+
+                if (score >= beta)
+                {
+                    tt_store(board->hash, score_to_tt(beta, ply), move,
+                             depth - 3, TT_BETA, 0);
+                    return (searchOutput){.score = beta, .move = move};
+                }
+            }
+        }
     }
 
     MoveList move_list = {0};
