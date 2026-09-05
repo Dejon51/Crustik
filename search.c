@@ -28,6 +28,7 @@ int game_history_count = 0;
 static uint64_t search_path_hash[MAX_SEARCH_PLY];
 
 static int butterfly_hist[2][64][64];
+static int capture_hist[2][6][64][6]; // [turn][attacker piece][to][victim piece]
 static uint16_t killer_moves[MAX_GAME_PLY][2];
 static int eval_stack[MAX_GAME_PLY];
 
@@ -45,6 +46,7 @@ static ContRecord cont_stack[MAX_SEARCH_PLY];
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
+    memset(capture_hist, 0, sizeof capture_hist);
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(cont_stack, 0, sizeof cont_stack);
@@ -204,7 +206,35 @@ static bool is_repetition_or_fifty(Position *board, int ply)
     return false;
 }
 
-// 145 elo moveordering
+// victim piece for a move, en-passant aware
+// (for EP the captured pawn is not on the destination square)
+static int get_victim_piece(Position *board, uint16_t move)
+{
+    int victim = piece_on_square(board, move_to(move));
+
+    if (victim == -1)
+    {
+        int from = move_from(move);
+
+        // a pawn moving diagonally onto an empty square can only be en passant
+        if (piece_on_square(board, from) == 0 &&
+            (from & 7) != (move_to(move) & 7))
+            victim = 0;
+    }
+
+    return victim;
+}
+
+static void update_capture_hist(Position *board, uint16_t move, int attacker,
+                                int victim, int bonus)
+{
+    if (attacker < 0 || attacker > 5 || victim < 0 || victim > 5)
+        return;
+
+    int *ch = &capture_hist[board->turn][attacker][move_to(move)][victim];
+    *ch += bonus - *ch * abs(bonus) / MAX_HISTORY;
+}
+
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList ordered = *move_list;
@@ -230,13 +260,15 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
         int from = move_from(move);
         int to = move_to(move);
-        int victim = piece_on_square(board, to);
+        int victim = get_victim_piece(board, move);
         int attacker = piece_on_square(board, from);
 
         if (victim != -1 && attacker != -1)
         {
             int mvv_lva = piece_value_lva(victim) * 10 - piece_value_lva(attacker);
-            scores[i] = CAPTURE_BASE + mvv_lva;
+            int cap_hist = capture_hist[board->turn][attacker][to][victim];
+
+            scores[i] = CAPTURE_BASE + mvv_lva + cap_hist;
             continue;
         }
 
@@ -285,7 +317,6 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     return ordered;
 }
 
-// 361 elo qsearch
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 {
     stop->nodes++;
@@ -340,6 +371,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     int best_score = static_eval;
     uint16_t best_move = 0;
 
+    uint16_t searched_caps[256];
+    int n_searched_caps = 0;
+
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
         if (stop->stop)
@@ -347,8 +381,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         uint16_t move = move_list.movelist[i];
 
-        int to = move_to(move);
-        int victim = piece_on_square(board, to);
+        int victim = get_victim_piece(board, move);
         int flag = (move >> 12) & 0xF;
         bool is_promo = flag >= 5 && flag <= 8;
         int delta_margin = 200;
@@ -373,6 +406,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
             continue;
 
+        if (victim != -1 && n_searched_caps < 256)
+            searched_caps[n_searched_caps++] = move;
+
         int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
 
         if (stop->stop)
@@ -386,6 +422,22 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         if (score >= beta)
         {
+            update_capture_hist(board, move,
+                                piece_on_square(board, move_from(move)),
+                                victim, 300);
+
+            for (int j = 0; j < n_searched_caps; j++)
+            {
+                uint16_t cm = searched_caps[j];
+                if (cm == move)
+                    continue;
+
+                update_capture_hist(board, cm,
+                                    piece_on_square(board, move_from(cm)),
+                                    get_victim_piece(board, cm),
+                                    -200);
+            }
+
             tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1);
             return score;
         }
@@ -549,6 +601,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     int searched_any = 0;
 
+    uint16_t searched_captures[256];
+    int searched_capture_count = 0;
+
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
@@ -565,7 +620,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             fflush(stdout);
         }
 
-        bool is_capture = is_capture_move(board, move);
+        int victim = get_victim_piece(board, move);
+        bool is_capture = (victim != -1);
         bool is_killer =
             move == killer_moves[ply][0] ||
             move == killer_moves[ply][1];
@@ -609,7 +665,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 continue;
         }
 
-        if (depth <= 3 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
+        if (depth <= 3 && !root_node && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
             int futility_margin = 120 + 90 * depth;
             if (static_eval + futility_margin <= alpha)
@@ -667,6 +723,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         Position copy = *board;
         makeMove(&copy, &move_list, i);
         searched_any = 1;
+
+        if (is_capture && searched_capture_count < 256)
+            searched_captures[searched_capture_count++] = move;
 
         if (ply < MAX_SEARCH_PLY)
         {
@@ -788,6 +847,26 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int from = move_from(move);
             int to = move_to(move);
+
+            if (is_capture && moved_piece != -1)
+            {
+                int cap_bonus = clamp_int(300 * depth - 300, 0, MAX_HISTORY);
+                int cap_malus = -clamp_int(200 * depth - 200, 0, MAX_HISTORY);
+
+                update_capture_hist(board, move, moved_piece, victim, cap_bonus);
+
+                for (int j = 0; j < searched_capture_count; j++)
+                {
+                    uint16_t cm = searched_captures[j];
+                    if (cm == move)
+                        continue;
+
+                    update_capture_hist(board, cm,
+                                        piece_on_square(board, move_from(cm)),
+                                        get_victim_piece(board, cm),
+                                        cap_malus);
+                }
+            }
 
             if (!is_capture && !is_promotion)
             {
