@@ -508,7 +508,15 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         if (depth >= 3 && !root_node && static_eval >= beta)
         {
-            int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
+            int R = 3 + depth / 4;
+
+            int diff = (static_eval - beta) / 200;
+            if (diff > 3)
+                diff = 3;
+            R += diff;
+
+            if ((beta - alpha) > 1)
+                R--;
             if (R > depth - 1)
                 R = depth - 1;
 
