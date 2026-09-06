@@ -511,27 +511,31 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         if (depth >= 3 && !root_node && static_eval >= beta)
         {
-            int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
-            if (R > depth - 1)
-                R = depth - 1;
+            uint64_t non_pawn_king = board->color[board->turn] & ~(board->pieces[0] | board->pieces[5]);
+            if (non_pawn_king != 0)
+            {
+                int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
+                if (R > depth - 1)
+                    R = depth - 1;
 
-            Position copy = *board;
-            make_null_move(&copy);
-            nnue_copy(ply, ply + 1);
+                Position copy = *board;
+                make_null_move(&copy);
+                nnue_copy(ply, ply + 1);
 
-            if (ply < MAX_SEARCH_PLY)
-                cont_stack[ply].valid = false;
+                if (ply < MAX_SEARCH_PLY)
+                    cont_stack[ply].valid = false;
 
-            int score = -search(&copy, depth - R - 1,
-                                ply + 1, -beta, -beta + 1,
-                                stop, NULL, &no_excl)
-                             .score;
+                int score = -search(&copy, depth - R - 1,
+                                    ply + 1, -beta, -beta + 1,
+                                    stop, NULL, &no_excl)
+                                 .score;
 
-            if (stop->stop)
-                return (searchOutput){0};
+                if (stop->stop)
+                    return (searchOutput){0};
 
-            if (score >= beta)
-                return (searchOutput){.score = beta, .move = 0};
+                if (score >= beta)
+                    return (searchOutput){.score = beta, .move = 0};
+            }
         }
     }
 
