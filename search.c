@@ -331,7 +331,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
     if (ply >= MAX_SEARCH_PLY - 1)
         return static_eval;
-
+    if (!is_mate_score(alpha) &&
+        static_eval + piece_value_lva(4) +(piece_value_lva(4) - piece_value_lva(0)) + 200 <= alpha)
+        return static_eval;
     MoveList move_list = {0};
 
     qsearchMoves(board, &move_list, board->turn);
