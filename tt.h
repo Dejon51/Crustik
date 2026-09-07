@@ -21,7 +21,10 @@ typedef struct {
     uint8_t  flag;
     uint8_t  is_qsearch; 
     uint8_t  valid;
+    uint8_t  gen;
 } TTEntry;
+
+void tt_new_search(void); 
 
 void     tt_init(size_t mb);
 void     tt_resize(size_t mb);

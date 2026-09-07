@@ -41,6 +41,13 @@ static uint64_t tt_index(uint64_t key)
 #endif
 }
 
+static uint8_t tt_generation = 0;
+
+void tt_new_search(void)
+{
+    tt_generation++;
+}
+
 void tt_init(size_t mb)
 {
     if (mb < TT_MIN_MB) mb = TT_MIN_MB;
@@ -86,7 +93,9 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
 
     bool same_key = e->valid && e->key == key;
 
-    if (!e->valid || !same_key || depth >= e->depth)
+    bool old_gen = e->valid && e->gen != tt_generation;
+
+    if (!e->valid || !same_key || depth >= e->depth || old_gen)
     {
         e->key        = key;
         e->score      = (int16_t)score;
@@ -96,10 +105,12 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
         e->is_qsearch = (uint8_t)is_qsearch;
         e->valid      = 1;
         e->eval       = (int16_t)eval;
+        e->gen        = tt_generation; 
     }
     else if (same_key)
     {
         e->eval = (int16_t)eval;
+        e->gen  = tt_generation;
     }
 }
 

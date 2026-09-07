@@ -849,6 +849,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     PVLine best_pv = {0};
     long long search_start = get_time_ms();
 
+    tt_new_search();
+
     int prev_score = 0;
     int aspiration_delta = 25;
     const int ASPIRATION_MAX_DELTA = 500;
