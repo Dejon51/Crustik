@@ -303,8 +303,12 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     if (stop->stop)
         return eval(board, ply);
 
+    if (ply >= MAX_SEARCH_PLY - 1)
+        return eval(board, ply);
+
     int alpha_orig = alpha;
     uint16_t tt_move = 0;
+    int in_check = king_in_check(board, board->turn);
 
     TTEntry *entry = tt_probe(board->hash);
     if (entry)
@@ -321,24 +325,38 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         tt_move = entry->move;
     }
 
-    int static_eval = (entry && entry->eval != NO_EVAL) ? entry->eval : eval(board, ply);
+    int static_eval;
+    int best_score;
 
-    if (static_eval >= beta)
-        return static_eval;
+    if (in_check)
+    {
+        static_eval = NO_EVAL;
+        best_score = -MATE_SCORE + ply;
+    }
+    else
+    {
+        static_eval = (entry && entry->eval != NO_EVAL) ? entry->eval : eval(board, ply);
 
-    if (static_eval > alpha)
-        alpha = static_eval;
+        if (static_eval >= beta)
+            return static_eval;
 
-    if (ply >= MAX_SEARCH_PLY - 1)
-        return static_eval;
+        if (static_eval > alpha)
+            alpha = static_eval;
+
+        best_score = static_eval;
+    }
 
     MoveList move_list = {0};
 
-    qsearchMoves(board, &move_list, board->turn);
+    if (in_check)
+        legalMoveGen(board, &move_list);
+    else
+        qsearchMoves(board, &move_list, board->turn);
+
     move_list = ordermoves(board, &move_list, ply, tt_move);
 
-    int best_score = static_eval;
     uint16_t best_move = 0;
+    int legal_moves_seen = 0;
 
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
@@ -347,24 +365,29 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         uint16_t move = move_list.movelist[i];
 
-        int to = move_to(move);
-        int victim = piece_on_square(board, to);
-        int flag = (move >> 12) & 0xF;
-        bool is_promo = flag >= 5 && flag <= 8;
-        int delta_margin = 200;
-        if (!is_mate_score(alpha) && !is_mate_score(beta))
+        if (!in_check)
         {
-            int gain = (victim != -1) ? piece_value_lva(victim) : 0;
+            int to = move_to(move);
+            int victim = piece_on_square(board, to);
+            int flag = (move >> 12) & 0xF;
+            bool is_promo = flag >= 5 && flag <= 8;
+            int delta_margin = 200;
 
-            if (is_promo)
-                gain += piece_value_lva(4) - piece_value_lva(0);
+            if (!is_mate_score(alpha) && !is_mate_score(beta))
+            {
+                int gain = (victim != -1) ? piece_value_lva(victim) : 0;
 
-            if (static_eval + gain + delta_margin <= alpha)
+                if (is_promo)
+                    gain += piece_value_lva(4) - piece_value_lva(0);
+
+                if (static_eval + gain + delta_margin <= alpha)
+                    continue;
+            }
+
+            if (!see_ge(board, move, 0))
                 continue;
         }
 
-        if (!see_ge(board, move, 0))
-            continue;
         nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
@@ -372,6 +395,8 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
         if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
             continue;
+
+        legal_moves_seen++;
 
         int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
 
@@ -386,7 +411,8 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         if (score >= beta)
         {
-            tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1, static_eval);
+            tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1,
+                     in_check ? NO_EVAL : static_eval);
             return score;
         }
 
@@ -394,10 +420,14 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
             alpha = score;
     }
 
+    if (in_check && legal_moves_seen == 0 && !stop->stop)
+        return -MATE_SCORE + ply;
+
     if (!stop->stop)
     {
         int qflag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, 0, qflag, 1, static_eval);
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, 0, qflag, 1,
+                 in_check ? NO_EVAL : static_eval);
     }
 
     return best_score;
