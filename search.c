@@ -656,7 +656,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         int extension = 0;
-
+        
         if (!root_node &&
             stack->excluded_move == 0 &&
             move == tt_move &&
@@ -670,6 +670,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int tt_score = score_from_tt(entry->score, ply);
             int singular_beta = tt_score - 2 * depth;
             int singular_depth = (depth - 1) / 2;
+            int is_pv_node = (beta - alpha) > 1;
+
 
             SearchStack singular_stack = {.excluded_move = move};
 
@@ -690,7 +692,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
             else if (tt_score >= beta)
             {
-                extension = -1;
+                extension = -2 + !is_pv_node;
             }
         }
 
