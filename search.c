@@ -606,10 +606,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (!root_node &&
             !in_check &&
-            depth <= 3 &&
+            depth <= 5 &&
             !is_capture &&
             !is_killer &&
-            !is_promotion &&
             (int)i >= (improving ? 24 : 16))
         {
             continue;
