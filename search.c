@@ -42,6 +42,130 @@ typedef struct
 
 static ContRecord cont_stack[MAX_SEARCH_PLY];
 
+typedef struct
+{
+    int null_move_base_r;
+    int null_move_div;
+    int se_margin;
+    int lmr_hist_thresh;
+    int futility_base;
+    int futility_mult;
+    int hist_bonus_mult;
+    int hist_bonus_sub;
+    int hist_malus_mult;
+    int hist_malus_sub;
+} TuneParams;
+
+#define NUM_TUNE_PARAMS 10
+#define MAX_TUNE_HISTORY 512
+
+typedef struct
+{
+    TuneParams params_used;
+    int delta[NUM_TUNE_PARAMS];
+    int score_before;
+    int score_after;
+    bool resolved;
+} TuneRecord;
+
+static const TuneParams TUNE_DEFAULTS = {
+    .null_move_base_r = 3,
+    .null_move_div = 6,
+    .se_margin = 2,
+    .lmr_hist_thresh = 4000,
+    .futility_base = 120,
+    .futility_mult = 90,
+    .hist_bonus_mult = 320,
+    .hist_bonus_sub = 400,
+    .hist_malus_mult = 160,
+    .hist_malus_sub = 200,
+};
+
+static TuneParams tune = TUNE_DEFAULTS;
+
+static TuneRecord tune_history[MAX_TUNE_HISTORY];
+static int tune_history_count = 0;
+
+static int last_own_score = 0;
+static bool have_last_score = false;
+
+static int *tune_param_ptr(TuneParams *tp, int idx)
+{
+    return ((int *)tp) + idx;
+}
+
+void tune_reset_for_new_game(void)
+{
+    memset(tune_history, 0, sizeof tune_history);
+    tune_history_count = 0;
+    tune = TUNE_DEFAULTS;
+    last_own_score = 0;
+    have_last_score = false;
+}
+
+static void tune_perturb_before_move(int score_before)
+{
+    if (tune_history_count >= MAX_TUNE_HISTORY)
+        return;
+
+    TuneRecord *rec = &tune_history[tune_history_count++];
+    rec->params_used = tune;
+    rec->score_before = score_before;
+    rec->resolved = false;
+
+    for (int i = 0; i < NUM_TUNE_PARAMS; i++)
+    {
+        int cur = tune_param_ptr(&tune, i)[0];
+        int step = (cur / 20) + 1;
+        int dir = (rand() % 2) ? 1 : -1;
+        rec->delta[i] = dir * step;
+        tune_param_ptr(&tune, i)[0] += rec->delta[i];
+    }
+}
+
+static void tune_resolve_after_reply(int score_after_reply_from_our_pov)
+{
+    if (tune_history_count < 1)
+        return;
+
+    TuneRecord *rec = &tune_history[tune_history_count - 1];
+    if (rec->resolved)
+        return;
+
+    rec->score_after = score_after_reply_from_our_pov;
+    rec->resolved = true;
+
+    int improvement = rec->score_after - rec->score_before;
+
+    int reward = 0;
+    if (improvement > 15)
+        reward = 1;
+    else if (improvement < -15)
+        reward = -1;
+
+    for (int i = 0; i < NUM_TUNE_PARAMS; i++)
+    {
+        if (reward > 0)
+            continue;
+        else if (reward < 0)
+            tune_param_ptr(&tune, i)[0] -= 2 * rec->delta[i];
+    }
+}
+
+void tune_on_go_start(int current_static_score_from_our_pov)
+{
+    if (have_last_score)
+        tune_resolve_after_reply(current_static_score_from_our_pov);
+
+    tune_perturb_before_move(current_static_score_from_our_pov);
+}
+
+void tune_on_move_chosen(int final_score)
+{
+    last_own_score = final_score;
+    have_last_score = true;
+}
+
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
@@ -134,17 +258,17 @@ static int piece_value_lva(int piece)
     switch (piece)
     {
     case 0:
-        return 100; // pawn
+        return 100;
     case 1:
-        return 330; // bishop
+        return 330;
     case 2:
-        return 320; // horse/knight
+        return 320;
     case 3:
-        return 500; // rook
+        return 500;
     case 4:
-        return 900; // queen
+        return 900;
     case 5:
-        return 20000; // king
+        return 20000;
     }
     return 0;
 }
@@ -204,7 +328,6 @@ static bool is_repetition_or_fifty(Position *board, int ply)
     return false;
 }
 
-// 145 elo moveordering
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList ordered = *move_list;
@@ -285,7 +408,6 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     return ordered;
 }
 
-// 361 elo qsearch
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 {
     stop->nodes++;
@@ -541,7 +663,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         if (depth >= 3 && !root_node && static_eval >= beta)
         {
-            int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
+            int R = tune.null_move_base_r + depth / tune.null_move_div +
+                    (static_eval - beta > 300 ? 1 : 0);
             if (R > depth - 1)
                 R = depth - 1;
 
@@ -644,7 +767,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (depth <= 3 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
-            int futility_margin = 120 + 90 * depth;
+            int futility_margin = tune.futility_base + tune.futility_mult * depth;
             if (static_eval + futility_margin <= alpha)
             {
 
@@ -668,7 +791,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !is_mate_score(entry->score))
         {
             int tt_score = score_from_tt(entry->score, ply);
-            int singular_beta = tt_score - 2 * depth;
+            int singular_beta = tt_score - tune.se_margin * depth;
             int singular_depth = (depth - 1) / 2;
 
             SearchStack singular_stack = {.excluded_move = move};
@@ -731,10 +854,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
                 if (is_pv_node)
                     reduction -= 1;
-                if (hist > 4000)
+                if (hist > tune.lmr_hist_thresh)
                     reduction--;
 
-                if (hist < -4000)
+                if (hist < -tune.lmr_hist_thresh)
                     reduction++;
 
                 if (reduction < 0)
@@ -800,7 +923,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (!is_capture && !is_promotion)
             {
-                int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
+                int malus = -clamp_int(tune.hist_malus_mult * depth - tune.hist_malus_sub, 0, MAX_HISTORY);
 
                 butterfly_hist[board->turn][from][to] +=
                     malus -
@@ -824,7 +947,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (!is_capture && !is_promotion)
             {
-                int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
+                int clampedBonus = clamp_int(tune.hist_bonus_mult * depth - tune.hist_bonus_sub, 0, MAX_HISTORY);
                 butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
 
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
@@ -1027,6 +1150,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
                pv_str);
         fflush(stdout);
     }
+
+    tune_on_move_chosen(prev_score);
 
     return best_move_so_far;
 }

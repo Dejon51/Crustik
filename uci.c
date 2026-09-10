@@ -300,6 +300,7 @@ void uciStart()
         {
             tt_clear();
             reset_history();
+            tune_reset_for_new_game();
             fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w",
                     "KQkq", "-", "0", "1");
             game_history_count = 0;
@@ -361,6 +362,7 @@ void uciStart()
                 stop.depth = 0;
                 stop.nodes = 0;
                 stop.stop = 0;
+                tune_on_go_start(eval(&board,0));
 
                 uint16_t result = iterative_deepening(&board, &stop);
 

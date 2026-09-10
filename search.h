@@ -42,4 +42,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta, st
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 
+void tune_reset_for_new_game(void);
+void tune_on_go_start(int current_static_score_from_our_pov);
+
 #endif
