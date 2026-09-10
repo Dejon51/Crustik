@@ -38,6 +38,7 @@ typedef struct
     int piece;
     int to;
     bool valid;
+    bool was_capture;
 } ContRecord;
 
 static ContRecord cont_stack[MAX_SEARCH_PLY];
@@ -670,6 +671,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int tt_score = score_from_tt(entry->score, ply);
             int singular_beta = tt_score - 2 * depth;
             int singular_depth = (depth - 1) / 2;
+            int is_pv_node = (beta - alpha) > 1;
+            int is_tactical = is_capture || is_promotion;
+
+            bool prev_was_capture = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid) ? cont_stack[ply - 1].was_capture : false;
+
+            int previous_move_target_square = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid) ? cont_stack[ply - 1].to : -1;
 
             SearchStack singular_stack = {.excluded_move = move};
 
@@ -687,6 +694,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             else if (se_result.score >= beta && (beta - alpha) == 1)
             {
                 return (searchOutput){.score = beta, .move = 0};
+            }
+            else if (is_pv_node && is_tactical && move_to(tt_move) == previous_move_target_square)
+            {
+                extension += 1;
             }
             else if (tt_score >= beta)
             {
@@ -706,6 +717,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             cont_stack[ply].piece = moved_piece;
             cont_stack[ply].to = move_to(move);
             cont_stack[ply].valid = true;
+            cont_stack[ply].was_capture = is_capture;
         }
 
         PVLine child_pv = {0};
