@@ -501,7 +501,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (in_check && depth < MAX_DEPTH)
         depth++;
 
-       if (depth >= 4 && !root_node && tt_move == 0 && !in_check)
+    if (depth >= 4 && !root_node && tt_move == 0 && !in_check)
     {
         depth--;
     }
