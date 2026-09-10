@@ -353,6 +353,7 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "go") == 0)
         {
+            tune_on_go_start(eval(&board,0));
             if (tokens[1] == NULL || strcmp(tokens[1], "infinite") == 0)
             {
                 stopConditions stop = {0};
@@ -362,7 +363,6 @@ void uciStart()
                 stop.depth = 0;
                 stop.nodes = 0;
                 stop.stop = 0;
-                tune_on_go_start(eval(&board,0));
 
                 uint16_t result = iterative_deepening(&board, &stop);
 
