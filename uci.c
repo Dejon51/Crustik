@@ -422,6 +422,7 @@ void genfensRun(int argc, char **argv)
         char fenbuf[128];
         boardToFen(&genboard, fenbuf);
         printf("info string genfens %s\n", fenbuf);
+        fflush(stdout); 
     }
 
     if (book_lines)
