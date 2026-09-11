@@ -4,6 +4,7 @@
 void d(Position *board);
 
 void uciStart();
+void genfensRun(int argc, char **argv);
 
 
 #endif

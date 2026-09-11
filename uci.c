@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <time.h>
 #include <inttypes.h>
+#include <stdlib.h>
 #include "text.h"
 
 #define MAX_GAME_PLY 2048
@@ -177,6 +178,262 @@ void d(Position *board) // Displays board or something
     }
     printf("HASH: 0x%" PRIx64 "\n", board->hash);
 }
+
+static uint64_t genfens_rng_state = 0x9E3779B97F4A7C15ULL;
+
+static uint64_t genfens_rand64(void)
+{
+    uint64_t z = (genfens_rng_state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
+#define GENFENS_RANDOM_PLIES 8
+#define GENFENS_MAX_BOOK_LINES 100000
+
+static void boardToFen(Position *board, char *out)
+{
+    int idx = 0;
+
+    for (int row = 0; row < 8; row++)
+    {
+        int empty = 0;
+        for (int file = 0; file < 8; file++)
+        {
+            int sq = row * 8 + file;
+            int piece = board->mailbox[sq];
+
+            if (piece == 6) // empty square
+            {
+                empty++;
+                continue;
+            }
+
+            if (empty)
+            {
+                out[idx++] = (char)('0' + empty);
+                empty = 0;
+            }
+
+            static const char letters[6] = {'p', 'b', 'n', 'r', 'q', 'k'};
+            char c = letters[piece];
+
+            if ((board->color[0] >> sq) & 1) // white
+                c = (char)toupper((unsigned char)c);
+
+            out[idx++] = c;
+        }
+
+        if (empty)
+            out[idx++] = (char)('0' + empty);
+
+        if (row != 7)
+            out[idx++] = '/';
+    }
+
+    out[idx++] = ' ';
+    out[idx++] = board->turn == 0 ? 'w' : 'b';
+    out[idx++] = ' ';
+
+    int castle_start = idx;
+    if (board->castling & (1U << WHITE_KINGSIDE))
+        out[idx++] = 'K';
+    if (board->castling & (1U << WHITE_QUEENSIDE))
+        out[idx++] = 'Q';
+    if (board->castling & (1U << BLACK_KINGSIDE))
+        out[idx++] = 'k';
+    if (board->castling & (1U << BLACK_QUEENSIDE))
+        out[idx++] = 'q';
+    if (idx == castle_start)
+        out[idx++] = '-';
+    out[idx++] = ' ';
+
+    if (board->epsquare != -1)
+    {
+        int file = board->epsquare % 8;
+        int rank = 8 - (board->epsquare / 8);
+        out[idx++] = (char)('a' + file);
+        out[idx++] = (char)('0' + rank);
+    }
+    else
+    {
+        out[idx++] = '-';
+    }
+    out[idx++] = ' ';
+
+    idx += sprintf(out + idx, "%d %d", board->halfmoves, board->fullmoves);
+    out[idx] = '\0';
+}
+
+static int genfens_play_random(Position *board, int plies)
+{
+    for (int i = 0; i < plies; i++)
+    {
+        MoveList list = {0};
+        legalMoveGen(board, &list);
+
+        if (list.offset == 0)
+            return 0;
+
+        unsigned int pick = (unsigned int)(genfens_rand64() % list.offset);
+        makeMove(board, &list, (int)pick);
+    }
+
+    MoveList final_list = {0};
+    legalMoveGen(board, &final_list);
+    return final_list.offset != 0;
+}
+
+static char **genfens_load_book(const char *path, int *count_out)
+{
+    *count_out = 0;
+
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return NULL;
+
+    int cap = 1024;
+    char **lines = (char **)malloc(cap * sizeof(char *));
+    char linebuf[256];
+    int count = 0;
+
+    while (fgets(linebuf, sizeof(linebuf), f))
+    {
+        linebuf[strcspn(linebuf, "\r\n")] = '\0';
+        if (strlen(linebuf) < 6)
+            continue;
+
+        if (count >= cap)
+        {
+            cap *= 2;
+            lines = (char **)realloc(lines, cap * sizeof(char *));
+        }
+
+        lines[count] = (char *)malloc(strlen(linebuf) + 1);
+        strcpy(lines[count], linebuf);
+        count++;
+
+        if (count >= GENFENS_MAX_BOOK_LINES)
+            break;
+    }
+
+    fclose(f);
+    *count_out = count;
+    return lines;
+}
+
+void genfensRun(int argc, char **argv)
+{
+    if (argc < 3)
+    {
+        fprintf(stderr, "genfens: usage: genfens <count> [seed <n>] [book <path|None>]\n");
+        return;
+    }
+
+    uint64_t how_many = 0;
+    int valid = 1;
+    for (int i = 0; argv[2][i] != '\0'; i++)
+    {
+        if (argv[2][i] < '0' || argv[2][i] > '9')
+        {
+            valid = 0;
+            break;
+        }
+        how_many = how_many * 10 + (argv[2][i] - '0');
+    }
+
+    if (!valid)
+    {
+        fprintf(stderr, "genfens: invalid count '%s'\n", argv[2]);
+        return;
+    }
+
+    uint64_t seed = 0;
+    char *book_path = NULL;
+
+    for (int i = 3; i < argc; i++)
+    {
+        if (strcmp(argv[i], "seed") == 0 && i + 1 < argc)
+        {
+            seed = 0;
+            for (int j = 0; argv[i + 1][j] != '\0'; j++)
+                seed = seed * 10 + (argv[i + 1][j] - '0');
+            i++;
+        }
+        else if (strcmp(argv[i], "book") == 0 && i + 1 < argc)
+        {
+            if (strcmp(argv[i + 1], "None") != 0)
+                book_path = argv[i + 1];
+            i++;
+        }
+    }
+
+    genfens_rng_state = seed ? seed : 0x9E3779B97F4A7C15ULL;
+
+    int book_count = 0;
+    char **book_lines = book_path ? genfens_load_book(book_path, &book_count) : NULL;
+
+    if (book_path && !book_lines)
+        fprintf(stderr, "genfens: could not open book '%s', using startpos\n", book_path);
+
+    for (uint64_t n = 0; n < how_many; n++)
+    {
+        Position genboard = {0};
+        int success = 0;
+
+        while (!success)
+        {
+            if (book_count > 0)
+            {
+                int idx = (int)(genfens_rand64() % (uint64_t)book_count);
+                char parts[6][256] = {{0}};
+                char linecopy[256];
+                strncpy(linecopy, book_lines[idx], sizeof(linecopy) - 1);
+                linecopy[sizeof(linecopy) - 1] = '\0';
+
+                char *tok = strtok(linecopy, " ");
+                int p = 0;
+                while (tok && p < 6)
+                {
+                    strncpy(parts[p], tok, sizeof(parts[p]) - 1);
+                    tok = strtok(NULL, " ");
+                    p++;
+                }
+
+                fenRead(&genboard,
+                        parts[0],
+                        p > 1 ? parts[1] : "w",
+                        p > 2 ? parts[2] : "KQkq",
+                        p > 3 ? parts[3] : "-",
+                        p > 4 ? parts[4] : "0",
+                        p > 5 ? parts[5] : "1");
+            }
+            else
+            {
+                fenRead(&genboard,
+                        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR",
+                        "w", "KQkq", "-", "0", "1");
+            }
+
+            success = genfens_play_random(&genboard, GENFENS_RANDOM_PLIES);
+        }
+
+        char fenbuf[128];
+        boardToFen(&genboard, fenbuf);
+        printf("info string genfens %s\n", fenbuf);
+    }
+
+    if (book_lines)
+    {
+        for (int i = 0; i < book_count; i++)
+            free(book_lines[i]);
+        free(book_lines);
+    }
+
+    fflush(stdout);
+}
+
 
 void uciStart()
 {
@@ -700,7 +957,6 @@ void uciStart()
                 stop.max_nodes = 0;
                 stop.nodes = 0;
                 stop.stop = 0;
-                /* ------------------------------------------------ */
 
                 uint16_t result = iterative_deepening(&board, &stop);
 

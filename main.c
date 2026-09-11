@@ -6,7 +6,6 @@
 #include "bench.h"
 #include "eval.h"
 #include "tt.h"
-#include "datagen.h"
 
 int main(int argc, char **argv)
 {
@@ -22,9 +21,9 @@ int main(int argc, char **argv)
         bench_movegen();
         return 0;
     }
-    else if (argc > 1 && strncmp(argv[1], "genfens", 7) == 0)
+    else if (argc > 1 && strcmp(argv[1], "genfens") == 0)
     {
-        datagen_genfens(argc, argv);
+        genfensRun(argc, argv);
         return 0;
     }
 
