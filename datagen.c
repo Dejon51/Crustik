@@ -288,18 +288,14 @@ static bool generate_opening(Position *board) {
     long long opening_search_start = get_time_ms();
 
     while (get_time_ms() - opening_search_start < OPENING_GEN_TIMEOUT_MS) {
+        const char *base_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
         if (book_line_count > 0) {
             int line_idx = rng_uniform(book_line_count);
-            if (!parse_fen(board, book_lines[line_idx])) {
-                continue;
-            }
-            if (is_position_valid(board)) {
-                return true;
-            }
-            continue;
+            base_fen = book_lines[line_idx];
         }
 
-        if (!parse_fen(board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")) {
+        if (!parse_fen(board, base_fen)) {
             continue;
         }
 
