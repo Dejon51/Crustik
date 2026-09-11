@@ -11,6 +11,7 @@
 #include "search.h"
 #include "tt.h"
 #include "zobrist.h"
+#include "search_params.h"
 
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
@@ -56,12 +57,14 @@ int lmr_table[MAX_DEPTH + 1][MAX_LMR_MOVES + 1];
 
 void init_lmr()
 {
+    double divisor = LMR_DIVISOR_X100 / 100.0;
+
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
         for (int move = 1; move <= MAX_LMR_MOVES; move++)
         {
             int r = (int)(log((double)depth) *
-                          log((double)move) / 2.0);
+                          log((double)move) / divisor);
 
             if (r < 1)
                 r = 1;
@@ -69,8 +72,8 @@ void init_lmr()
             if (r > depth - 2)
                 r = depth - 2;
 
-            if (r > 8)
-                r = 8;
+            if (r > LMR_MAX_REDUCTION)
+                r = LMR_MAX_REDUCTION;
 
             lmr_table[depth][move] = r;
         }
@@ -371,7 +374,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
             int victim = piece_on_square(board, to);
             int flag = (move >> 12) & 0xF;
             bool is_promo = flag >= 5 && flag <= 8;
-            int delta_margin = 200;
+            int delta_margin = QS_DELTA_MARGIN;
 
             if (!is_mate_score(alpha) && !is_mate_score(beta))
             {
@@ -527,10 +530,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         if (!root_node &&
-            depth <= 6 &&
+            depth <= RFP_MAX_DEPTH &&
             !is_mate_score(beta))
         {
-            int margin = 100 * depth;
+            int margin = RFP_MARGIN * depth;
 
             if (static_eval - margin >= beta)
             {
@@ -539,9 +542,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     .move = 0};
             }
         }
-        if (depth >= 3 && !root_node && static_eval >= beta)
+        if (depth >= NMP_MIN_DEPTH && !root_node && static_eval >= beta)
         {
-            int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
+            int R = NMP_BASE + depth / NMP_DIVISOR +
+                    (static_eval - beta > NMP_EVAL_THRESHOLD ? NMP_EVAL_BONUS : 0);
             if (R > depth - 1)
                 R = depth - 1;
 
@@ -606,21 +610,21 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (!root_node &&
             !in_check &&
-            depth <= 3 &&
+            depth <= LMP_MAX_DEPTH &&
             !is_capture &&
             !is_killer &&
-            (int)i >= (improving ? 24 : 16))
+            (int)i >= (improving ? LMP_BASE_IMPROVING : LMP_BASE_NOT_IMPROVING))
         {
             continue;
         }
 
         if (!root_node &&
             !in_check &&
-            depth <= 8 &&
+            depth <= SEE_MAX_DEPTH &&
             !is_mate_score(alpha) &&
             !is_mate_score(beta))
         {
-            int see_threshold = is_capture ? -90 * depth : -50 * depth;
+            int see_threshold = is_capture ? -SEE_CAPTURE_MULT * depth : -SEE_QUIET_MULT * depth;
             if (!see_ge(board, move, see_threshold))
                 continue;
         }
@@ -629,22 +633,22 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !is_capture &&
             !is_killer &&
             !is_promotion &&
-            depth <= 3 &&
-            (int)i >= 4 &&
+            depth <= HP_MAX_DEPTH &&
+            (int)i >= HP_MIN_MOVE_INDEX &&
             move != tt_move)
         {
             int from = move_from(move);
             int to = move_to(move);
             int hist_score = butterfly_hist[board->turn][from][to];
 
-            int history_threshold = -4000 * depth;
+            int history_threshold = -HP_MULT * depth;
             if (hist_score < history_threshold)
                 continue;
         }
 
-        if (depth <= 3 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
+        if (depth <= FP_MAX_DEPTH && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
-            int futility_margin = 120 + 90 * depth;
+            int futility_margin = FP_BASE + FP_MULT * depth;
             if (static_eval + futility_margin <= alpha)
             {
 
@@ -662,13 +666,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             move == tt_move &&
             entry != NULL &&
             entry->move == tt_move &&
-            depth >= 8 &&
-            entry->depth >= depth - 3 &&
+            depth >= SE_MIN_DEPTH &&
+            entry->depth >= depth - SE_TT_DEPTH_MARGIN &&
             entry->flag != TT_ALPHA &&
             !is_mate_score(entry->score))
         {
             int tt_score = score_from_tt(entry->score, ply);
-            int singular_beta = tt_score - 2 * depth;
+            int singular_beta = tt_score - SE_BETA_MULT * depth;
             int singular_depth = (depth - 1) / 2;
 
             SearchStack singular_stack = {.excluded_move = move};
@@ -731,10 +735,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
                 if (is_pv_node)
                     reduction -= 1;
-                if (hist > 4000)
+                if (hist > LMR_HIST_THRESHOLD)
                     reduction--;
 
-                if (hist < -4000)
+                if (hist < -LMR_HIST_THRESHOLD)
                     reduction++;
 
                 if (reduction < 0)
@@ -800,7 +804,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (!is_capture && !is_promotion)
             {
-                int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
+                int malus = -clamp_int(HIST_MALUS_MULT * depth - HIST_MALUS_BASE, 0, MAX_HISTORY);
 
                 butterfly_hist[board->turn][from][to] +=
                     malus -
@@ -824,7 +828,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (!is_capture && !is_promotion)
             {
-                int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
+                int clampedBonus = clamp_int(HIST_BONUS_MULT * depth - HIST_BONUS_BASE, 0, MAX_HISTORY);
                 butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
 
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
@@ -880,8 +884,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     long long search_start = get_time_ms();
 
     int prev_score = 0;
-    int aspiration_delta = 25;
-    const int ASPIRATION_MAX_DELTA = 500;
+    int aspiration_delta = ASP_DELTA;
+    const int ASPIRATION_MAX_DELTA = ASP_MAX_DELTA;
 
     uint16_t prev_best_move = 0;
     int last_best_move_change = 0;

@@ -17,7 +17,8 @@ SRCS := \
 	tt.c \
 	uci.c \
 	zobrist.c \
-	datagen.c
+	datagen.c \
+	search_params.c
 
 OBJS := $(SRCS:.c=.o)
 

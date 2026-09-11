@@ -4,6 +4,7 @@
 #include "play.h"
 #include "search.h"
 #include "tt.h"
+#include "search_params.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -32,6 +33,31 @@ static int str_eq_ci(const char *a, const char *b)
         b++;
     }
     return *a == *b;
+}
+
+static int parse_int_token(const char *tok, int *out)
+{
+    int val = 0, neg = 0, idx = 0, saw_digit = 0;
+
+    if (tok[0] == '-')
+    {
+        neg = 1;
+        idx = 1;
+    }
+
+    for (; tok[idx] != '\0'; idx++)
+    {
+        if (tok[idx] < '0' || tok[idx] > '9')
+            return 0;
+        val = val * 10 + (tok[idx] - '0');
+        saw_digit = 1;
+    }
+
+    if (!saw_digit)
+        return 0;
+
+    *out = neg ? -val : val;
+    return 1;
 }
 
 void movestring(uint16_t move)
@@ -224,6 +250,7 @@ void uciStart()
             printf("id name Crustik 0.3.0\nid author Dejon Eltahan\n");
             printf("option name Hash type spin default %d min %d max %d\n", TT_DEFAULT_MB, TT_MIN_MB, TT_MAX_MB);
             printf("option name SoftNodes type check default false\n");
+            search_params_print_uci_options();
             printf("uciok\n");
         }
         else if (strcmp(tokens[0], "isready") == 0)
@@ -295,6 +322,47 @@ void uciStart()
                     printf("setoption SoftNodes: missing value\n");
                 }
             }
+            else if (tokens[1] && str_eq_ci(tokens[1], "name") && tokens[2])
+            {
+                char *value_tok = NULL;
+                for (int i = 3; tokens[i] != NULL; i++)
+                {
+                    if (str_eq_ci(tokens[i], "value") && tokens[i + 1])
+                    {
+                        value_tok = tokens[i + 1];
+                        break;
+                    }
+                }
+
+                if (!value_tok)
+                {
+                    printf("setoption %s: missing value\n", tokens[2]);
+                }
+                else
+                {
+                    int val;
+                    if (!parse_int_token(value_tok, &val))
+                    {
+                        printf("setoption %s: invalid value '%s'\n", tokens[2], value_tok);
+                    }
+                    else if (search_params_set(tokens[2], val))
+                    {
+                        init_lmr();
+                    }
+                    else
+                    {
+                        printf("setoption: unknown option '%s'\n", tokens[2]);
+                    }
+                }
+            }
+            else
+            {
+                printf("setoption: malformed command\n");
+            }
+        }
+        else if (strcmp(tokens[0], "spsa") == 0)
+        {
+            search_params_print_spsa();
         }
         else if (strcmp(tokens[0], "ucinewgame") == 0)
         {
