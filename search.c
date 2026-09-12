@@ -180,22 +180,26 @@ static bool is_repetition_or_fifty(Position *board, int ply)
         return true;
 
     int reversible_plies = board->halfmoves;
-    int total_ply = game_history_count + ply;
+    
+    int base = game_history_count > 0 ? game_history_count - 1 : 0;
+    int total_ply = base + ply;
 
     for (int i = 4; i <= reversible_plies && i <= total_ply; i += 2)
     {
         uint64_t past_hash;
         int idx = total_ply - i;
 
-        if (idx >= game_history_count)
+        if (idx >= base)
         {
-            int local_idx = idx - game_history_count;
+            int local_idx = idx - base;
             if (local_idx < 0 || local_idx >= MAX_SEARCH_PLY)
                 continue;
             past_hash = search_path_hash[local_idx];
         }
         else
+        {
             past_hash = game_history[idx];
+        }
 
         if (past_hash == board->hash)
             return true;
