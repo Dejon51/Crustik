@@ -325,6 +325,29 @@ static char **genfens_load_book(const char *path, int *count_out)
 
 void genfensRun(int argc, char **argv)
 {
+    char cmdbuf[4096];
+    cmdbuf[0] = '\0';
+    for (int i = 1; i < argc; i++) {
+        if (i > 1)
+            strncat(cmdbuf, " ", sizeof(cmdbuf) - strlen(cmdbuf) - 1);
+        strncat(cmdbuf, argv[i], sizeof(cmdbuf) - strlen(cmdbuf) - 1);
+    }
+
+    char *new_argv[64];
+    int   new_argc = 0;
+    new_argv[new_argc++] = argv[0];  
+
+    for (char *tok = strtok(cmdbuf, " \t");
+         tok && new_argc < 63;
+         tok = strtok(NULL, " \t"))
+    {
+        new_argv[new_argc++] = tok;
+    }
+    new_argv[new_argc] = NULL;
+
+    argc = new_argc;
+    argv = new_argv;
+
     if (argc < 3)
     {
         fprintf(stderr, "genfens: usage: genfens <count> [seed <n>] [book <path|None>]\n");
@@ -422,7 +445,7 @@ void genfensRun(int argc, char **argv)
         char fenbuf[128];
         boardToFen(&genboard, fenbuf);
         printf("info string genfens %s\n", fenbuf);
-        fflush(stdout); 
+        fflush(stdout);
     }
 
     if (book_lines)
@@ -434,7 +457,6 @@ void genfensRun(int argc, char **argv)
 
     fflush(stdout);
 }
-
 
 void uciStart()
 {

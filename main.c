@@ -21,7 +21,9 @@ int main(int argc, char **argv)
         bench_movegen();
         return 0;
     }
-    else if (argc > 1 && strcmp(argv[1], "genfens") == 0)
+    else if (argc > 1 &&
+             strncmp(argv[1], "genfens", 7) == 0 &&
+             (argv[1][7] == '\0' || argv[1][7] == ' ' || argv[1][7] == '\t'))
     {
         genfensRun(argc, argv);
         return 0;
@@ -29,6 +31,5 @@ int main(int argc, char **argv)
 
     uciStart();
     printf("\n");
-     
     return 0;
 }
