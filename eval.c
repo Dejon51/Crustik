@@ -12,7 +12,7 @@
 #include "incbin.h"
 
 #ifndef EVALFILE
-#define EVALFILE "quant128hl.bin"
+#define EVALFILE "quant256hl.bin"
 #endif
 
 INCBIN(EvalFile, EVALFILE);
