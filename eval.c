@@ -18,7 +18,7 @@
 INCBIN(EvalFile, EVALFILE);
 
 #define NNUE_INPUT   768
-#define NNUE_HL      128
+#define NNUE_HL      256
 #define NNUE_QA      255
 #define NNUE_QB      64
 #define NNUE_SCALE   400
