@@ -180,7 +180,7 @@ static bool is_repetition_or_fifty(Position *board, int ply)
         return true;
 
     int reversible_plies = board->halfmoves;
-    
+
     int base = game_history_count > 0 ? game_history_count - 1 : 0;
     int total_ply = base + ply;
 
@@ -207,7 +207,6 @@ static bool is_repetition_or_fifty(Position *board, int ply)
 
     return false;
 }
-
 
 // 145 elo moveordering
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
@@ -530,10 +529,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             eval_stack[ply] = static_eval;
         }
-        if (!root_node && !pv && depth <= 3 &&
+        if (!pv && ply > 0 && !in_check && depth <= 3 &&
             !is_mate_score(alpha) && !is_mate_score(beta))
         {
-            const int razor_margin = 200 + 120 * depth;
+            int razor_margin = 400;
 
             if (static_eval + razor_margin <= alpha)
             {
