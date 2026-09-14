@@ -238,10 +238,16 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         int victim = piece_on_square(board, to);
         int attacker = piece_on_square(board, from);
 
+        bool good_capture = see_ge(board, move, 0);
+
         if (victim != -1 && attacker != -1)
         {
             int mvv_lva = piece_value_lva(victim) * 10 - piece_value_lva(attacker);
-            scores[i] = CAPTURE_BASE + mvv_lva;
+
+            if (good_capture)
+                scores[i] = CAPTURE_BASE + mvv_lva;
+            else
+                scores[i] = BAD_CAPTURE_BASE + mvv_lva;
             continue;
         }
 
