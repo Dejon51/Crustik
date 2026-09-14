@@ -180,7 +180,7 @@ static bool is_repetition_or_fifty(Position *board, int ply)
         return true;
 
     int reversible_plies = board->halfmoves;
-    
+
     int base = game_history_count > 0 ? game_history_count - 1 : 0;
     int total_ply = base + ply;
 
@@ -207,7 +207,6 @@ static bool is_repetition_or_fifty(Position *board, int ply)
 
     return false;
 }
-
 
 // 145 elo moveordering
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
@@ -544,7 +543,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     .move = 0};
             }
         }
-        if (depth >= 3 && !root_node && static_eval >= beta)
+        bool has_non_pawn_material = (board->color[board->turn] & ~(board->pieces[0] | board->pieces[5])) != 0;
+        if (depth >= 3 && !root_node && static_eval >= beta && has_non_pawn_material)
         {
             int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
             if (R > depth - 1)
