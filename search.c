@@ -530,7 +530,22 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             eval_stack[ply] = static_eval;
         }
+        if (!root_node && !pv && depth <= 3 &&
+            !is_mate_score(alpha) && !is_mate_score(beta))
+        {
+            const int razor_margin = 200 + 120 * depth;
 
+            if (static_eval + razor_margin <= alpha)
+            {
+                int razor_score = quiesce(board, alpha, beta, ply, stop);
+
+                if (stop->stop)
+                    return (searchOutput){0};
+
+                if (razor_score <= alpha)
+                    return (searchOutput){.score = razor_score, .move = 0};
+            }
+        }
         if (!root_node &&
             depth <= 6 &&
             !is_mate_score(beta))
