@@ -217,6 +217,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
     const int TT_SCORE = 100000000;
     const int CAPTURE_BASE = 90000000;
+    const int BAD_CAPTURE_BASE = 70000000;
     const int KILLER_BASE = 80000000;
 
     bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid);
