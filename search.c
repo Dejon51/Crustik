@@ -529,10 +529,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             eval_stack[ply] = static_eval;
         }
-        if (!pv && ply > 0 && !in_check && depth <= 3 &&
+        if (!pv && ply > 0 && !in_check && depth <= 1 &&
             !is_mate_score(alpha) && !is_mate_score(beta))
         {
-            int razor_margin = 400;
+            int razor_margin = 600;
 
             if (static_eval + razor_margin <= alpha)
             {
