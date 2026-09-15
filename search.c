@@ -40,7 +40,6 @@ static int eval_stack[MAX_GAME_PLY];
 static int cont_hist[2][6][64][6][64];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
-static int nonpawn_corrhist[2][CORRHIST_SIZE];
 static uint64_t pawn_corrhist_keys[2][64];
 static bool corrhist_initialized = false;
 
@@ -78,7 +77,6 @@ void reset_history(void)
     memset(cont_hist, 0, sizeof cont_hist);
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
-    memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
     if (!corrhist_initialized)
         init_corrhist();
     for (int i = 0; i < MAX_GAME_PLY; i++)
@@ -265,24 +263,6 @@ static uint64_t compute_pawn_key(Position *board)
     return key;
 }
 
-static int compute_material_key(Position *board)
-{
-    int key = 0;
-    int mult = 1;
-
-    for (int type = 1; type <= 4; type++)
-    {
-        for (int c = 0; c < 2; c++)
-        {
-            int count = __builtin_popcountll(board->pieces[type] & board->color[c]);
-            if (count > 10)
-                count = 10;
-            key += count * mult;
-            mult *= 11;
-        }
-    }
-    return key & CORRHIST_MASK;
-}
 
 static int clamp_int_local(int v, int lo, int hi)
 {
@@ -296,10 +276,8 @@ static int clamp_int_local(int v, int lo, int hi)
 static int corrected_eval(Position *board, int raw_eval)
 {
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
-    int mkey = compute_material_key(board);
 
-    int correction = pawn_corrhist[board->turn][pkey] +
-                      nonpawn_corrhist[board->turn][mkey];
+    int correction = pawn_corrhist[board->turn][pkey];
 
     correction /= CORRHIST_GRAIN;
     correction = clamp_int_local(correction, -CORRHIST_MAX_APPLY, CORRHIST_MAX_APPLY);
@@ -316,14 +294,10 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
     int bonus = clamp_int_local(diff * depth, -CORRHIST_LIMIT, CORRHIST_LIMIT);
 
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
-    int mkey = compute_material_key(board);
     int side = board->turn;
 
     int *pc = &pawn_corrhist[side][pkey];
     *pc += bonus - *pc * abs(bonus) / CORRHIST_LIMIT;
-
-    int *npc = &nonpawn_corrhist[side][mkey];
-    *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
 }
 
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
