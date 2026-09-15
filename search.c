@@ -674,10 +674,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (ply < MAX_SEARCH_PLY)
                 cont_stack[ply].valid = false;
-
+            SearchStack null_stack = {.excluded_move = 0, .cutnode = true};
             int score = -search(&copy, depth - R - 1,
                                 ply + 1, -beta, -beta + 1,
-                                stop, NULL, &no_excl)
+                                stop, NULL, &null_stack)
                              .score;
 
             if (stop->stop)
@@ -793,7 +793,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int singular_beta = tt_score - 2 * depth;
             int singular_depth = (depth - 1) / 2;
 
-            SearchStack singular_stack = {.excluded_move = move};
+            SearchStack singular_stack = {.excluded_move = move, .cutnode = true};
 
             searchOutput se_result = search(board, singular_depth, ply,
                                             singular_beta - 1, singular_beta,
@@ -835,8 +835,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (i == 0 || depth <= 2)
         {
+            SearchStack child_stack = {.excluded_move = 0, .cutnode = !stack->cutnode};
             score = -search(&copy, depth - 1 + extension, ply + 1,
-                            -beta, -alpha, stop, &child_pv, &no_excl)
+                            -beta, -alpha, stop, &child_pv, &child_stack)
                          .score;
         }
         else
@@ -865,31 +866,34 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     reduction = depth - 1;
             }
 
+            SearchStack nw_stack = {.excluded_move = 0, .cutnode = true};
+
             if (reduction > 0)
             {
                 score = -search(&copy, depth - 1 - reduction, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, &no_excl)
+                                -alpha - 1, -alpha, stop, NULL, &nw_stack)
                              .score;
 
                 if (!stop->stop && score > alpha)
                 {
                     score = -search(&copy, depth - 1 + extension, ply + 1,
-                                    -alpha - 1, -alpha, stop, NULL, &no_excl)
+                                    -alpha - 1, -alpha, stop, NULL, &nw_stack)
                                  .score;
                 }
             }
             else
             {
                 score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, &no_excl)
+                                -alpha - 1, -alpha, stop, NULL, &nw_stack)
                              .score;
             }
 
             if (!stop->stop && score > alpha && score < beta)
             {
+                SearchStack pv_restack = {.excluded_move = 0, .cutnode = false};
                 child_pv.length = 0;
                 score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -beta, -alpha, stop, &child_pv, &no_excl)
+                                -beta, -alpha, stop, &child_pv, &pv_restack)
                              .score;
             }
         }

@@ -2,6 +2,7 @@
 #define SEARCH_H
 
 #include "lmath.h"
+#include <stdbool.h>
 
 #define MAX_PV_LENGTH 200
 
@@ -31,6 +32,7 @@ typedef struct {
 
 typedef struct {
     uint16_t excluded_move;
+    bool cutnode;
 } SearchStack;
 
 
