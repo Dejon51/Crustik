@@ -22,6 +22,12 @@
 
 #define MAX_SEARCH_PLY 128
 
+#define CORRHIST_SIZE 16384
+#define CORRHIST_MASK (CORRHIST_SIZE - 1)
+#define CORRHIST_LIMIT 16384
+#define CORRHIST_GRAIN 256
+#define CORRHIST_MAX_APPLY 128
+
 uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
 
@@ -33,6 +39,11 @@ static int eval_stack[MAX_GAME_PLY];
 
 static int cont_hist[2][6][64][6][64];
 
+static int pawn_corrhist[2][CORRHIST_SIZE];
+static int nonpawn_corrhist[2][CORRHIST_SIZE];
+static uint64_t pawn_corrhist_keys[2][64];
+static bool corrhist_initialized = false;
+
 typedef struct
 {
     int piece;
@@ -42,12 +53,34 @@ typedef struct
 
 static ContRecord cont_stack[MAX_SEARCH_PLY];
 
+static void init_corrhist(void)
+{
+    uint64_t seed = 0x9E3779B97F4A7C15ULL;
+    for (int c = 0; c < 2; c++)
+    {
+        for (int sq = 0; sq < 64; sq++)
+        {
+            seed += 0x9E3779B97F4A7C15ULL;
+            uint64_t z = seed;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+            z = z ^ (z >> 31);
+            pawn_corrhist_keys[c][sq] = z;
+        }
+    }
+    corrhist_initialized = true;
+}
+
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(cont_stack, 0, sizeof cont_stack);
+    memset(pawn_corrhist, 0, sizeof pawn_corrhist);
+    memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
+    if (!corrhist_initialized)
+        init_corrhist();
     for (int i = 0; i < MAX_GAME_PLY; i++)
         eval_stack[i] = NO_EVAL;
 }
@@ -134,17 +167,17 @@ static int piece_value_lva(int piece)
     switch (piece)
     {
     case 0:
-        return 100; // pawn
+        return 100;
     case 1:
-        return 330; // bishop
+        return 330;
     case 2:
-        return 320; // horse/knight
+        return 320;
     case 3:
-        return 500; // rook
+        return 500;
     case 4:
-        return 900; // queen
+        return 900;
     case 5:
-        return 20000; // king
+        return 20000;
     }
     return 0;
 }
@@ -208,7 +241,91 @@ static bool is_repetition_or_fifty(Position *board, int ply)
     return false;
 }
 
-// 145 elo moveordering
+static uint64_t compute_pawn_key(Position *board)
+{
+    uint64_t key = 0;
+    uint64_t bb;
+
+    bb = board->pieces[0] & board->color[0];
+    while (bb)
+    {
+        int sq = __builtin_ctzll(bb);
+        key ^= pawn_corrhist_keys[0][sq];
+        bb &= bb - 1;
+    }
+
+    bb = board->pieces[0] & board->color[1];
+    while (bb)
+    {
+        int sq = __builtin_ctzll(bb);
+        key ^= pawn_corrhist_keys[1][sq];
+        bb &= bb - 1;
+    }
+
+    return key;
+}
+
+static int compute_material_key(Position *board)
+{
+    int key = 0;
+    int mult = 1;
+
+    for (int type = 1; type <= 4; type++)
+    {
+        for (int c = 0; c < 2; c++)
+        {
+            int count = __builtin_popcountll(board->pieces[type] & board->color[c]);
+            if (count > 10)
+                count = 10;
+            key += count * mult;
+            mult *= 11;
+        }
+    }
+    return key & CORRHIST_MASK;
+}
+
+static int clamp_int_local(int v, int lo, int hi)
+{
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
+    return v;
+}
+
+static int corrected_eval(Position *board, int raw_eval)
+{
+    uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
+    int mkey = compute_material_key(board);
+
+    int correction = pawn_corrhist[board->turn][pkey] +
+                      nonpawn_corrhist[board->turn][mkey];
+
+    correction /= CORRHIST_GRAIN;
+    correction = clamp_int_local(correction, -CORRHIST_MAX_APPLY, CORRHIST_MAX_APPLY);
+
+    return raw_eval + correction;
+}
+
+static void update_corrhist(Position *board, int depth, int static_eval, int best_score)
+{
+    if (is_mate_score(best_score))
+        return;
+
+    int diff = best_score - static_eval;
+    int bonus = clamp_int_local(diff * depth, -CORRHIST_LIMIT, CORRHIST_LIMIT);
+
+    uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
+    int mkey = compute_material_key(board);
+    int side = board->turn;
+
+    int *pc = &pawn_corrhist[side][pkey];
+    *pc += bonus - *pc * abs(bonus) / CORRHIST_LIMIT;
+
+    int *npc = &nonpawn_corrhist[side][mkey];
+    *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
+}
+
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList ordered = *move_list;
@@ -289,7 +406,6 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     return ordered;
 }
 
-// 361 elo qsearch
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 {
     stop->nodes++;
@@ -511,23 +627,25 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     }
 
     int static_eval = 0;
+    int ceval = 0;
     bool improving = false;
 
     if (!in_check)
     {
-
         if (entry && entry->eval != NO_EVAL)
             static_eval = entry->eval;
         else
             static_eval = eval(board, ply);
 
+        ceval = corrected_eval(board, static_eval);
+
         if (ply < MAX_GAME_PLY)
         {
             improving = (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
-                            ? static_eval > eval_stack[ply - 2]
+                            ? ceval > eval_stack[ply - 2]
                             : true;
 
-            eval_stack[ply] = static_eval;
+            eval_stack[ply] = ceval;
         }
 
         if (!root_node &&
@@ -536,17 +654,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int margin = 100 * depth;
 
-            if (static_eval - margin >= beta)
+            if (ceval - margin >= beta)
             {
                 return (searchOutput){
-                    .score = (static_eval + beta) / 2,
+                    .score = (ceval + beta) / 2,
                     .move = 0};
             }
         }
         bool has_non_pawn_material = (board->color[board->turn] & ~(board->pieces[0] | board->pieces[5])) != 0;
-        if (depth >= 3 && !root_node && static_eval >= beta && has_non_pawn_material)
+        if (depth >= 3 && !root_node && ceval >= beta && has_non_pawn_material)
         {
-            int R = 3 + depth / 6 + (static_eval - beta > 300 ? 1 : 0);
+            int R = 3 + depth / 6 + (ceval - beta > 300 ? 1 : 0);
             if (R > depth - 1)
                 R = depth - 1;
 
@@ -650,9 +768,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (depth <= 3 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
             int futility_margin = 120 + 90 * depth;
-            if (static_eval + futility_margin <= alpha)
+            if (ceval + futility_margin <= alpha)
             {
-
                 if (!is_capture && !is_promotion)
                 {
                     continue;
@@ -853,6 +970,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!searched_any)
         return (searchOutput){.score = in_check ? eval(board, ply) : static_eval,
                               .move = 0};
+
+    if (!stop->stop && stack->excluded_move == 0 && !in_check)
+        update_corrhist(board, depth, static_eval, best_score);
 
     if (!stop->stop && stack->excluded_move == 0)
     {
