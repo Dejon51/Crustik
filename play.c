@@ -86,7 +86,7 @@ bool squareAttacked(Position *b, int sq, int enemy)
 
 Bitboard pawnMask(Position *board, bool color)
 {
-    Bitboard pawns = board->pieces[0] & board->color[color];
+    Bitboard pawns = board->pieces[PAWNNUMBER] & board->color[color];
 
     if (color)
     {
@@ -111,7 +111,7 @@ Bitboard horseMask(Position *board, bool color)
     const Bitboard NOT_AB_FILE = ~(FILE_A | FILE_B);
     const Bitboard NOT_GH_FILE = ~(FILE_G | FILE_H);
 
-    Bitboard knights = board->pieces[2] & board->color[color];
+    Bitboard knights = board->pieces[HORSENUMBER] & board->color[color];
     Bitboard horsemask = 0ULL;
 
     horsemask |= (knights & NOT_H_FILE)  << 17;
@@ -131,13 +131,13 @@ Bitboard bishopMask(Position *board, bool color)
 {
     Bitboard bishopmask = 0ULL;
 
-    uint64_t sliding = (board->pieces[1] | board->pieces[4]) & board->color[color];
+    uint64_t sliding = (board->pieces[1] | board->pieces[QUEENNUMBER]) & board->color[color];
 
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
 
-        uint64_t attacks = getbishopAttacks(ind, board->color[2]);
+        uint64_t attacks = getbishopAttacks(ind, board->color[OCCUPANCY]);
 
         attacks &= ~board->color[color];
 
@@ -151,13 +151,13 @@ Bitboard rookMask(Position *board, bool color)
 {
     Bitboard rookmask = 0ULL;
 
-    uint64_t sliding = (board->pieces[3] | board->pieces[4]) & board->color[color];
+    uint64_t sliding = (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & board->color[color];
 
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
 
-        uint64_t attacks = getrookAttacks(ind, board->color[2]);
+        uint64_t attacks = getrookAttacks(ind, board->color[OCCUPANCY]);
 
         attacks &= ~board->color[color];
 
@@ -169,7 +169,7 @@ Bitboard rookMask(Position *board, bool color)
 
 Bitboard kingMask(Position *board, bool color)
 {
-    Bitboard kingscolor = board->pieces[5] & board->color[color];
+    Bitboard kingscolor = board->pieces[KINGNUMBER] & board->color[color];
 
     if (!kingscolor)
         return 0ULL;
@@ -180,17 +180,17 @@ Bitboard kingMask(Position *board, bool color)
 // Optimized: Separate white pawn moves (no color branching)
 void pawnMovesWhite(Position *board, MoveList *list)
 {
-    uint64_t pawns = board->pieces[0] & board->color[0];
+    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[WHITE];
     if (!pawns)
         return;
 
-    uint64_t empty = ~(board->color[2]);
-    uint64_t enemies = board->color[1];
+    uint64_t empty = ~(board->color[OCCUPANCY]);
+    uint64_t enemies = board->color[BLACK];
 
     if (board->epsquare != -1)
     {
         int cap_sq = board->epsquare + 8;
-        if ((board->pieces[0] & board->color[1]) & (1ULL << cap_sq))
+        if ((board->pieces[PAWNNUMBER] & board->color[BLACK]) & (1ULL << cap_sq))
         {
             enemies |= (1ULL << board->epsquare);
         }
@@ -279,17 +279,17 @@ void pawnMovesWhite(Position *board, MoveList *list)
 // Optimized: Separate black pawn moves (no color branching)
 void pawnMovesBlack(Position *board, MoveList *list)
 {
-    uint64_t pawns = board->pieces[0] & board->color[1];
+    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[BLACK];
     if (!pawns)
         return;
 
-    uint64_t empty = ~(board->color[2]);
-    uint64_t enemies = board->color[0];
+    uint64_t empty = ~(board->color[OCCUPANCY]);
+    uint64_t enemies = board->color[WHITE];
 
     if (board->epsquare != -1)
     {
         int cap_sq = board->epsquare - 8;
-        if ((board->pieces[0] & board->color[0]) & (1ULL << cap_sq))
+        if ((board->pieces[PAWNNUMBER] & board->color[WHITE]) & (1ULL << cap_sq))
         {
             enemies |= (1ULL << board->epsquare);
         }
@@ -386,7 +386,7 @@ Bitboard horseMoves(Position *board, bool color)
     const Bitboard NOT_AB_FILE = ~(FILE_A | FILE_B);
     const Bitboard NOT_GH_FILE = ~(FILE_G | FILE_H);
 
-    Bitboard knights = board->pieces[2] & board->color[color];
+    Bitboard knights = board->pieces[HORSENUMBER] & board->color[color];
     Bitboard attacks = 0ULL;
 
     attacks |= (knights & NOT_H_FILE)  << 17;
@@ -404,13 +404,13 @@ Bitboard horseMoves(Position *board, bool color)
 
 void bishopMoves(Position *board, MoveList *list, bool color)
 {
-    uint64_t sliding = (board->pieces[1] | board->pieces[4]) & board->color[color];
+    uint64_t sliding = (board->pieces[1] | board->pieces[QUEENNUMBER]) & board->color[color];
 
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
 
-        uint64_t attacks = getbishopAttacks(ind, board->color[2]);
+        uint64_t attacks = getbishopAttacks(ind, board->color[OCCUPANCY]);
 
         attacks &= ~board->color[color];
 
@@ -424,13 +424,13 @@ void bishopMoves(Position *board, MoveList *list, bool color)
 
 void rookMoves(Position *board, MoveList *list, bool color)
 {
-    uint64_t sliding = (board->pieces[3] | board->pieces[4]) & board->color[color];
+    uint64_t sliding = (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & board->color[color];
 
     while (sliding)
     {
         int ind = pop_lsb(&sliding);
 
-        uint64_t attacks = getrookAttacks(ind, board->color[2]);
+        uint64_t attacks = getrookAttacks(ind, board->color[OCCUPANCY]);
 
         attacks &= ~board->color[color];
 
@@ -447,21 +447,21 @@ bool squareAttacked_custom(Position *b, int sq, int enemy, uint64_t custom_occ)
     uint64_t enemyPieces = b->color[enemy] & custom_occ;
 
     if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
-        (b->pieces[0] & enemyPieces))
+        (b->pieces[PAWNNUMBER] & enemyPieces))
         return true;
 
-    if (knighttable[sq] & (b->pieces[2] & enemyPieces))
+    if (knighttable[sq] & (b->pieces[HORSENUMBER] & enemyPieces))
         return true;
 
-    if (kingtable[sq] & (b->pieces[5] & enemyPieces))
+    if (kingtable[sq] & (b->pieces[KINGNUMBER] & enemyPieces))
         return true;
 
     if (getbishopAttacks(sq, custom_occ) &
-        ((b->pieces[1] | b->pieces[4]) & enemyPieces))
+        ((b->pieces[1] | b->pieces[QUEENNUMBER]) & enemyPieces))
         return true;
 
     if (getrookAttacks(sq, custom_occ) &
-        ((b->pieces[3] | b->pieces[4]) & enemyPieces))
+        ((b->pieces[3] | b->pieces[QUEENNUMBER]) & enemyPieces))
         return true;
 
     return false;
@@ -471,10 +471,10 @@ void kingMoves(Position *board, MoveList *list, bool color, int check_count)
 {
     int us = color;
     int them = !color;
-    uint64_t kings = board->pieces[5] & board->color[us];
+    uint64_t kings = board->pieces[KINGNUMBER] & board->color[us];
 
     int from = __builtin_ctzll(kings);
-    uint64_t occupancy = board->color[2];
+    uint64_t occupancy = board->color[OCCUPANCY];
 
     uint64_t attacks = kingtable[from];
     attacks &= ~board->color[us];
@@ -542,14 +542,14 @@ void kingMoves(Position *board, MoveList *list, bool color, int check_count)
 
 uint64_t get_checkers(Position *board, int sq, int enemy_color)
 {
-    uint64_t occ = board->color[2];
+    uint64_t occ = board->color[OCCUPANCY];
     uint64_t checkers = 0;
 
     checkers |= (enemy_color == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &
-                (board->pieces[0] & board->color[enemy_color]);
-    checkers |= knighttable[sq] & (board->pieces[2] & board->color[enemy_color]);
-    checkers |= getbishopAttacks(sq, occ) & ((board->pieces[1] | board->pieces[4]) & board->color[enemy_color]);
-    checkers |= getrookAttacks(sq, occ) & ((board->pieces[3] | board->pieces[4]) & board->color[enemy_color]);
+                (board->pieces[PAWNNUMBER] & board->color[enemy_color]);
+    checkers |= knighttable[sq] & (board->pieces[HORSENUMBER] & board->color[enemy_color]);
+    checkers |= getbishopAttacks(sq, occ) & ((board->pieces[1] | board->pieces[QUEENNUMBER]) & board->color[enemy_color]);
+    checkers |= getrookAttacks(sq, occ) & ((board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & board->color[enemy_color]);
 
     return checkers;
 }
@@ -557,8 +557,8 @@ uint64_t get_checkers(Position *board, int sq, int enemy_color)
 uint64_t get_potential_pinners(Position *board, int king_sq, int enemy_color)
 {
     uint64_t pinners = 0;
-    pinners |= getbishopAttacks(king_sq, 0) & ((board->pieces[1] | board->pieces[4]) & board->color[enemy_color]);
-    pinners |= getrookAttacks(king_sq, 0) & ((board->pieces[3] | board->pieces[4]) & board->color[enemy_color]);
+    pinners |= getbishopAttacks(king_sq, 0) & ((board->pieces[1] | board->pieces[QUEENNUMBER]) & board->color[enemy_color]);
+    pinners |= getrookAttacks(king_sq, 0) & ((board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & board->color[enemy_color]);
     return pinners;
 }
 
@@ -639,12 +639,12 @@ static void pawnMovesWhiteLegal(Position *board, MoveList *list,
                                 int them,
                                 uint64_t occ)
 {
-    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[0];
+    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[WHITE];
     if (!pawns)
         return;
 
-    uint64_t empty = ~board->color[2];
-    uint64_t enemies = board->color[1];
+    uint64_t empty = ~board->color[OCCUPANCY];
+    uint64_t enemies = board->color[BLACK];
 
     const uint64_t FILE_A = 0x0101010101010101ULL;
     const uint64_t FILE_H = 0x8080808080808080ULL;
@@ -696,7 +696,7 @@ static void pawnMovesWhiteLegal(Position *board, MoveList *list,
         int ep = board->epsquare;
         int cap_sq = ep + 8;
 
-        if ((board->pieces[PAWNNUMBER] & board->color[1]) & (1ULL << cap_sq))
+        if ((board->pieces[PAWNNUMBER] & board->color[BLACK]) & (1ULL << cap_sq))
         {
             uint64_t ep_bb = 1ULL << ep;
             uint64_t ep_l = ((norm_pawns & ~FILE_A) >> 9) & ep_bb;
@@ -759,12 +759,12 @@ static void pawnMovesBlackLegal(Position *board, MoveList *list,
                                 int them,
                                 uint64_t occ)
 {
-    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[1];
+    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[BLACK];
     if (!pawns)
         return;
 
-    uint64_t empty = ~board->color[2];
-    uint64_t enemies = board->color[0];
+    uint64_t empty = ~board->color[OCCUPANCY];
+    uint64_t enemies = board->color[WHITE];
 
     const uint64_t FILE_A = 0x0101010101010101ULL;
     const uint64_t FILE_H = 0x8080808080808080ULL;
@@ -816,7 +816,7 @@ static void pawnMovesBlackLegal(Position *board, MoveList *list,
         int ep = board->epsquare;
         int cap_sq = ep - 8;
 
-        if ((board->pieces[PAWNNUMBER] & board->color[0]) & (1ULL << cap_sq))
+        if ((board->pieces[PAWNNUMBER] & board->color[WHITE]) & (1ULL << cap_sq))
         {
             uint64_t ep_bb = 1ULL << ep;
             uint64_t ep_l = ((norm_pawns & ~FILE_A) << 7) & ep_bb;
@@ -898,7 +898,7 @@ static void bishopMovesLegal(Position *board, MoveList *list, bool color,
                              const uint64_t pinner_ray[64])
 {
     uint64_t own = board->color[color];
-    uint64_t occ = board->color[2];
+    uint64_t occ = board->color[OCCUPANCY];
     uint64_t sliding = (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & own;
 
     while (sliding)
@@ -923,7 +923,7 @@ static void rookMovesLegal(Position *board, MoveList *list, bool color,
                            const uint64_t pinner_ray[64])
 {
     uint64_t own = board->color[color];
-    uint64_t occ = board->color[2];
+    uint64_t occ = board->color[OCCUPANCY];
     uint64_t sliding = (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & own;
 
     while (sliding)
@@ -954,7 +954,7 @@ static void kingMovesLegal(Position *board, MoveList *list, bool color,
         return;
 
     int from = __builtin_ctzll(kings);
-    uint64_t occupancy = board->color[2];
+    uint64_t occupancy = board->color[OCCUPANCY];
     uint64_t from_bb = 1ULL << from;
     uint64_t own_without_king = board->color[us] & ~from_bb;
 
@@ -1033,7 +1033,7 @@ static void kingMovesLegal(Position *board, MoveList *list, bool color,
 
 void legalMoveGen(Position *board, MoveList *list)
 {
-    board->color[2] = board->color[0] | board->color[1];
+    board->color[OCCUPANCY] = board->color[WHITE] | board->color[BLACK];
 
     int us = board->turn;
     int them = !us;
@@ -1043,7 +1043,7 @@ void legalMoveGen(Position *board, MoveList *list)
         return;
 
     int king_sq = __builtin_ctzll(king_bb);
-    uint64_t occ = board->color[2];
+    uint64_t occ = board->color[OCCUPANCY];
 
     uint64_t checkers = get_checkers(board, king_sq, them);
     int check_count = __builtin_popcountll(checkers);
@@ -1279,7 +1279,7 @@ static inline void makeMove##COLOR(Position *board, MoveList *list, int move)  \
     if (moving_piece == 0 && to == old_epsquare && old_epsquare != -1) {       \
         int captured_sq = to + ((c == 0) ? 8 : -8);                            \
         uint64_t capBB = 1ULL << captured_sq;                                  \
-        board->pieces[0]      &= ~capBB;                                       \
+        board->pieces[PAWNNUMBER]      &= ~capBB;                                       \
         board->color[!c]       &= ~capBB;                                      \
         board->mailbox[captured_sq] = 6;                                       \
         board->hash ^= zobrist_table[(!c * 384) + (0 * 64) + captured_sq];     \
@@ -1339,7 +1339,7 @@ void captureMoves(Position *board, MoveList *list, bool color)
 {
     uint64_t own = board->color[color];
     uint64_t enemies = board->color[!color];
-    uint64_t occ = board->color[2];
+    uint64_t occ = board->color[OCCUPANCY];
 
     const uint64_t FILE_A = 0x0101010101010101ULL;
     const uint64_t FILE_H = 0x8080808080808080ULL;
@@ -1438,7 +1438,7 @@ void qsearchMoves(Position *board, MoveList *list, bool color) {
     captureMoves(board, list, color);
 
     uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[color];
-    uint64_t empty = ~(board->color[2]);
+    uint64_t empty = ~(board->color[OCCUPANCY]);
     int prom_flag = 8;
 
     if (color == 0) { // White
@@ -1465,7 +1465,7 @@ bool king_in_check(Position *board, int us) {
     uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];
     if (!king_bb) return false;
     int king_sq = __builtin_ctzll(king_bb);
-    uint64_t occ = board->color[0] | board->color[1];
+    uint64_t occ = board->color[WHITE] | board->color[BLACK];
     AttackSet enemyAttacks = buildAttackSet(board, !us);
     return squareAttacked_fast(king_sq, !us, occ, &enemyAttacks);
 }
@@ -1562,8 +1562,8 @@ uint64_t get_attackers(Position *board, int sq, uint64_t occ)
 {
     uint64_t attackers = 0ULL;
 
-    attackers |= white_pawn_attacks[sq] & board->pieces[PAWNNUMBER] & board->color[0];
-    attackers |= black_pawn_attacks[sq] & board->pieces[PAWNNUMBER] & board->color[1];
+    attackers |= white_pawn_attacks[sq] & board->pieces[PAWNNUMBER] & board->color[WHITE];
+    attackers |= black_pawn_attacks[sq] & board->pieces[PAWNNUMBER] & board->color[BLACK];
 
     attackers |= knighttable[sq] & board->pieces[HORSENUMBER];
 
@@ -1643,7 +1643,7 @@ bool see_ge(Position *board, uint16_t move, int threshold)
 
     if (gain[d] < threshold) return false;
 
-    uint64_t occ = board->color[0] | board->color[1];
+    uint64_t occ = board->color[WHITE] | board->color[BLACK];
     uint64_t attackers = get_attackers(board, to, occ);
 
     occ &= ~(1ULL << from);

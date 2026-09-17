@@ -112,9 +112,9 @@ void init_lmr()
 
 static void move_to_uci(uint16_t move, char *buf)
 {
-    int from = (move >> 6) & 0x3F;
-    int to = move & 0x3F;
-    int flag = (move >> 12) & 0xF;
+    int from = move_from(move);
+    int to = move_to(move);
+    int flag = move_flag(move);
 
     buf[0] = 'a' + (from & 7);
     buf[1] = '0' + (8 - (from >> 3));

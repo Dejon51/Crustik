@@ -7,7 +7,6 @@
 
 #define ILLEGALMOVE 42
 
-#define WHITE -1;
 
 typedef struct {
     uint16_t moves[218];

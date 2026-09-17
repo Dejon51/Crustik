@@ -51,6 +51,7 @@ enum {
     ROOKNUMBER = 3,
     QUEENNUMBER = 4,
     KINGNUMBER = 5,
+    EMPTYNUMBER = 6,
 };
 
 typedef enum {
@@ -66,6 +67,7 @@ typedef enum {
     enum Side : uint8_t {
         WHITE = 0,
         BLACK = 1,
+        OCCUPANCY = 2,
     };
 
     enum Square : uint8_t {
@@ -84,6 +86,7 @@ typedef enum {
     enum Side {
         WHITE = 0,
         BLACK = 1,
+        OCCUPANCY = 2,
     };
 
     enum Square {
