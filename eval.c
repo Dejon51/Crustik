@@ -103,7 +103,7 @@ static inline int nnue_screlu(int16_t x)
     return v * v;
 }
 
-static inline int nnue_featureIndex(int persp, int pieceIsOwn, int internal_piece, int sq)
+static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece, int sq)
 {
     int nnue_piece = internal_to_nnue_encoding[internal_piece];
     int relSq = (persp == 0) ? NNUE_FLIP(sq) : sq; // Flip relative perspective
@@ -127,7 +127,7 @@ static void nnue_touchPiece(NnueAccumulator *acc, int internal_piece, int color,
     for (int persp = 0; persp < 2; persp++)
     {
         int pieceIsOwn = (color == persp);
-        int feature_index = nnue_featureIndex(persp, pieceIsOwn, internal_piece, sq);
+        int feature_index = nnue_inputIndex(persp, pieceIsOwn, internal_piece, sq);
         if (sign > 0)
             nnue_addFeature(acc->vector[persp], feature_index);
         else
