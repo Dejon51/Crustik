@@ -26,7 +26,7 @@ INCBIN(EvalFile, EVALFILE);
 #define NNUE_FLIP(sq) ((sq) ^ 56)
 
 static int16_t nnue_featureWeights[NNUE_INPUT][NNUE_HL];
-static int16_t nnue_featureBiases[NNUE_HL];
+static int16_t nnue_hiddenBiases[NNUE_HL];
 static int16_t nnue_outputWeights[2 * NNUE_HL];
 static int32_t nnue_outputBias;
 
@@ -65,7 +65,7 @@ static int nnue_load(void)
     size_t size = (size_t)gEvalFileSize;
     size_t offset = 0;
 
-    size_t required_size = sizeof(nnue_featureWeights) + sizeof(nnue_featureBiases) + sizeof(nnue_outputWeights) + sizeof(int16_t);
+    size_t required_size = sizeof(nnue_featureWeights) + sizeof(nnue_hiddenBiases) + sizeof(nnue_outputWeights) + sizeof(int16_t);
 
     if (size < required_size)
     {
@@ -77,8 +77,8 @@ static int nnue_load(void)
     memcpy(nnue_featureWeights, data + offset, sizeof(nnue_featureWeights)); // Copy to static array
     offset += sizeof(nnue_featureWeights);                                   // Moves offset from weights to biases
 
-    memcpy(nnue_featureBiases, data + offset, sizeof(nnue_featureBiases)); // Copy to static array
-    offset += sizeof(nnue_featureBiases);                                  // Moves offset from biases to output weights
+    memcpy(nnue_hiddenBiases, data + offset, sizeof(nnue_hiddenBiases)); // Copy to static array
+    offset += sizeof(nnue_hiddenBiases);                                  // Moves offset from biases to output weights
 
     memcpy(nnue_outputWeights, data + offset, sizeof(nnue_outputWeights)); // Copy to static array
     offset += sizeof(nnue_outputWeights);                                  // Moves offset from output weights to output neuron's bias
@@ -110,66 +110,53 @@ static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece,
     return (pieceIsOwn ? nnue_piece : nnue_piece + 6) * 64 + relSq;
 }
 
-static inline void nnue_addFeature(int16_t acc[NNUE_HL], int feature_index)
+static inline void nnue_addFeature(int16_t acc[NNUE_HL], int input_index)
 {
     for (int h = 0; h < NNUE_HL; h++)
-        acc[h] += nnue_featureWeights[feature_index][h];
+        acc[h] += nnue_featureWeights[input_index][h];
 }
 
-static inline void nnue_subFeature(int16_t acc[NNUE_HL], int feature_index)
+static inline void nnue_subFeature(int16_t acc[NNUE_HL], int input_index)
 {
     for (int h = 0; h < NNUE_HL; h++)
-        acc[h] -= nnue_featureWeights[feature_index][h];
+        acc[h] -= nnue_featureWeights[input_index][h];
 }
 
+// Adds or removes piece when board is changed
 static void nnue_touchPiece(NnueAccumulator *acc, int internal_piece, int color, int sq, int sign)
 {
     for (int persp = 0; persp < 2; persp++)
     {
         int pieceIsOwn = (color == persp);
-        int feature_index = nnue_inputIndex(persp, pieceIsOwn, internal_piece, sq);
+        int input_index = nnue_inputIndex(persp, pieceIsOwn, internal_piece, sq);
         if (sign > 0)
-            nnue_addFeature(acc->vector[persp], feature_index);
+            nnue_addFeature(acc->vector[persp], input_index);
         else
-            nnue_subFeature(acc->vector[persp], feature_index);
+            nnue_subFeature(acc->vector[persp], input_index);
     }
 }
 
 static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL])
 {
     for (int h = 0; h < NNUE_HL; h++)
-        acc[h] = nnue_featureBiases[h];
+        acc[h] = nnue_hiddenBiases[h];
 
     int otherSide = ownSide ^ 1;
 
     for (int internal_piece = 0; internal_piece < 6; internal_piece++)
     {
-        int nnue_piece = internal_to_nnue_encoding[internal_piece];
-
         uint64_t bb = board->pieces[internal_piece] & board->color[ownSide];
         while (bb)
         {
-            int sq = __builtin_ctzll(bb);
-            bb &= bb - 1;
-
-            int relSq = (ownSide == 0) ? NNUE_FLIP(sq) : sq;
-            int feature_index = nnue_piece * 64 + relSq;
-
-            for (int h = 0; h < NNUE_HL; h++)
-                acc[h] += nnue_featureWeights[feature_index][h];
+            int sq = pop_lsb(&bb);
+            nnue_addFeature(acc, nnue_inputIndex(ownSide, 1, internal_piece, sq));
         }
 
         bb = board->pieces[internal_piece] & board->color[otherSide];
         while (bb)
         {
-            int sq = __builtin_ctzll(bb);
-            bb &= bb - 1;
-
-            int relSq = (ownSide == 0) ? NNUE_FLIP(sq) : sq;
-            int feature_index = (nnue_piece + 6) * 64 + relSq;
-
-            for (int h = 0; h < NNUE_HL; h++)
-                acc[h] += nnue_featureWeights[feature_index][h];
+            int sq = pop_lsb(&bb);
+            nnue_addFeature(acc, nnue_inputIndex(ownSide, 0, internal_piece, sq));
         }
     }
 }
@@ -267,21 +254,20 @@ void nnue_update(Position *board, uint16_t move, int parent_ply, int child_ply)
 static int nnue_forward(Position *board, int ply)
 {
     ply = nnue_clampPly(ply);
-    int16_t *accUs = nnue_stack[ply].vector[board->turn];
+    int16_t *accUs   = nnue_stack[ply].vector[board->turn];
     int16_t *accThem = nnue_stack[ply].vector[board->turn ^ 1];
 
-    long long unscaled_eval = 0;
+    long long sum = 0;
     for (int h = 0; h < NNUE_HL; h++)
-        unscaled_eval += (long long)nnue_screlu(accUs[h]) * nnue_outputWeights[h];
-    for (int h = 0; h < NNUE_HL; h++)
-        unscaled_eval += (long long)nnue_screlu(accThem[h]) * nnue_outputWeights[NNUE_HL + h];
+    {
+        sum += (long long)nnue_screlu(accUs[h])   * nnue_outputWeights[h];
+        sum += (long long)nnue_screlu(accThem[h]) * nnue_outputWeights[NNUE_HL + h];
+    }
 
-    long long step = unscaled_eval / HIDDEN_QUANT_SCALE;
-    step += nnue_outputBias;
-    step *= NNUE_SCALE;
-    step /= ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
+    sum = sum / HIDDEN_QUANT_SCALE + nnue_outputBias;
+    sum = sum * NNUE_SCALE / ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
 
-    return (int)step;
+    return (int)sum;
 }
 
 void init_tables(void)
