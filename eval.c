@@ -293,9 +293,9 @@ void nnue_update(Position *board, uint16_t move, int parent_ply, int child_ply)
 
         return;
     }
-
     // If mirror flip is true then rebuild the vector
     acc->mirror[color] = ((to & 7) > 3);
+
     uint64_t pieces[6];
     uint64_t colorBB[2];
     memcpy(pieces, board->pieces, sizeof(pieces));
@@ -319,6 +319,26 @@ void nnue_update(Position *board, uint16_t move, int parent_ply, int child_ply)
     pieces[placedPiece] |= ((uint64_t)1 << to);
     colorBB[color]      |= ((uint64_t)1 << to);
 
+    switch (flag)
+    {
+    case 1:
+        pieces[ROOKNUMBER] &= ~((uint64_t)1 << H1); colorBB[color] &= ~((uint64_t)1 << H1);
+        pieces[ROOKNUMBER] |=  ((uint64_t)1 << F1); colorBB[color] |=  ((uint64_t)1 << F1);
+        break;
+    case 2:
+        pieces[ROOKNUMBER] &= ~((uint64_t)1 << A1); colorBB[color] &= ~((uint64_t)1 << A1);
+        pieces[ROOKNUMBER] |=  ((uint64_t)1 << D1); colorBB[color] |=  ((uint64_t)1 << D1);
+        break;
+    case 4:
+        pieces[ROOKNUMBER] &= ~((uint64_t)1 << H8); colorBB[color] &= ~((uint64_t)1 << H8);
+        pieces[ROOKNUMBER] |=  ((uint64_t)1 << F8); colorBB[color] |=  ((uint64_t)1 << F8);
+        break;
+    case 3:
+        pieces[ROOKNUMBER] &= ~((uint64_t)1 << A8); colorBB[color] &= ~((uint64_t)1 << A8);
+        pieces[ROOKNUMBER] |=  ((uint64_t)1 << D8); colorBB[color] |=  ((uint64_t)1 << D8);
+        break;
+    }
+
     for (int h = 0; h < NNUE_HL; h++)
         acc->vector[color][h] = nnue_hiddenBiases[h];
 
@@ -338,8 +358,28 @@ void nnue_update(Position *board, uint16_t move, int parent_ply, int child_ply)
             nnue_addFeature(acc->vector[color], nnue_inputIndex(color, 0, internal_piece, sq, acc->mirror[color]));
         }
     }
+
     // their mirror didnt change so keep updating that side incrementally
     nnue_touchPiecePerspective(acc, placedPiece, color, to, +1, them);
+    switch (flag)
+    {
+    case 1:
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, H1, -1, them);
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, F1, +1, them);
+        break;
+    case 2:
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, A1, -1, them);
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, D1, +1, them);
+        break;
+    case 4:
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, H8, -1, them);
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, F8, +1, them);
+        break;
+    case 3:
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, A8, -1, them);
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, D8, +1, them);
+        break;
+    }
 
     return;
 }
