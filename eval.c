@@ -45,6 +45,7 @@ static const int internal_to_nnue_encoding[6] = {
 typedef struct
 {
     int16_t vector[2][NNUE_HL];
+    uint8_t mirror[2];
 } NnueAccumulator;
 
 static NnueAccumulator nnue_stack[NNUE_MAX_PLY];
@@ -56,6 +57,17 @@ static inline int nnue_clampPly(int ply)
     if (ply >= NNUE_MAX_PLY)
         return NNUE_MAX_PLY - 1;
     return ply;
+}
+
+static inline bool mirror_or_not(Bitboard king_bitboard){
+    if (king_bitboard){
+        int sq = __builtin_ctzll(king_bitboard);
+        int file = sq & 7;  
+        return file > 3;
+    }
+    else{
+        return 0;
+    }
 }
 
 // Loads nnue from bin file
@@ -103,10 +115,11 @@ static inline int nnue_screlu(int16_t x)
     return v * v;
 }
 
-static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece, int sq)
+static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece, int sq,bool mirror)
 {
     int nnue_piece = internal_to_nnue_encoding[internal_piece];
-    int relSq = (persp == 0) ? NNUE_FLIP(sq) : sq; // Flip relative perspective
+    int relSq = (persp == 0) ? NNUE_FLIP(sq) : sq; // Flip relative perspective because internal representation is flipped
+    if (mirror) relSq ^= 7; // flips square for mirroring
     return (pieceIsOwn ? nnue_piece : nnue_piece + 6) * 64 + relSq;
 }
 
@@ -128,7 +141,7 @@ static void nnue_touchPiece(NnueAccumulator *acc, int internal_piece, int color,
     for (int persp = 0; persp < 2; persp++)
     {
         int pieceIsOwn = (color == persp);
-        int input_index = nnue_inputIndex(persp, pieceIsOwn, internal_piece, sq);
+        int input_index = nnue_inputIndex(persp, pieceIsOwn, internal_piece, sq, acc->mirror[persp]); // passes in mirror parameter
         if (sign > 0)
             nnue_addFeature(acc->vector[persp], input_index);
         else
@@ -136,7 +149,18 @@ static void nnue_touchPiece(NnueAccumulator *acc, int internal_piece, int color,
     }
 }
 
-static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL])
+// Single sided touch piece function
+static void nnue_touchPiecePerspective(NnueAccumulator *acc, int internal_piece, int color, int sq, int sign, int persp)
+{
+    int pieceIsOwn = (color == persp);
+    int input_index = nnue_inputIndex(persp, pieceIsOwn, internal_piece, sq, acc->mirror[persp]);
+    if (sign > 0)
+        nnue_addFeature(acc->vector[persp], input_index);
+    else
+        nnue_subFeature(acc->vector[persp], input_index);
+}
+
+static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL], bool mirror)
 {
     for (int h = 0; h < NNUE_HL; h++)
         acc[h] = nnue_hiddenBiases[h];
@@ -149,14 +173,14 @@ static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL])
         while (bb)
         {
             int sq = pop_lsb(&bb);
-            nnue_addFeature(acc, nnue_inputIndex(ownSide, 1, internal_piece, sq));
+            nnue_addFeature(acc, nnue_inputIndex(ownSide, 1, internal_piece, sq, mirror));
         }
 
         bb = board->pieces[internal_piece] & board->color[otherSide];
         while (bb)
         {
             int sq = pop_lsb(&bb);
-            nnue_addFeature(acc, nnue_inputIndex(ownSide, 0, internal_piece, sq));
+            nnue_addFeature(acc, nnue_inputIndex(ownSide, 0, internal_piece, sq, mirror));
         }
     }
 }
@@ -164,8 +188,13 @@ static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL])
 void nnue_refresh(Position *board, int ply)
 {
     ply = nnue_clampPly(ply);
-    nnue_buildSide(board, 0, nnue_stack[ply].vector[0]);
-    nnue_buildSide(board, 1, nnue_stack[ply].vector[1]);
+    NnueAccumulator *acc = &nnue_stack[ply];
+
+    acc->mirror[WHITE] = mirror_or_not(board->pieces[KINGNUMBER] & board->color[WHITE]); // Sets flag for white to mirror or not
+    acc->mirror[BLACK] = mirror_or_not(board->pieces[KINGNUMBER] & board->color[BLACK]); // Sets flag for black to mirror or not
+
+    nnue_buildSide(board, 0, acc->vector[0], acc->mirror[WHITE]);
+    nnue_buildSide(board, 1, acc->vector[1], acc->mirror[BLACK]);
 }
 
 void nnue_copy(int parent_ply, int child_ply)
@@ -228,27 +257,91 @@ void nnue_update(Position *board, uint16_t move, int parent_ply, int child_ply)
         placedPiece = QUEENNUMBER;
         break;
     }
-    nnue_touchPiece(acc, placedPiece, color, to, +1);
 
-    switch (flag) // Castling
+    bool mirror_flip = false;
+    if (piece == KINGNUMBER)
     {
-    case 1:
-        nnue_touchPiece(acc, ROOKNUMBER, color, H1, -1);
-        nnue_touchPiece(acc, ROOKNUMBER, color, F1, +1);
-        break;
-    case 2:
-        nnue_touchPiece(acc, ROOKNUMBER, color, A1, -1);
-        nnue_touchPiece(acc, ROOKNUMBER, color, D1, +1);
-        break;
-    case 4:
-        nnue_touchPiece(acc, ROOKNUMBER, color, H8, -1);
-        nnue_touchPiece(acc, ROOKNUMBER, color, F8, +1);
-        break;
-    case 3:
-        nnue_touchPiece(acc, ROOKNUMBER, color, A8, -1);
-        nnue_touchPiece(acc, ROOKNUMBER, color, D8, +1);
-        break;
+        bool old_mirror = ((from & 7) > 3);
+        bool new_mirror = ((to & 7) > 3);
+        mirror_flip = (old_mirror != new_mirror);
     }
+
+    if (!mirror_flip)
+    {
+        // Normal path
+        nnue_touchPiece(acc, placedPiece, color, to, +1);
+
+        switch (flag) // Castling
+        {
+        case 1:
+            nnue_touchPiece(acc, ROOKNUMBER, color, H1, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, color, F1, +1);
+            break;
+        case 2:
+            nnue_touchPiece(acc, ROOKNUMBER, color, A1, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, color, D1, +1);
+            break;
+        case 4:
+            nnue_touchPiece(acc, ROOKNUMBER, color, H8, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, color, F8, +1);
+            break;
+        case 3:
+            nnue_touchPiece(acc, ROOKNUMBER, color, A8, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, color, D8, +1);
+            break;
+        }
+
+        return;
+    }
+
+    // If mirror flip is true then rebuild the vector
+    acc->mirror[color] = ((to & 7) > 3);
+    uint64_t pieces[6];
+    uint64_t colorBB[2];
+    memcpy(pieces, board->pieces, sizeof(pieces));
+    memcpy(colorBB, board->color, sizeof(colorBB));
+
+    pieces[piece]  &= ~((uint64_t)1 << from);
+    colorBB[color] &= ~((uint64_t)1 << from);
+
+    if (piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1)
+    {
+        int capSq = to + (color == 0 ? 8 : -8);
+        pieces[PAWNNUMBER] &= ~((uint64_t)1 << capSq);
+        colorBB[them]      &= ~((uint64_t)1 << capSq);
+    }
+    else if (victim != EMPTYNUMBER)
+    {
+        pieces[victim] &= ~((uint64_t)1 << to);
+        colorBB[them]  &= ~((uint64_t)1 << to);
+    }
+
+    pieces[placedPiece] |= ((uint64_t)1 << to);
+    colorBB[color]      |= ((uint64_t)1 << to);
+
+    for (int h = 0; h < NNUE_HL; h++)
+        acc->vector[color][h] = nnue_hiddenBiases[h];
+
+    int otherSide = them;
+    for (int internal_piece = 0; internal_piece < 6; internal_piece++)
+    {
+        uint64_t bb = pieces[internal_piece] & colorBB[color];
+        while (bb)
+        {
+            int sq = pop_lsb(&bb);
+            nnue_addFeature(acc->vector[color], nnue_inputIndex(color, 1, internal_piece, sq, acc->mirror[color]));
+        }
+        bb = pieces[internal_piece] & colorBB[otherSide];
+        while (bb)
+        {
+            int sq = pop_lsb(&bb);
+            nnue_addFeature(acc->vector[color], nnue_inputIndex(color, 0, internal_piece, sq, acc->mirror[color]));
+        }
+    }
+    // their mirror didnt change so keep updating that side incrementally
+    nnue_touchPiecePerspective(acc, placedPiece, color, to, +1, them);
+
+    return;
 }
 
 static int nnue_forward(Position *board, int ply)
