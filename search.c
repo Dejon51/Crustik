@@ -299,7 +299,7 @@ static int corrected_eval(Position *board, int raw_eval)
     int mkey = compute_material_key(board);
 
     int correction = pawn_corrhist[board->turn][pkey] +
-                      nonpawn_corrhist[board->turn][mkey];
+                     nonpawn_corrhist[board->turn][mkey];
 
     correction /= CORRHIST_GRAIN;
     correction = clamp_int_local(correction, -CORRHIST_MAX_APPLY, CORRHIST_MAX_APPLY);
@@ -687,7 +687,66 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
         }
     }
+    if (!pv && !in_check && depth >= 5 &&
+        abs(beta) < MATE_SCORE && stack->excluded_move == 0)
+    {
+        int probcut_beta = beta + 150;
+        int probcut_depth = depth - 4;
 
+        bool tt_hit = (entry != NULL);
+        int tt_depth = tt_hit ? entry->depth : 0;
+        int tt_score = tt_hit ? score_from_tt(entry->score, ply) : 0;
+
+        if (!tt_hit || tt_depth + 3 < depth || tt_score >= probcut_beta)
+        {
+            MoveList captures = {0};
+            qsearchMoves(board, &captures, board->turn);
+            captures = ordermoves(board, &captures, ply, tt_move);
+
+            for (unsigned int i = 0; i < captures.offset; i++)
+            {
+                uint16_t move = captures.movelist[i];
+
+                if (!see_ge(board, move, 100))
+                    continue;
+
+                nnue_update(board, move, ply, ply + 1);
+                Position copy = *board;
+                makeMove(&copy, &captures, i);
+
+                uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+                if (!king_bb ||
+                    squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
+                    continue;
+
+                stop->nodes++;
+
+                int probcut_value = -quiesce(&copy, -probcut_beta,
+                                             -probcut_beta + 1, ply + 1, stop);
+
+                if (!stop->stop && probcut_value >= probcut_beta)
+                {
+                    probcut_value = -search(&copy, probcut_depth, ply + 1,
+                                            -probcut_beta, -probcut_beta + 1,
+                                            stop, NULL, &no_excl)
+                                         .score;
+                }
+
+                if (stop->stop)
+                    return (searchOutput){0};
+
+                if (probcut_value >= probcut_beta)
+                {
+                    tt_store(board->hash,
+                             score_to_tt(probcut_value, ply),
+                             move, probcut_depth, TT_ALPHA, 0,
+                             in_check ? NO_EVAL : static_eval);
+
+                    return (searchOutput){.score = probcut_value, .move = move};
+                }
+            }
+        }
+    }
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
     move_list = ordermoves(board, &move_list, ply, tt_move);
