@@ -110,6 +110,24 @@ void init_lmr()
     }
 }
 
+static inline int quiet_history_score(Position *board, int ply, int move)
+{
+    int from = move_from(move);
+    int to = move_to(move);
+    int piece = piece_on_square(board, from);
+
+    int score = butterfly_hist[board->turn][from][to];
+
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
+    {
+        int prev_piece = cont_stack[ply - 1].piece;
+        int prev_to = cont_stack[ply - 1].to;
+        score += cont_hist[board->turn][prev_piece][prev_to][piece][to];
+    }
+
+    return score;
+}
+
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = move_from(move);
@@ -815,11 +833,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             (int)i >= 4 &&
             move != tt_move)
         {
-            int from = move_from(move);
-            int to = move_to(move);
-            int hist_score = butterfly_hist[board->turn][from][to];
-
-            int history_threshold = -4000 * depth;
+            int hist_score = quiet_history_score(board, ply, move);
+            int history_threshold = -6000 * depth;
             if (hist_score < history_threshold)
                 continue;
         }
