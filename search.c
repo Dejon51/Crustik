@@ -110,6 +110,24 @@ void init_lmr()
     }
 }
 
+static inline int quiet_history_score(Position *board, int ply, int move)
+{
+    int from = move_from(move);
+    int to = move_to(move);
+    int piece = piece_on_square(board, from);
+
+    int score = butterfly_hist[board->turn][from][to];
+
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
+    {
+        int prev_piece = cont_stack[ply - 1].piece;
+        int prev_to = cont_stack[ply - 1].to;
+        score += cont_hist[board->turn][prev_piece][prev_to][piece][to];
+    }
+
+    return score;
+}
+
 static void move_to_uci(uint16_t move, char *buf)
 {
     int from = move_from(move);
@@ -907,11 +925,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 int from = move_from(move);
                 int to = move_to(move);
                 int hist = butterfly_hist[board->turn][from][to];
+                int cont_score = quiet_history_score(board, ply, move);
                 reduction = lmr_reduction(depth, i + 1);
                 int is_pv_node = (beta - alpha) > 1;
 
                 if (is_pv_node)
                     reduction -= 1;
+                if (cont_score > 4500)
+                    reduction--;
                 if (hist > 4000)
                     reduction--;
 
