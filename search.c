@@ -38,6 +38,7 @@ static uint16_t killer_moves[MAX_GAME_PLY][2];
 static int eval_stack[MAX_GAME_PLY];
 
 static int cont_hist[2][6][64][6][64];
+static int cont_hist2[2][6][64][6][64];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
 static int nonpawn_corrhist[2][CORRHIST_SIZE];
@@ -76,6 +77,7 @@ void reset_history(void)
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
+    memset(cont_hist2, 0, sizeof cont_hist2);
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
@@ -123,6 +125,13 @@ static inline int quiet_history_score(Position *board, int ply, int move)
         int prev_piece = cont_stack[ply - 1].piece;
         int prev_to = cont_stack[ply - 1].to;
         score += cont_hist[board->turn][prev_piece][prev_to][piece][to];
+    }
+
+    if (ply > 1 && ply - 2 < MAX_SEARCH_PLY && cont_stack[ply - 2].valid && piece != -1)
+    {
+        int prev2_piece = cont_stack[ply - 2].piece;
+        int prev2_to = cont_stack[ply - 2].to;
+        score += cont_hist2[board->turn][prev2_piece][prev2_to][piece][to] / 2;
     }
 
     return score;
@@ -357,6 +366,10 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
     int cont_to = have_cont ? cont_stack[ply - 1].to : 0;
 
+    bool have_cont2 = (ply > 1 && ply - 2 < MAX_SEARCH_PLY && cont_stack[ply - 2].valid);
+    int cont2_piece = have_cont2 ? cont_stack[ply - 2].piece : 0;
+    int cont2_to = have_cont2 ? cont_stack[ply - 2].to : 0;
+
     for (unsigned int i = 0; i < ordered.offset; i++)
     {
         uint16_t move = ordered.movelist[i];
@@ -396,6 +409,9 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
             if (have_cont && attacker != -1)
                 score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
+
+            if (have_cont2 && attacker != -1)
+                score += cont_hist2[board->turn][cont2_piece][cont2_to][attacker][to] / 2;
 
             scores[i] = score;
         }
@@ -1010,6 +1026,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += malus - *ch * abs(malus) / MAX_HISTORY;
                 }
+
+                if (ply > 1 && ply - 2 < MAX_SEARCH_PLY && cont_stack[ply - 2].valid)
+                {
+                    int pp2 = cont_stack[ply - 2].piece;
+                    int pt2 = cont_stack[ply - 2].to;
+                    int *ch2 = &cont_hist2[board->turn][pp2][pt2][moved_piece][to];
+                    *ch2 += malus - *ch2 * abs(malus) / MAX_HISTORY;
+                }
             }
         }
 
@@ -1029,6 +1053,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     int pt = cont_stack[ply - 1].to;
                     int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += clampedBonus - *ch * abs(clampedBonus) / MAX_HISTORY;
+                }
+
+                if (ply > 1 && ply - 2 < MAX_SEARCH_PLY && cont_stack[ply - 2].valid)
+                {
+                    int pp2 = cont_stack[ply - 2].piece;
+                    int pt2 = cont_stack[ply - 2].to;
+                    int *ch2 = &cont_hist2[board->turn][pp2][pt2][moved_piece][to];
+                    *ch2 += clampedBonus - *ch2 * abs(clampedBonus) / MAX_HISTORY;
                 }
 
                 if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
