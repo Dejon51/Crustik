@@ -484,6 +484,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         best_score = static_eval;
     }
 
+    const int futility_margin = 200;
+    int futility_base = in_check ? 0 : static_eval + futility_margin;
+
     MoveList move_list = {0};
 
     if (in_check)
@@ -505,21 +508,33 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         if (!in_check)
         {
-            int to = move_to(move);
-            int victim = piece_on_square(board, to);
-            int flag = (move >> 12) & 0xF;
-            bool is_promo = flag >= 5 && flag <= 8;
-            int delta_margin = 200;
-
-            if (!is_mate_score(alpha) && !is_mate_score(beta))
+            if (!is_mate_score(alpha) && !is_mate_score(beta) && !is_promotion_move(move))
             {
+                int from = move_from(move);
+                int to = move_to(move);
+                int victim = piece_on_square(board, to);
+                int attacker = piece_on_square(board, from);
+
                 int gain = (victim != -1) ? piece_value_lva(victim) : 0;
 
-                if (is_promo)
-                    gain += piece_value_lva(4) - piece_value_lva(0);
+                if (victim == -1 && attacker == 0 && (from & 7) != (to & 7))
+                    gain = piece_value_lva(0);
 
-                if (static_eval + gain + delta_margin <= alpha)
+                int futility_value = futility_base + gain;
+
+                if (futility_value <= alpha)
+                {
+                    if (futility_value > best_score)
+                        best_score = futility_value;
                     continue;
+                }
+
+                if (futility_base <= alpha && !see_ge(board, move, 1))
+                {
+                    if (futility_base > best_score)
+                        best_score = futility_base;
+                    continue;
+                }
             }
 
             if (!see_ge(board, move, 0))
