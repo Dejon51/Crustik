@@ -439,10 +439,10 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         stop->stop = 1;
 
     if (stop->stop)
-        return eval(board, ply);
+        return eval(board);
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return eval(board, ply);
+        return eval(board);
 
     int alpha_orig = alpha;
     uint16_t tt_move = 0;
@@ -473,7 +473,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     }
     else
     {
-        static_eval = (entry && entry->eval != NO_EVAL) ? entry->eval : eval(board, ply);
+        static_eval = (entry && entry->eval != NO_EVAL) ? entry->eval : eval(board);
 
         if (static_eval >= beta)
             return static_eval;
@@ -526,7 +526,6 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
                 continue;
         }
 
-        nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -601,7 +600,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return output;
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return (searchOutput){.score = eval(board, ply), .move = 0};
+        return (searchOutput){.score = eval(board), .move = 0};
 
     if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
@@ -653,7 +652,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (entry && entry->eval != NO_EVAL)
             static_eval = entry->eval;
         else
-            static_eval = eval(board, ply);
+            static_eval = eval(board);
 
         ceval = corrected_eval(board, static_eval);
 
@@ -688,7 +687,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             Position copy = *board;
             make_null_move(&copy);
-            nnue_copy(ply, ply + 1);
 
             if (ply < MAX_SEARCH_PLY)
                 cont_stack[ply].valid = false;
@@ -728,7 +726,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 if (!see_ge(board, move, 100))
                     continue;
 
-                nnue_update(board, move, ply, ply + 1);
                 Position copy = *board;
                 makeMove(&copy, &captures, i);
 
@@ -892,7 +889,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         int moved_piece = piece_on_square(board, move_from(move));
 
-        nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
         searched_any = 1;
@@ -1042,7 +1038,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
     if (!searched_any)
-        return (searchOutput){.score = in_check ? eval(board, ply) : static_eval,
+        return (searchOutput){.score = in_check ? eval(board) : static_eval,
                               .move = 0};
 
     if (!stop->stop && stack->excluded_move == 0 && !in_check)
@@ -1086,7 +1082,6 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     int last_best_move_change = 0;
 
     SearchStack no_excl = {0};
-    nnue_refresh(board, 0);
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
