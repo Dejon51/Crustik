@@ -720,6 +720,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
         }
     }
+    
     if (!pv && !in_check && depth >= 5 &&
         abs(beta) < MATE_SCORE && stack->excluded_move == 0)
     {
