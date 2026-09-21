@@ -1096,7 +1096,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     int prev_score = 0;
     int aspiration_delta = 25;
-    const int ASPIRATION_MAX_DELTA = 500;
+    int ASPIRATION_MAX_DELTA = 500;
+    int ASP_REDUCTION_MAX = 3;
 
     uint16_t prev_best_move = 0;
     int last_best_move_change = 0;
@@ -1149,12 +1150,18 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         int delta = aspiration_delta;
         int research_count = 0;
-        const int MAX_RESEARCH = 5;
+        int MAX_RESEARCH = 5;
+        int asp_reduction = 0;
 
         while (1)
         {
             pv.length = 0;
-            out = search(board, depth, 0, alpha, beta, stop, &pv, &no_excl);
+
+            int search_depth = depth - asp_reduction;
+            if (search_depth < 1)
+                search_depth = 1;
+
+            out = search(board, search_depth, 0, alpha, beta, stop, &pv, &no_excl);
 
             if (stop->stop)
                 break;
@@ -1164,12 +1171,15 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
             if (out.score <= alpha)
             {
+                asp_reduction = 0;
                 alpha = out.score - delta;
                 if (alpha < -MATE_SCORE)
                     alpha = -MATE_SCORE;
             }
             else if (out.score >= beta)
             {
+                if (asp_reduction < ASP_REDUCTION_MAX)
+                    asp_reduction++;
                 beta = out.score + delta;
                 if (beta > MATE_SCORE)
                     beta = MATE_SCORE;
@@ -1178,6 +1188,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             delta *= 2;
             if (delta > ASPIRATION_MAX_DELTA)
             {
+                asp_reduction = 0;
                 alpha = -MATE_SCORE;
                 beta = MATE_SCORE;
             }
