@@ -34,6 +34,7 @@ int game_history_count = 0;
 static uint64_t search_path_hash[MAX_SEARCH_PLY];
 
 static int butterfly_hist[2][64][64];
+static int piece_to_hist[2][6][64];
 static uint16_t killer_moves[MAX_GAME_PLY][2];
 static int eval_stack[MAX_GAME_PLY];
 
@@ -52,6 +53,26 @@ typedef struct
 } ContRecord;
 
 static ContRecord cont_stack[MAX_SEARCH_PLY];
+
+static inline int main_history(int side, int piece, int from, int to)
+{
+    int bf = butterfly_hist[side][from][to];
+    if (piece < 0 || piece > 5)
+        return bf;
+    return (bf + piece_to_hist[side][piece][to]) / 2;
+}
+
+static inline void update_history_entry(int *entry, int bonus)
+{
+    *entry += bonus - *entry * abs(bonus) / MAX_HISTORY;
+}
+
+static inline void update_main_history(int side, int piece, int from, int to, int bonus)
+{
+    update_history_entry(&butterfly_hist[side][from][to], bonus);
+    if (piece >= 0 && piece <= 5)
+        update_history_entry(&piece_to_hist[side][piece][to], bonus);
+}
 
 static void init_corrhist(void)
 {
@@ -74,6 +95,7 @@ static void init_corrhist(void)
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
+    memset(piece_to_hist, 0, sizeof piece_to_hist);
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(cont_stack, 0, sizeof cont_stack);
@@ -116,7 +138,7 @@ static inline int quiet_history_score(Position *board, int ply, int move)
     int to = move_to(move);
     int piece = piece_on_square(board, from);
 
-    int score = butterfly_hist[board->turn][from][to];
+    int score = main_history(board->turn, piece, from, to);
 
     if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
     {
@@ -392,7 +414,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
         if (!is_killer)
         {
-            int score = butterfly_hist[board->turn][from][to];
+            int score = main_history(board->turn, attacker, from, to);
 
             if (have_cont && attacker != -1)
                 score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
@@ -935,9 +957,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!root_node && !in_check && depth >= 3 && i >= 4 &&
                 !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
-                int from = move_from(move);
-                int to = move_to(move);
-                int hist = butterfly_hist[board->turn][from][to];
+                int hist = main_history(board->turn, moved_piece,
+                                        move_from(move), move_to(move));
                 reduction = lmr_reduction(depth, i + 1);
                 int is_pv_node = (beta - alpha) > 1;
 
@@ -1014,10 +1035,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
 
-                butterfly_hist[board->turn][from][to] +=
-                    malus -
-                    butterfly_hist[board->turn][from][to] *
-                        abs(malus) / MAX_HISTORY;
+                update_main_history(board->turn, moved_piece, from, to, malus);
 
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
                 {
@@ -1037,7 +1055,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!is_capture && !is_promotion)
             {
                 int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
-                butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
+
+                update_main_history(board->turn, moved_piece, from, to, clampedBonus);
 
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
                 {
