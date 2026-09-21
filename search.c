@@ -720,7 +720,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
         }
     }
-    
+
     if (!pv && !in_check && depth >= 5 &&
         abs(beta) < MATE_SCORE && stack->excluded_move == 0)
     {
@@ -773,7 +773,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 {
                     tt_store(board->hash,
                              score_to_tt(probcut_value, ply),
-                             move, probcut_depth, TT_ALPHA, 0,
+                             move, probcut_depth + 1, TT_BETA, 0,
                              in_check ? NO_EVAL : static_eval);
 
                     return (searchOutput){.score = probcut_value, .move = move};
