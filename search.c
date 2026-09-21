@@ -53,6 +53,8 @@ typedef struct
 
 static ContRecord cont_stack[MAX_SEARCH_PLY];
 
+static uint64_t root_move_nodes[4096];
+
 static void init_corrhist(void)
 {
     uint64_t seed = 0x9E3779B97F4A7C15ULL;
@@ -720,7 +722,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
         }
     }
-    
+
     if (!pv && !in_check && depth >= 5 &&
         abs(beta) < MATE_SCORE && stack->excluded_move == 0)
     {
@@ -908,6 +910,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         int moved_piece = piece_on_square(board, move_from(move));
 
+        uint64_t nodes_before = stop->nodes;
+
         nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
@@ -983,6 +987,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                              .score;
             }
         }
+
+        if (root_node)
+            root_move_nodes[move & 0xFFF] += stop->nodes - nodes_before;
 
         if (stop->stop)
             break;
@@ -1088,6 +1095,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     return output;
 }
 
+static const double BM_STABILITY_SCALE[5]   = {2.20, 1.60, 1.30, 1.05, 0.90};
+static const double EVAL_STABILITY_SCALE[5] = {1.20, 1.10, 1.00, 0.94, 0.88};
+#define TM_MIN_DEPTH 6
+#define EVAL_STABLE_MARGIN 12
+
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
     uint16_t best_move_so_far = 0;
@@ -1099,30 +1111,24 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     const int ASPIRATION_MAX_DELTA = 500;
 
     uint16_t prev_best_move = 0;
-    int last_best_move_change = 0;
+    int bm_stability = 0;
+    int eval_stability = 0;
+    int prev_iter_score = 0;
+
+    memset(root_move_nodes, 0, sizeof root_move_nodes);
+
+    {
+        MoveList root_moves = {0};
+        legalMoveGen(board, &root_moves);
+        if (root_moves.offset > 0)
+            best_move_so_far = root_moves.movelist[0];
+    }
 
     SearchStack no_excl = {0};
     nnue_refresh(board, 0);
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
-        if (stop->soft_time > 0)
-        {
-            int iterations_stable = depth - last_best_move_change;
-            double factor = 1.2 - 0.05 * (double)iterations_stable;
-            if (factor < 0.8)
-                factor = 0.8;
-            if (factor > 1.2)
-                factor = 1.2;
-
-            int64_t effective_soft = (int64_t)(stop->soft_time * factor);
-            if (effective_soft > (int64_t)stop->max_time)
-                effective_soft = (int64_t)stop->max_time;
-
-            int64_t elapsed = get_time_ms() - stop->start_time;
-            if (elapsed >= effective_soft)
-                break;
-        }
         if (stop->soft_nodes > 0 && stop->nodes >= stop->soft_nodes)
             break;
 
@@ -1200,13 +1206,21 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         if (out.move != 0)
         {
-            if (out.move != prev_best_move)
-                last_best_move_change = depth;
+            if (out.move == prev_best_move)
+                bm_stability = bm_stability < 4 ? bm_stability + 1 : 4;
+            else
+                bm_stability = 0;
 
             prev_best_move = out.move;
             best_move_so_far = out.move;
             best_pv = pv;
         }
+
+        if (depth > 1 && abs(out.score - prev_iter_score) <= EVAL_STABLE_MARGIN)
+            eval_stability = eval_stability < 4 ? eval_stability + 1 : 4;
+        else
+            eval_stability = 0;
+        prev_iter_score = out.score;
 
         int64_t elapsed = get_time_ms() - search_start;
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
@@ -1241,6 +1255,29 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
                nps, elapsed,
                pv_str);
         fflush(stdout);
+
+        if (stop->soft_time > 0)
+        {
+            double scale = 1.0;
+
+            if (depth >= TM_MIN_DEPTH && stop->nodes > 0 && best_move_so_far)
+            {
+                double frac = (double)root_move_nodes[best_move_so_far & 0xFFF] /
+                              (double)stop->nodes;
+                double node_scale = (1.5 - frac) * 1.35;
+
+                scale = node_scale *
+                        BM_STABILITY_SCALE[bm_stability] *
+                        EVAL_STABILITY_SCALE[eval_stability];
+            }
+
+            int64_t effective_soft = (int64_t)(stop->soft_time * scale);
+            if (effective_soft > (int64_t)stop->max_time)
+                effective_soft = (int64_t)stop->max_time;
+
+            if ((int64_t)(get_time_ms() - stop->start_time) >= effective_soft)
+                break;
+        }
     }
 
     return best_move_so_far;
