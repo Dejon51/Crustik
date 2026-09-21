@@ -688,7 +688,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             int margin = 100 * depth;
 
             if (improving){
-                margin += 50;
+                margin -= 50;
             }
             if (ceval - margin >= beta)
             {
