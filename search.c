@@ -720,7 +720,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
         }
     }
-    
+
     if (!pv && !in_check && depth >= 5 &&
         abs(beta) < MATE_SCORE && stack->excluded_move == 0)
     {
@@ -1061,9 +1061,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         return (searchOutput){.score = in_check ? eval(board, ply) : static_eval,
                               .move = 0};
 
-    if (!stop->stop && stack->excluded_move == 0 && !in_check)
-        update_corrhist(board, depth, static_eval, best_score);
-
     if (!stop->stop && stack->excluded_move == 0)
     {
         int flag;
@@ -1074,13 +1071,25 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         else
             flag = TT_EXACT;
 
+        bool best_is_quiet = best_move != 0 &&
+                             !is_capture_move(board, best_move) &&
+                             !is_promotion_move(best_move);
+
+        if (!in_check && best_is_quiet &&
+            !(flag == TT_BETA && best_score <= ceval) &&
+            !(flag == TT_ALPHA && best_score >= ceval))
+        {
+            update_corrhist(board, depth, static_eval, best_score);
+        }
+
         int tt_depth = depth;
         if (tt_depth > 255)
             tt_depth = 255;
         if (tt_depth < 0)
             tt_depth = 0;
 
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag, 0, in_check ? NO_EVAL : static_eval);
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag, 0,
+                 in_check ? NO_EVAL : static_eval);
     }
 
     output.score = best_score;
