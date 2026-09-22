@@ -38,6 +38,7 @@ static uint16_t killer_moves[MAX_GAME_PLY][2];
 static int eval_stack[MAX_GAME_PLY];
 
 static int cont_hist[2][6][64][6][64];
+static int capture_history[2][6][64][6];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
 static int nonpawn_corrhist[2][CORRHIST_SIZE];
@@ -76,6 +77,7 @@ void reset_history(void)
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
+    memset(capture_history, 0, sizeof capture_history);
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
@@ -369,13 +371,18 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
         int from = move_from(move);
         int to = move_to(move);
-        int victim = piece_on_square(board, to);
         int attacker = piece_on_square(board, from);
+        int victim = piece_on_square(board, to);
+        bool is_capture = is_capture_move(board, move);
 
-        if (victim != -1 && attacker != -1)
+        if (is_capture && attacker != -1)
         {
+            if (victim == -1)
+                victim = 0;
+
             int mvv_lva = piece_value_lva(victim) * 10 - piece_value_lva(attacker);
-            scores[i] = CAPTURE_BASE + mvv_lva;
+            int history_score = capture_history[board->turn][attacker][to][victim];
+            scores[i] = CAPTURE_BASE + mvv_lva + history_score;
             continue;
         }
 
@@ -798,6 +805,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     int searched_any = 0;
 
+    uint16_t tried_captures[64];
+    int num_tried_captures = 0;
+
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
         uint16_t move = move_list.movelist[i];
@@ -907,11 +917,21 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         int moved_piece = piece_on_square(board, move_from(move));
+        int captured_piece = -1;
+        if (is_capture)
+        {
+            captured_piece = piece_on_square(board, move_to(move));
+            if (captured_piece == -1)
+                captured_piece = 0; 
+        }
 
         nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
         searched_any = 1;
+
+        if (is_capture && captured_piece != -1 && num_tried_captures < 64)
+            tried_captures[num_tried_captures++] = move;
 
         if (ply < MAX_SEARCH_PLY)
         {
@@ -1027,6 +1047,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     *ch += malus - *ch * abs(malus) / MAX_HISTORY;
                 }
             }
+            else if (is_capture && captured_piece != -1)
+            {
+                int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
+                int *history_entry = &capture_history[board->turn][moved_piece][to][captured_piece];
+                *history_entry += malus - *history_entry * abs(malus) / MAX_HISTORY;
+            }
         }
 
         if (alpha >= beta)
@@ -1051,6 +1077,34 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 {
                     killer_moves[ply][1] = killer_moves[ply][0];
                     killer_moves[ply][0] = move;
+                }
+            }
+            else if (is_capture && captured_piece != -1)
+            {
+                int bonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
+
+                int *cutoff_capture_entry = &capture_history[board->turn][moved_piece][to][captured_piece];
+                *cutoff_capture_entry += bonus - *cutoff_capture_entry * abs(bonus) / MAX_HISTORY;
+
+                for (int k = 0; k < num_tried_captures; k++)
+                {
+                    uint16_t tried_move = tried_captures[k];
+                    if (tried_move == move)
+                        continue;
+
+                    int tried_from = move_from(tried_move);
+                    int tried_to = move_to(tried_move);
+                    int other_attacker = piece_on_square(board, tried_from);
+                    int other_victim = piece_on_square(board, tried_to);
+                    if (other_victim == -1)
+                        other_victim = 0;
+
+                    if (other_attacker < 0 || other_victim < 0)
+                        continue;
+
+                    int *other_capture_entry = &capture_history[board->turn][other_attacker][tried_to][other_victim];
+                    int malus = -bonus;
+                    *other_capture_entry += malus - *other_capture_entry * abs(malus) / MAX_HISTORY;
                 }
             }
 
