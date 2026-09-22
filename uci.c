@@ -957,7 +957,7 @@ void uciStart()
                     time_left = black_time;
                 }
 
-                int overhead = 30;
+                int overhead = 100;
 
                 int soft = time_left / 30 + increment;
                 int hard = time_left / 3 + increment;

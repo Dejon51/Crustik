@@ -1156,7 +1156,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     uint16_t prev_best_move = 0;
     int last_best_move_change = 0;
 
-    double bm_changes = 1.5;
+    double bm_changes = 0;
     double BM_INST_SCALE = 2.20;
 
     SearchStack no_excl = {0};
