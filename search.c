@@ -1158,6 +1158,9 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     double bm_changes = 0;
     double BM_INST_SCALE = 2.20;
+    double score_factor = 1.0;
+    double SCORE_SWING_SCALE = 25.0;
+    int SCORE_DROP_DEPTH = 7;
 
     SearchStack no_excl = {0};
     nnue_refresh(board, 0);
@@ -1175,7 +1178,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
             double instability = 1.0 + BM_INST_SCALE * bm_changes;
 
-            int64_t effective_soft = (int64_t)(stop->soft_time * factor * instability);
+            int64_t effective_soft = (int64_t)(stop->soft_time * factor * instability * score_factor);
             if (effective_soft > (int64_t)stop->max_time)
                 effective_soft = (int64_t)stop->max_time;
 
@@ -1265,7 +1268,20 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         if (stop->stop)
             break;
+        if (depth >= SCORE_DROP_DEPTH)
+        {
+            double diff = (double)(prev_score - out.score);
+            if (diff > SCORE_SWING_SCALE)
+                diff = SCORE_SWING_SCALE;
+            if (diff < -SCORE_SWING_SCALE)
+                diff = -SCORE_SWING_SCALE;
 
+            score_factor = pow(2.0, diff / SCORE_SWING_SCALE);
+        }
+        else
+        {
+            score_factor = 1.0;
+        }
         prev_score = out.score;
 
         if (out.move != 0)
