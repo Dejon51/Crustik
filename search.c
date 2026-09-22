@@ -727,7 +727,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = beta, .move = 0};
         }
     }
-    
+
     if (!pv && !in_check && depth >= 5 &&
         abs(beta) < MATE_SCORE && stack->excluded_move == 0)
     {
@@ -922,10 +922,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             captured_piece = piece_on_square(board, move_to(move));
             if (captured_piece == -1)
-                captured_piece = 0; 
+                captured_piece = 0;
         }
 
-        
         nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
@@ -1156,6 +1155,9 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     uint16_t prev_best_move = 0;
     int last_best_move_change = 0;
 
+    double bm_changes = 0.0;
+    double BM_INST_SCALE = 2.20;
+
     SearchStack no_excl = {0};
     nnue_refresh(board, 0);
 
@@ -1170,7 +1172,9 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             if (factor > 1.2)
                 factor = 1.2;
 
-            int64_t effective_soft = (int64_t)(stop->soft_time * factor);
+            double instability = 1.0 + BM_INST_SCALE * bm_changes;
+
+            int64_t effective_soft = (int64_t)(stop->soft_time * factor * instability);
             if (effective_soft > (int64_t)stop->max_time)
                 effective_soft = (int64_t)stop->max_time;
 
@@ -1256,12 +1260,17 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         if (out.move != 0)
         {
             if (out.move != prev_best_move)
+            {
                 last_best_move_change = depth;
+                bm_changes += 1.0;
+            }
 
             prev_best_move = out.move;
             best_move_so_far = out.move;
             best_pv = pv;
         }
+
+        bm_changes *= 0.5;
 
         int64_t elapsed = get_time_ms() - search_start;
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
