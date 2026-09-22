@@ -925,6 +925,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 captured_piece = 0; 
         }
 
+        
         nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
