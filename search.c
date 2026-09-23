@@ -852,9 +852,24 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         if (!root_node &&
             !in_check &&
+            !is_capture &&
+            !is_killer &&
+            !is_promotion &&
+            depth <= 3 &&
+            (int)i >= 4 &&
+            move != tt_move)
+        {
+            int hist_score = quiet_history_score(board, ply, move);
+            int history_threshold = -6000 * depth;
+            if (hist_score < history_threshold)
+                continue;
+        }
+        if (!root_node &&
+            !in_check &&
             is_capture &&
             !is_promotion &&
-            depth <= 8 &&
+            depth <= 7 &&
+            (int)i >= 4 &&
             move != tt_move)
         {
             int from = move_from(move);
