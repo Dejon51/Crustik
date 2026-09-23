@@ -852,16 +852,26 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
         if (!root_node &&
             !in_check &&
-            !is_capture &&
-            !is_killer &&
+            is_capture &&
             !is_promotion &&
-            depth <= 3 &&
+            depth <= 7 &&
             (int)i >= 4 &&
             move != tt_move)
         {
-            int hist_score = quiet_history_score(board, ply, move);
-            int history_threshold = -6000 * depth;
-            if (hist_score < history_threshold)
+            int from = move_from(move);
+            int to = move_to(move);
+
+            int attacker = piece_on_square(board, from);
+            int victim = piece_on_square(board, to);
+
+            if (victim == -1)
+                victim = 0;
+
+            int caphist = capture_history[board->turn][attacker][to][victim];
+
+            int threshold = -5000 * depth;
+
+            if (caphist < threshold)
                 continue;
         }
 
