@@ -506,6 +506,12 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     uint16_t best_move = 0;
     int legal_moves_seen = 0;
 
+    uint16_t tried_captures[64];
+    int num_tried_captures = 0;
+
+    const int QSEARCH_CAPHIST_BONUS = 150;
+    const int QSEARCH_CAPHIST_MALUS = 80;
+
     for (unsigned int i = 0; i < move_list.offset; i++)
     {
         if (stop->stop)
@@ -513,14 +519,24 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         uint16_t move = move_list.movelist[i];
 
+        int from = move_from(move);
+        int to = move_to(move);
+        int attacker = piece_on_square(board, from);
+        bool is_capture = is_capture_move(board, move);
+
+        int captured_piece = -1;
+        if (is_capture)
+        {
+            captured_piece = piece_on_square(board, to);
+            if (captured_piece == -1)
+                captured_piece = 0;
+        }
+
         if (!in_check)
         {
             if (!is_mate_score(alpha) && !is_mate_score(beta) && !is_promotion_move(move))
             {
-                int from = move_from(move);
-                int to = move_to(move);
-                int victim = piece_on_square(board, to);
-                int attacker = piece_on_square(board, from);
+                int victim = captured_piece;
 
                 int gain = (victim != -1) ? piece_value_lva(victim) : 0;
 
@@ -558,6 +574,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         legal_moves_seen++;
 
+        if (is_capture && num_tried_captures < 64)
+            tried_captures[num_tried_captures++] = move;
+
         int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
 
         if (stop->stop)
@@ -571,13 +590,47 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         if (score >= beta)
         {
+            if (is_capture && attacker != -1 && captured_piece != -1)
+            {
+                int *cutoff_entry = &capture_history[board->turn][attacker][to][captured_piece];
+                *cutoff_entry += QSEARCH_CAPHIST_BONUS - *cutoff_entry * QSEARCH_CAPHIST_BONUS / MAX_HISTORY;
+
+                for (int k = 0; k < num_tried_captures; k++)
+                {
+                    uint16_t other_move = tried_captures[k];
+                    if (other_move == move)
+                        continue;
+
+                    int other_from = move_from(other_move);
+                    int other_to = move_to(other_move);
+                    int other_attacker = piece_on_square(board, other_from);
+                    int other_victim = piece_on_square(board, other_to);
+                    if (other_victim == -1)
+                        other_victim = 0;
+                    if (other_attacker < 0)
+                        continue;
+
+                    int malus = -QSEARCH_CAPHIST_BONUS;
+                    int *other_entry = &capture_history[board->turn][other_attacker][other_to][other_victim];
+                    *other_entry += malus - *other_entry * abs(malus) / MAX_HISTORY;
+                }
+            }
+
             tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1,
                      in_check ? NO_EVAL : static_eval);
             return score;
         }
 
         if (score > alpha)
+        {
             alpha = score;
+        }
+        else if (is_capture && attacker != -1 && captured_piece != -1)
+        {
+            int malus = -QSEARCH_CAPHIST_MALUS;
+            int *h = &capture_history[board->turn][attacker][to][captured_piece];
+            *h += malus - *h * abs(malus) / MAX_HISTORY;
+        }
     }
 
     if (in_check && legal_moves_seen == 0 && !stop->stop)
