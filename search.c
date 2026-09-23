@@ -868,8 +868,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !in_check &&
             is_capture &&
             !is_promotion &&
-            depth <= 7 &&
-            (int)i >= 4 &&
+            depth <= 5 &&
             move != tt_move)
         {
             int from = move_from(move);
