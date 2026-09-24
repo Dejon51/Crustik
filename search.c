@@ -1180,7 +1180,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     int last_best_move_change = 0;
 
     double bm_changes = 0;
-    double BM_INST_SCALE = 2.20;
+    double BM_INST_SCALE = 1.00;
     double score_factor = 1.0;
     double SCORE_SWING_SCALE = 25.0;
     int SCORE_DROP_DEPTH = 7;
