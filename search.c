@@ -28,6 +28,12 @@
 #define CORRHIST_GRAIN 256
 #define CORRHIST_MAX_APPLY 128
 
+#define THREAT_CORRHIST_SIZE 16384
+#define THREAT_CORRHIST_MASK (THREAT_CORRHIST_SIZE - 1)
+#define THREAT_CORRHIST_LIMIT 16384
+#define THREAT_CORRHIST_GRAIN 256
+#define THREAT_CORRHIST_MAX_APPLY 128
+
 uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
 
@@ -44,6 +50,10 @@ static int pawn_corrhist[2][CORRHIST_SIZE];
 static int nonpawn_corrhist[2][CORRHIST_SIZE];
 static uint64_t pawn_corrhist_keys[2][64];
 static bool corrhist_initialized = false;
+
+static int pawn_threat_corrhist[2][THREAT_CORRHIST_SIZE];
+static uint64_t threat_key_table[2][64];
+static bool threat_corrhist_initialized = false;
 
 typedef struct
 {
@@ -72,6 +82,24 @@ static void init_corrhist(void)
     corrhist_initialized = true;
 }
 
+static void init_threat_corrhist(void)
+{
+    uint64_t seed = 0xD1B54A32D192ED03ULL;
+    for (int c = 0; c < 2; c++)
+    {
+        for (int sq = 0; sq < 64; sq++)
+        {
+            seed += 0x9E3779B97F4A7C15ULL;
+            uint64_t z = seed;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+            z = z ^ (z >> 31);
+            threat_key_table[c][sq] = z;
+        }
+    }
+    threat_corrhist_initialized = true;
+}
+
 void reset_history(void)
 {
     memset(butterfly_hist, 0, sizeof butterfly_hist);
@@ -81,8 +109,11 @@ void reset_history(void)
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
+    memset(pawn_threat_corrhist, 0, sizeof pawn_threat_corrhist);
     if (!corrhist_initialized)
         init_corrhist();
+    if (!threat_corrhist_initialized)
+        init_threat_corrhist();
     for (int i = 0; i < MAX_GAME_PLY; i++)
         eval_stack[i] = NO_EVAL;
 }
@@ -304,6 +335,35 @@ static int compute_material_key(Position *board)
     return key & CORRHIST_MASK;
 }
 
+
+static uint64_t compute_pawn_threat_key(Position *board)
+{
+    uint64_t key = 0;
+
+    uint64_t whitePawnAttacks = pawnMask(board, WHITE);
+    uint64_t blackPawnAttacks = pawnMask(board, BLACK);
+
+    uint64_t whiteTargets = whitePawnAttacks & board->color[BLACK] &
+                             ~(board->pieces[PAWNNUMBER] | board->pieces[KINGNUMBER]);
+    uint64_t blackTargets = blackPawnAttacks & board->color[WHITE] &
+                             ~(board->pieces[PAWNNUMBER] | board->pieces[KINGNUMBER]);
+
+    while (whiteTargets)
+    {
+        int sq = __builtin_ctzll(whiteTargets);
+        key ^= threat_key_table[BLACK][sq];
+        whiteTargets &= whiteTargets - 1;
+    }
+    while (blackTargets)
+    {
+        int sq = __builtin_ctzll(blackTargets);
+        key ^= threat_key_table[WHITE][sq];
+        blackTargets &= blackTargets - 1;
+    }
+
+    return key;
+}
+
 static int clamp_int_local(int v, int lo, int hi)
 {
     if (v < lo)
@@ -317,9 +377,11 @@ static int corrected_eval(Position *board, int raw_eval)
 {
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
     int mkey = compute_material_key(board);
+    uint64_t tkey = compute_pawn_threat_key(board) & THREAT_CORRHIST_MASK;
 
     int correction = pawn_corrhist[board->turn][pkey] +
-                     nonpawn_corrhist[board->turn][mkey];
+                     nonpawn_corrhist[board->turn][mkey] +
+                     pawn_threat_corrhist[board->turn][tkey];
 
     correction /= CORRHIST_GRAIN;
     correction = clamp_int_local(correction, -CORRHIST_MAX_APPLY, CORRHIST_MAX_APPLY);
@@ -337,6 +399,7 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
 
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
     int mkey = compute_material_key(board);
+    uint64_t tkey = compute_pawn_threat_key(board) & THREAT_CORRHIST_MASK;
     int side = board->turn;
 
     int *pc = &pawn_corrhist[side][pkey];
@@ -344,6 +407,10 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
 
     int *npc = &nonpawn_corrhist[side][mkey];
     *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
+
+    int threat_bonus = clamp_int_local(diff * depth, -THREAT_CORRHIST_LIMIT, THREAT_CORRHIST_LIMIT);
+    int *tc = &pawn_threat_corrhist[side][tkey];
+    *tc += threat_bonus - *tc * abs(threat_bonus) / THREAT_CORRHIST_LIMIT;
 }
 
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
