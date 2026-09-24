@@ -42,6 +42,7 @@ static int capture_history[2][6][64][6];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
 static int nonpawn_corrhist[2][CORRHIST_SIZE];
+static int cont_corrhist[2][6][64];
 static uint64_t pawn_corrhist_keys[2][64];
 static bool corrhist_initialized = false;
 
@@ -81,6 +82,7 @@ void reset_history(void)
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
+    memset(cont_corrhist, 0, sizeof cont_corrhist);
     if (!corrhist_initialized)
         init_corrhist();
     for (int i = 0; i < MAX_GAME_PLY; i++)
@@ -313,7 +315,7 @@ static int clamp_int_local(int v, int lo, int hi)
     return v;
 }
 
-static int corrected_eval(Position *board, int raw_eval)
+static int corrected_eval(Position *board, int raw_eval, int ply)
 {
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
     int mkey = compute_material_key(board);
@@ -321,13 +323,20 @@ static int corrected_eval(Position *board, int raw_eval)
     int correction = pawn_corrhist[board->turn][pkey] +
                      nonpawn_corrhist[board->turn][mkey];
 
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+    {
+        int prev_piece = cont_stack[ply - 1].piece;
+        int prev_to = cont_stack[ply - 1].to;
+        correction += cont_corrhist[board->turn][prev_piece][prev_to];
+    }
+
     correction /= CORRHIST_GRAIN;
     correction = clamp_int_local(correction, -CORRHIST_MAX_APPLY, CORRHIST_MAX_APPLY);
 
     return raw_eval + correction;
 }
 
-static void update_corrhist(Position *board, int depth, int static_eval, int best_score)
+static void update_corrhist(Position *board, int depth, int static_eval, int best_score, int ply)
 {
     if (is_mate_score(best_score))
         return;
@@ -344,6 +353,14 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
 
     int *npc = &nonpawn_corrhist[side][mkey];
     *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
+
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+    {
+        int prev_piece = cont_stack[ply - 1].piece;
+        int prev_to = cont_stack[ply - 1].to;
+        int *cc = &cont_corrhist[side][prev_piece][prev_to];
+        *cc += bonus - *cc * abs(bonus) / CORRHIST_LIMIT;
+    }
 }
 
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
@@ -677,7 +694,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         else
             static_eval = eval(board, ply);
 
-        ceval = corrected_eval(board, static_eval);
+        ceval = corrected_eval(board, static_eval, ply);
 
         if (ply < MAX_GAME_PLY)
         {
@@ -1116,7 +1133,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                               .move = 0};
 
     if (!stop->stop && stack->excluded_move == 0 && !in_check)
-        update_corrhist(board, depth, static_eval, best_score);
+        update_corrhist(board, depth, static_eval, best_score, ply);
 
     if (!stop->stop && stack->excluded_move == 0)
     {
