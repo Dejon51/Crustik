@@ -905,6 +905,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (se_result.score < singular_beta)
             {
                 extension = 1;
+                if (se_result.score < singular_beta + 60)
+                {
+                    extension += 1;
+                }
             }
             else if (se_result.score >= beta && (beta - alpha) == 1)
             {
