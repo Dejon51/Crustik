@@ -452,7 +452,6 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         return eval(board, ply);
 
     int alpha_orig = alpha;
-    bool pv_node = (beta - alpha) > 1;
     uint16_t tt_move = 0;
     int in_check = king_in_check(board, board->turn);
 
@@ -599,6 +598,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 {
     searchOutput output = {0};
     int alpha_orig = alpha;
+    bool pv_node = (beta - alpha) > 1;
     uint16_t tt_move = 0;
 
     SearchStack no_excl = {0};
