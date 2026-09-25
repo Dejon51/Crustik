@@ -907,7 +907,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 extension = 1;
 
-                if (!pv_node && se_result.score < singular_beta - 20)
+                if (!pv_node && se_result.score < singular_beta - 40)
                 {
                     extension += 1;
                 }
