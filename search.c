@@ -452,6 +452,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         return eval(board, ply);
 
     int alpha_orig = alpha;
+    bool pv_node = (beta - alpha) > 1;
     uint16_t tt_move = 0;
     int in_check = king_in_check(board, board->turn);
 
@@ -905,12 +906,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (se_result.score < singular_beta)
             {
                 extension = 1;
-                if (se_result.score < singular_beta + 60)
+
+                if (!pv_node && se_result.score < singular_beta - 20)
                 {
                     extension += 1;
                 }
             }
-            
+
             else if (se_result.score >= beta && (beta - alpha) == 1)
             {
                 return (searchOutput){.score = beta, .move = 0};
