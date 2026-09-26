@@ -12,6 +12,7 @@
 #define TT_MAX_MB     33554432
 #define TT_DEFAULT_MB 16
 
+
 typedef struct {
     uint64_t key;
     int16_t  score;
