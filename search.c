@@ -368,7 +368,22 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
             scores[i] = TT_SCORE;
             continue;
         }
+        if (is_promotion_move(move))
+        {
+            int flag = move_flag(move);
+            bool promo_capture = is_capture_move(board, move);
 
+            int base;
+            if (flag == 8) // queen promo
+                base = promo_capture ? 99000000 : 95000000;
+            else if (flag == 6) // knight promo
+                base = promo_capture ? 70000000 : 50000000;
+            else // rook / bishop promo
+                base = promo_capture ? 65000000 : 40000000;
+
+            scores[i] = base;
+            continue;
+        }
         int from = move_from(move);
         int to = move_to(move);
         int attacker = piece_on_square(board, from);
