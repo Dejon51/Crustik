@@ -16,7 +16,8 @@ SRCS := \
 	text.c \
 	tt.c \
 	uci.c \
-	zobrist.c 
+	zobrist.c \
+	magics.c
 
 OBJS := $(SRCS:.c=.o)
 
