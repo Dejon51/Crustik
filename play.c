@@ -31,6 +31,48 @@ static inline AttackSet buildAttackSet(Position *b, int enemy) {
 	return a;
 }
 
+static uint64_t ray_between_table[64 * 64];
+
+void init_between_bb(void) {
+	for (int sq1 = 0; sq1 < 64; sq1++) {
+		int r1 = sq1 >> 3;
+		int f1 = sq1 & 7;
+
+		for (int sq2 = 0; sq2 < 64; sq2++) {
+			int r2 = sq2 >> 3;
+			int f2 = sq2 & 7;
+			int dr = r2 - r1;
+			int df = f2 - f1;
+
+			uint64_t bb = 0;
+
+			if (dr == 0) {
+				if (df != 0) {
+					int dir = (df > 0) ? 1 : -1;
+					for (int f = f1 + dir; f != f2; f += dir)
+						bb |= 1ULL << (r1 * 8 + f);
+				}
+			} else if (df == 0) {
+				int dir = (dr > 0) ? 1 : -1;
+				for (int r = r1 + dir; r != r2; r += dir)
+					bb |= 1ULL << (r * 8 + f1);
+			} else if (dr == df || dr == -df) {
+				int step_r = (dr > 0) ? 1 : -1;
+				int step_f = (df > 0) ? 1 : -1;
+				int r = r1 + step_r;
+				int f = f1 + step_f;
+				while (r != r2) {
+					bb |= 1ULL << (r * 8 + f);
+					r += step_r;
+					f += step_f;
+				}
+			}
+
+			ray_between_table[sq1 * 64 + sq2] = bb;
+		}
+	}
+}
+
 static inline bool squareAttacked_fast(int sq, int enemy, uint64_t occ,
 									   const AttackSet *a) {
 	if ((enemy == 0 ? white_pawn_attacks[sq] : black_pawn_attacks[sq]) &

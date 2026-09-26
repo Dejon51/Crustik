@@ -12,6 +12,8 @@ typedef struct {
     uint16_t moves[218];
 } LegalMoves;
 
+void init_between_bb(void);
+
 Bitboard pawnMask(Position *board, bool color);
 
 Bitboard horseMask(Position *board, bool color);

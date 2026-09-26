@@ -9,6 +9,7 @@
 #include <string.h>
 
 int main(int argc, char **argv) {
+	init_between_bb();
 	initMagics();
 	init_tables();
 
