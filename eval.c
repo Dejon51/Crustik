@@ -10,13 +10,13 @@
 #include <string.h>
 
 #ifndef EVALFILE
-#define EVALFILE "quant256hl.bin"
+#define EVALFILE "quant384hl.bin"
 #endif
 
 INCBIN(EvalFile, EVALFILE);
 
 #define NNUE_INPUT 768
-#define NNUE_HL 256
+#define NNUE_HL 384
 #define HIDDEN_QUANT_SCALE 255
 #define NNUE_OUTPUT_SCALE 64
 #define NNUE_SCALE 400
@@ -207,182 +207,181 @@ void nnue_copy(int parent_ply, int child_ply) {
 		   sizeof(NnueAccumulator));
 }
 
-void nnue_update(Position *board, uint16_t move, int parent_ply,
-				 int child_ply) {
-	parent_ply = nnue_clampPly(parent_ply);
-	child_ply = nnue_clampPly(child_ply);
+void nnue_update(Position *board, uint16_t move, int parent_ply, int child_ply)
+{
+    parent_ply = nnue_clampPly(parent_ply);
+    child_ply = nnue_clampPly(child_ply);
 
-	if (parent_ply != child_ply)
-		memcpy(&nnue_stack[child_ply], &nnue_stack[parent_ply],
-			   sizeof(NnueAccumulator));
+    if (parent_ply != child_ply)
+        memcpy(&nnue_stack[child_ply], &nnue_stack[parent_ply], sizeof(NnueAccumulator));
 
-	NnueAccumulator *acc = &nnue_stack[child_ply];
+    NnueAccumulator *acc = &nnue_stack[child_ply];
 
-	int to = move_to(move);
-	int from = move_from(move);
-	int flag = move_flag(move);
+    int to = move_to(move);
+    int from = move_from(move);
+    int flag = move_flag(move);
 
-	int color = board->turn;
-	int them = !color;
+    int color = board->turn;
+    int them = !color;
 
-	int piece = board->mailbox[from];
-	int victim = board->mailbox[to];
+    int piece = board->mailbox[from];
+    int victim = board->mailbox[to];
 
-	if (piece == EMPTYNUMBER)
-		return;
+    if (piece == EMPTYNUMBER)
+        return;
 
-	nnue_touchPiece(acc, piece, color, from, -1);
+    nnue_touchPiece(acc, piece, color, from, -1);
 
-	if (piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1) {
-		int capSq = to + (color == 0 ? 8 : -8);
-		nnue_touchPiece(acc, PAWNNUMBER, them, capSq, -1);
-	} else if (victim != EMPTYNUMBER) {
-		nnue_touchPiece(acc, victim, them, to, -1);
-	}
+    if (piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1)
+    {
+        int capSq = to + (color == 0 ? 8 : -8);
+        nnue_touchPiece(acc, PAWNNUMBER, them, capSq, -1);
+    }
+    else if (victim != EMPTYNUMBER)
+    {
+        nnue_touchPiece(acc, victim, them, to, -1);
+    }
 
-	int placedPiece = piece;
-	switch (flag) // Promotions
-	{
-	case 5:
-		placedPiece = BISHOPNUMBER;
-		break;
-	case 6:
-		placedPiece = HORSENUMBER;
-		break;
-	case 7:
-		placedPiece = ROOKNUMBER;
-		break;
-	case 8:
-		placedPiece = QUEENNUMBER;
-		break;
-	}
+    int placedPiece = piece;
+    switch (flag) // Promotions
+    {
+    case 5:
+        placedPiece = BISHOPNUMBER;
+        break;
+    case 6:
+        placedPiece = HORSENUMBER;
+        break;
+    case 7:
+        placedPiece = ROOKNUMBER;
+        break;
+    case 8:
+        placedPiece = QUEENNUMBER;
+        break;
+    }
 
-	bool mirror_flip = false;
-	if (piece == KINGNUMBER) {
-		bool old_mirror = ((from & 7) > 3);
-		bool new_mirror = ((to & 7) > 3);
-		mirror_flip = (old_mirror != new_mirror);
-	}
+    bool mirror_flip = false;
+    if (piece == KINGNUMBER)
+    {
+        bool old_mirror = ((from & 7) > 3);
+        bool new_mirror = ((to & 7) > 3);
+        mirror_flip = (old_mirror != new_mirror);
+    }
 
-	if (!mirror_flip) {
-		// Normal path
-		nnue_touchPiece(acc, placedPiece, color, to, +1);
+    if (!mirror_flip)
+    {
+        // Normal path
+        nnue_touchPiece(acc, placedPiece, color, to, +1);
 
-		switch (flag) // Castling
-		{
-		case 1:
-			nnue_touchPiece(acc, ROOKNUMBER, color, H1, -1);
-			nnue_touchPiece(acc, ROOKNUMBER, color, F1, +1);
-			break;
-		case 2:
-			nnue_touchPiece(acc, ROOKNUMBER, color, A1, -1);
-			nnue_touchPiece(acc, ROOKNUMBER, color, D1, +1);
-			break;
-		case 4:
-			nnue_touchPiece(acc, ROOKNUMBER, color, H8, -1);
-			nnue_touchPiece(acc, ROOKNUMBER, color, F8, +1);
-			break;
-		case 3:
-			nnue_touchPiece(acc, ROOKNUMBER, color, A8, -1);
-			nnue_touchPiece(acc, ROOKNUMBER, color, D8, +1);
-			break;
-		}
+        switch (flag) // Castling
+        {
+        case 1:
+            nnue_touchPiece(acc, ROOKNUMBER, color, H1, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, color, F1, +1);
+            break;
+        case 2:
+            nnue_touchPiece(acc, ROOKNUMBER, color, A1, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, color, D1, +1);
+            break;
+        case 4:
+            nnue_touchPiece(acc, ROOKNUMBER, color, H8, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, color, F8, +1);
+            break;
+        case 3:
+            nnue_touchPiece(acc, ROOKNUMBER, color, A8, -1);
+            nnue_touchPiece(acc, ROOKNUMBER, color, D8, +1);
+            break;
+        }
 
-		return;
-	}
-	// If mirror flip is true then rebuild the vector
-	acc->mirror[color] = ((to & 7) > 3);
+        return;
+    }
+    // If mirror flip is true then rebuild the vector
+    acc->mirror[color] = ((to & 7) > 3);
 
-	uint64_t pieces[6];
-	uint64_t colorBB[2];
-	memcpy(pieces, board->pieces, sizeof(pieces));
-	memcpy(colorBB, board->color, sizeof(colorBB));
+    uint64_t pieces[6];
+    uint64_t colorBB[2];
+    memcpy(pieces, board->pieces, sizeof(pieces));
+    memcpy(colorBB, board->color, sizeof(colorBB));
 
-	pieces[piece] &= ~((uint64_t)1 << from);
-	colorBB[color] &= ~((uint64_t)1 << from);
+    pieces[piece]  &= ~((uint64_t)1 << from);
+    colorBB[color] &= ~((uint64_t)1 << from);
 
-	if (piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1) {
-		int capSq = to + (color == 0 ? 8 : -8);
-		pieces[PAWNNUMBER] &= ~((uint64_t)1 << capSq);
-		colorBB[them] &= ~((uint64_t)1 << capSq);
-	} else if (victim != EMPTYNUMBER) {
-		pieces[victim] &= ~((uint64_t)1 << to);
-		colorBB[them] &= ~((uint64_t)1 << to);
-	}
+    if (piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1)
+    {
+        int capSq = to + (color == 0 ? 8 : -8);
+        pieces[PAWNNUMBER] &= ~((uint64_t)1 << capSq);
+        colorBB[them]      &= ~((uint64_t)1 << capSq);
+    }
+    else if (victim != EMPTYNUMBER)
+    {
+        pieces[victim] &= ~((uint64_t)1 << to);
+        colorBB[them]  &= ~((uint64_t)1 << to);
+    }
 
-	pieces[placedPiece] |= ((uint64_t)1 << to);
-	colorBB[color] |= ((uint64_t)1 << to);
+    pieces[placedPiece] |= ((uint64_t)1 << to);
+    colorBB[color]      |= ((uint64_t)1 << to);
 
-	switch (flag) {
-	case 1:
-		pieces[ROOKNUMBER] &= ~((uint64_t)1 << H1);
-		colorBB[color] &= ~((uint64_t)1 << H1);
-		pieces[ROOKNUMBER] |= ((uint64_t)1 << F1);
-		colorBB[color] |= ((uint64_t)1 << F1);
-		break;
-	case 2:
-		pieces[ROOKNUMBER] &= ~((uint64_t)1 << A1);
-		colorBB[color] &= ~((uint64_t)1 << A1);
-		pieces[ROOKNUMBER] |= ((uint64_t)1 << D1);
-		colorBB[color] |= ((uint64_t)1 << D1);
-		break;
-	case 4:
-		pieces[ROOKNUMBER] &= ~((uint64_t)1 << H8);
-		colorBB[color] &= ~((uint64_t)1 << H8);
-		pieces[ROOKNUMBER] |= ((uint64_t)1 << F8);
-		colorBB[color] |= ((uint64_t)1 << F8);
-		break;
-	case 3:
-		pieces[ROOKNUMBER] &= ~((uint64_t)1 << A8);
-		colorBB[color] &= ~((uint64_t)1 << A8);
-		pieces[ROOKNUMBER] |= ((uint64_t)1 << D8);
-		colorBB[color] |= ((uint64_t)1 << D8);
-		break;
-	}
+    switch (flag)
+    {
+    case 1:
+        pieces[ROOKNUMBER] &= ~((uint64_t)1 << H1); colorBB[color] &= ~((uint64_t)1 << H1);
+        pieces[ROOKNUMBER] |=  ((uint64_t)1 << F1); colorBB[color] |=  ((uint64_t)1 << F1);
+        break;
+    case 2:
+        pieces[ROOKNUMBER] &= ~((uint64_t)1 << A1); colorBB[color] &= ~((uint64_t)1 << A1);
+        pieces[ROOKNUMBER] |=  ((uint64_t)1 << D1); colorBB[color] |=  ((uint64_t)1 << D1);
+        break;
+    case 4:
+        pieces[ROOKNUMBER] &= ~((uint64_t)1 << H8); colorBB[color] &= ~((uint64_t)1 << H8);
+        pieces[ROOKNUMBER] |=  ((uint64_t)1 << F8); colorBB[color] |=  ((uint64_t)1 << F8);
+        break;
+    case 3:
+        pieces[ROOKNUMBER] &= ~((uint64_t)1 << A8); colorBB[color] &= ~((uint64_t)1 << A8);
+        pieces[ROOKNUMBER] |=  ((uint64_t)1 << D8); colorBB[color] |=  ((uint64_t)1 << D8);
+        break;
+    }
 
-	for (int h = 0; h < NNUE_HL; h++)
-		acc->vector[color][h] = nnue_hiddenBiases[h];
+    memcpy(acc->vector[color], nnue_hiddenBiases, sizeof(nnue_hiddenBiases));
 
-	int otherSide = them;
-	for (int internal_piece = 0; internal_piece < 6; internal_piece++) {
-		uint64_t bb = pieces[internal_piece] & colorBB[color];
-		while (bb) {
-			int sq = pop_lsb(&bb);
-			nnue_addFeature(acc->vector[color],
-							nnue_inputIndex(color, 1, internal_piece, sq,
-											acc->mirror[color]));
-		}
-		bb = pieces[internal_piece] & colorBB[otherSide];
-		while (bb) {
-			int sq = pop_lsb(&bb);
-			nnue_addFeature(acc->vector[color],
-							nnue_inputIndex(color, 0, internal_piece, sq,
-											acc->mirror[color]));
-		}
-	}
+    int otherSide = them;
+    for (int internal_piece = 0; internal_piece < 6; internal_piece++)
+    {
+        uint64_t bb = pieces[internal_piece] & colorBB[color];
+        while (bb)
+        {
+            int sq = pop_lsb(&bb);
+            nnue_addFeature(acc->vector[color], nnue_inputIndex(color, 1, internal_piece, sq, acc->mirror[color]));
+        }
+        bb = pieces[internal_piece] & colorBB[otherSide];
+        while (bb)
+        {
+            int sq = pop_lsb(&bb);
+            nnue_addFeature(acc->vector[color], nnue_inputIndex(color, 0, internal_piece, sq, acc->mirror[color]));
+        }
+    }
 
-	// their mirror didnt change so keep updating that side incrementally
-	nnue_touchPiecePerspective(acc, placedPiece, color, to, +1, them);
-	switch (flag) {
-	case 1:
-		nnue_touchPiecePerspective(acc, ROOKNUMBER, color, H1, -1, them);
-		nnue_touchPiecePerspective(acc, ROOKNUMBER, color, F1, +1, them);
-		break;
-	case 2:
-		nnue_touchPiecePerspective(acc, ROOKNUMBER, color, A1, -1, them);
-		nnue_touchPiecePerspective(acc, ROOKNUMBER, color, D1, +1, them);
-		break;
-	case 4:
-		nnue_touchPiecePerspective(acc, ROOKNUMBER, color, H8, -1, them);
-		nnue_touchPiecePerspective(acc, ROOKNUMBER, color, F8, +1, them);
-		break;
-	case 3:
-		nnue_touchPiecePerspective(acc, ROOKNUMBER, color, A8, -1, them);
-		nnue_touchPiecePerspective(acc, ROOKNUMBER, color, D8, +1, them);
-		break;
-	}
+    // their mirror didnt change so keep updating that side incrementally
+    nnue_touchPiecePerspective(acc, placedPiece, color, to, +1, them);
+    switch (flag)
+    {
+    case 1:
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, H1, -1, them);
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, F1, +1, them);
+        break;
+    case 2:
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, A1, -1, them);
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, D1, +1, them);
+        break;
+    case 4:
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, H8, -1, them);
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, F8, +1, them);
+        break;
+    case 3:
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, A8, -1, them);
+        nnue_touchPiecePerspective(acc, ROOKNUMBER, color, D8, +1, them);
+        break;
+    }
 
-	return;
+    return;
 }
 
 static int nnue_forward(Position *board, int ply) {
