@@ -346,22 +346,25 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
     *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
 }
 
-MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
+void ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
-    MoveList ordered = *move_list;
-    int scores[256] = {0};
+    int scores[256];
 
     const int TT_SCORE = 100000000;
     const int CAPTURE_BASE = 90000000;
     const int KILLER_BASE = 80000000;
 
-    bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid);
+    bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY &&
+                      cont_stack[ply - 1].valid);
     int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
     int cont_to = have_cont ? cont_stack[ply - 1].to : 0;
+    int turn = board->turn;
 
-    for (unsigned int i = 0; i < ordered.offset; i++)
+    unsigned int n = move_list->offset;
+
+    for (unsigned int i = 0; i < n; i++)
     {
-        uint16_t move = ordered.movelist[i];
+        uint16_t move = move_list->movelist[i];
 
         if (move == tt_move)
         {
@@ -379,56 +382,43 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         {
             if (victim == -1)
                 victim = 0;
-
             int mvv_lva = piece_value_lva(victim) * 10 - piece_value_lva(attacker);
-            int history_score = capture_history[board->turn][attacker][to][victim];
-            scores[i] = CAPTURE_BASE + mvv_lva + history_score;
+            int hist = capture_history[turn][attacker][to][victim];
+            scores[i] = CAPTURE_BASE + mvv_lva + hist;
             continue;
         }
 
-        bool is_killer = false;
-        if (ply < MAX_GAME_PLY)
+        if (ply < MAX_GAME_PLY &&
+            (move == killer_moves[ply][0] || move == killer_moves[ply][1]))
         {
-            if (move == killer_moves[ply][0] || move == killer_moves[ply][1])
-            {
-                int bonus = (move == killer_moves[ply][0]) ? 1 : 0;
-                scores[i] = KILLER_BASE + bonus;
-                is_killer = true;
-            }
+            scores[i] = KILLER_BASE + (move == killer_moves[ply][0]);
+            continue;
         }
 
-        if (!is_killer)
-        {
-            int score = butterfly_hist[board->turn][from][to];
-
-            if (have_cont && attacker != -1)
-                score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
-
-            scores[i] = score;
-        }
+        int score = butterfly_hist[turn][from][to];
+        if (have_cont && attacker != -1)
+            score += cont_hist[turn][cont_piece][cont_to][attacker][to];
+        scores[i] = score;
     }
 
-    for (unsigned int i = 0; i < ordered.offset; i++)
+    for (unsigned int i = 0; i < n; i++)
     {
         unsigned int best = i;
-        for (unsigned int j = i + 1; j < ordered.offset; j++)
-        {
+        for (unsigned int j = i + 1; j < n; j++)
             if (scores[j] > scores[best])
                 best = j;
-        }
+
         if (best != i)
         {
-            uint16_t tmp_move = ordered.movelist[i];
-            ordered.movelist[i] = ordered.movelist[best];
-            ordered.movelist[best] = tmp_move;
+            uint16_t tm = move_list->movelist[i];
+            move_list->movelist[i] = move_list->movelist[best];
+            move_list->movelist[best] = tm;
 
-            int tmp_score = scores[i];
+            int ts = scores[i];
             scores[i] = scores[best];
-            scores[best] = tmp_score;
+            scores[best] = ts;
         }
     }
-
-    return ordered;
 }
 
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
@@ -501,7 +491,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     else
         qsearchMoves(board, &move_list, board->turn);
 
-    move_list = ordermoves(board, &move_list, ply, tt_move);
+    ordermoves(board, &move_list, ply, tt_move);
 
     uint16_t best_move = 0;
     int legal_moves_seen = 0;
@@ -742,7 +732,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             MoveList captures = {0};
             qsearchMoves(board, &captures, board->turn);
-            captures = ordermoves(board, &captures, ply, tt_move);
+            ordermoves(board, &captures, ply, tt_move);
 
             for (unsigned int i = 0; i < captures.offset; i++)
             {
@@ -790,7 +780,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     }
     MoveList move_list = {0};
     legalMoveGen(board, &move_list);
-    move_list = ordermoves(board, &move_list, ply, tt_move);
+    ordermoves(board, &move_list, ply, tt_move);
 
     if (move_list.offset == 0)
     {

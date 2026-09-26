@@ -339,8 +339,7 @@ void nnue_update(Position *board, uint16_t move, int parent_ply, int child_ply)
         break;
     }
 
-    for (int h = 0; h < NNUE_HL; h++)
-        acc->vector[color][h] = nnue_hiddenBiases[h];
+    memcpy(acc->vector[color], nnue_hiddenBiases, sizeof(nnue_hiddenBiases));
 
     int otherSide = them;
     for (int internal_piece = 0; internal_piece < 6; internal_piece++)
