@@ -22,6 +22,9 @@
 
 #define MAX_SEARCH_PLY 128
 
+#define TT_PV_RFP_MARGIN      25
+#define TT_PV_LMR_REDUCTION   1
+
 #define CORRHIST_SIZE 16384
 #define CORRHIST_MASK (CORRHIST_SIZE - 1)
 #define CORRHIST_LIMIT 16384
@@ -572,7 +575,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         if (score >= beta)
         {
             tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1,
-                     in_check ? NO_EVAL : static_eval);
+                     in_check ? NO_EVAL : static_eval, false);
             return score;
         }
 
@@ -587,7 +590,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     {
         int qflag = (best_score <= alpha_orig) ? TT_ALPHA : TT_EXACT;
         tt_store(board->hash, score_to_tt(best_score, ply), best_move, 0, qflag, 1,
-                 in_check ? NO_EVAL : static_eval);
+                 in_check ? NO_EVAL : static_eval, false);
     }
 
     return best_score;
@@ -649,6 +652,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
 
+    bool was_pv = (beta - alpha > 1) || (entry && entry->tt_pv);
+
     if (depth <= 0)
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
@@ -692,7 +697,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             depth <= 6 &&
             !is_mate_score(beta))
         {
-            int margin = 100 * depth;
+            int margin = 100 * depth + (was_pv ? TT_PV_RFP_MARGIN : 0);
 
             if (ceval - margin >= beta)
             {
@@ -781,7 +786,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     tt_store(board->hash,
                              score_to_tt(probcut_value, ply),
                              move, probcut_depth, TT_ALPHA, 0,
-                             in_check ? NO_EVAL : static_eval);
+                             in_check ? NO_EVAL : static_eval, false);
 
                     return (searchOutput){.score = probcut_value, .move = move};
                 }
@@ -969,6 +974,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 if (hist < -4000)
                     reduction++;
 
+                if (was_pv)
+                    reduction -= TT_PV_LMR_REDUCTION;
+
                 if (reduction < 0)
                     reduction = 0;
                 if (reduction > depth - 1)
@@ -1134,7 +1142,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (tt_depth < 0)
             tt_depth = 0;
 
-        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag, 0, in_check ? NO_EVAL : static_eval);
+        tt_store(board->hash, score_to_tt(best_score, ply), best_move, tt_depth, flag, 0, in_check ? NO_EVAL : static_eval, was_pv);
     }
 
     output.score = best_score;

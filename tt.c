@@ -75,7 +75,8 @@ void tt_clear(void)
     memset(tt, 0, tt_num_entries * sizeof(TTEntry));
 }
 
-void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int is_qsearch, int eval)
+void tt_store(uint64_t key, int score, uint16_t move, int depth,
+              int flag, int is_qsearch, int eval, bool tt_pv)
 {
     if (!tt || !tt_num_entries) return;
 
@@ -96,10 +97,13 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
         e->is_qsearch = (uint8_t)is_qsearch;
         e->valid      = 1;
         e->eval       = (int16_t)eval;
+        e->tt_pv      = (uint8_t)tt_pv;
     }
     else if (same_key)
     {
         e->eval = (int16_t)eval;
+        if (tt_pv)
+            e->tt_pv = 1;
     }
 }
 

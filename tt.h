@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #define TT_EXACT 0
 #define TT_ALPHA 1
@@ -19,15 +20,16 @@ typedef struct {
     uint16_t move;
     uint8_t  depth;
     uint8_t  flag;
-    uint8_t  is_qsearch; 
+    uint8_t  is_qsearch;
     uint8_t  valid;
+    uint8_t  tt_pv;
 } TTEntry;
 
 void     tt_init(size_t mb);
 void     tt_resize(size_t mb);
 void     tt_free(void);
 void     tt_clear(void);
-void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int is_qsearch, int eval);
+void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int is_qsearch, int eval, bool tt_pv);
 TTEntry *tt_probe(uint64_t key);
 size_t   tt_size_mb(void);
 
