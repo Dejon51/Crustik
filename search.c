@@ -867,7 +867,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (depth <= 3 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
-            int futility_margin = 120 + 90 * depth;
+            int futility_margin = 120 + 90 * depth + quiet_history_score(board,ply,move) / 4000;
             if (ceval + futility_margin <= alpha)
             {
                 if (!is_capture && !is_promotion)
