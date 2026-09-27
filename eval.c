@@ -421,5 +421,5 @@ int material_phase(Position *board) {
     return 100 * pawns + 300 * bishops + 300 * horses + 500 * rooks + 900 * queens;
 }
 int eval(Position *board, int ply) {
-    return nnue_forward(board, ply) * (25000 + material_phase(board) / 32768); 
+    return nnue_forward(board, ply) * (25000 + material_phase(board)) / 32768; 
 }
