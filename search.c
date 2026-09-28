@@ -955,24 +955,26 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!root_node && !in_check && depth >= 3 && i >= 4 &&
                 !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
+                int is_pv_node = (beta - alpha) > 1;
                 int from = move_from(move);
                 int to = move_to(move);
                 int hist = butterfly_hist[board->turn][from][to];
-                reduction = lmr_reduction(depth, i + 1);
-                int is_pv_node = (beta - alpha) > 1;
 
-                if (is_pv_node)
-                    reduction -= 1;
+                reduction = lmr_reduction(depth, i + 1) * 1024;
+
+                if (is_pv_node){
+                    reduction -= 1024;
+                }
                 if (hist > 4000)
-                    reduction--;
-
-                if (hist < -4000)
-                    reduction++;
-
-                if (reduction < 0)
-                    reduction = 0;
-                if (reduction > depth - 1)
-                    reduction = depth - 1;
+                {
+                    reduction -= 1024;
+                }
+                else if (hist < -4000)
+                {
+                    reduction += 1024;
+                }
+                reduction /= 1024;
+                reduction = clamp_int(reduction, 0, depth - 1);
             }
 
             if (reduction > 0)
