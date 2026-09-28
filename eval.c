@@ -423,3 +423,4 @@ int material_phase(Position *board) {
 int eval(Position *board, int ply) {
     return nnue_forward(board, ply) * (25000 + material_phase(board)) / 32768; 
 }
+
