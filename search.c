@@ -604,6 +604,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (!stack)
         stack = &no_excl;
 
+    bool excluded = stack->excluded_move != 0;
+
     stop->nodes++;
 
     if (pv)
@@ -688,9 +690,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             eval_stack[ply] = ceval;
         }
 
-        if (!root_node &&
-            depth <= 6 &&
-            !is_mate_score(beta))
+        if (!root_node && !excluded && depth <= 6 && !is_mate_score(beta))
         {
             int margin = 100 * depth;
 
@@ -702,7 +702,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
         }
         bool has_non_pawn_material = (board->color[board->turn] & ~(board->pieces[0] | board->pieces[5])) != 0;
-        if (depth >= 3 && !root_node && ceval >= beta && has_non_pawn_material)
+        if (!excluded && depth >= 3 && !root_node && ceval >= beta && has_non_pawn_material)
         {
             int R = 3 + depth / 6 + (ceval - beta > 300 ? 1 : 0);
             if (R > depth - 1)
@@ -1112,7 +1112,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
     if (!searched_any)
-        return (searchOutput){.score = in_check ? eval(board, ply) : static_eval,
+        return (searchOutput){.score = excluded ? alpha : (in_check ? eval(board, ply) : static_eval),
                               .move = 0};
 
     if (!stop->stop && stack->excluded_move == 0 && !in_check)
