@@ -11,22 +11,19 @@
 #include "search.h"
 #include "tt.h"
 #include "zobrist.h"
+#include "params.h"
 
 #define MATE_SCORE 32000
 #define MAX_DEPTH 200
 #define MAX_GAME_PLY 2048
 #define MAX_LMR_MOVES 50
 
-#define MAX_HISTORY 16384
 #define NO_EVAL (-32001)
 
 #define MAX_SEARCH_PLY 128
 
 #define CORRHIST_SIZE 16384
 #define CORRHIST_MASK (CORRHIST_SIZE - 1)
-#define CORRHIST_LIMIT 16384
-#define CORRHIST_GRAIN 256
-#define CORRHIST_MAX_APPLY 128
 
 uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
@@ -96,7 +93,7 @@ void init_lmr()
         for (int move = 1; move <= MAX_LMR_MOVES; move++)
         {
             int r = (int)(log((double)depth) *
-                          log((double)move) / 2.0);
+                          log((double)move) / LMR_DIVISOR);
 
             if (r < 1)
                 r = 1;
@@ -104,8 +101,8 @@ void init_lmr()
             if (r > depth - 2)
                 r = depth - 2;
 
-            if (r > 8)
-                r = 8;
+            if (r > LMR_MAX)
+                r = LMR_MAX;
 
             lmr_table[depth][move] = r;
         }
@@ -187,17 +184,17 @@ static int piece_value_lva(int piece)
     switch (piece)
     {
     case 0:
-        return 100;
+        return PIECE_VALUE_PAWN;
     case 1:
-        return 330;
+        return PIECE_VALUE_KNIGHT;
     case 2:
-        return 320;
+        return PIECE_VALUE_BISHOP;
     case 3:
-        return 500;
+        return PIECE_VALUE_ROOK;
     case 4:
-        return 900;
+        return PIECE_VALUE_QUEEN;
     case 5:
-        return 20000;
+        return PIECE_VALUE_KING;
     }
     return 0;
 }
@@ -380,7 +377,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
             if (victim == -1)
                 victim = 0;
 
-            int mvv_lva = piece_value_lva(victim) * 10 - piece_value_lva(attacker);
+            int mvv_lva = piece_value_lva(victim) * MVV_LVA_VICTIM_MULT - piece_value_lva(attacker);
             int history_score = capture_history[board->turn][attacker][to][victim];
             scores[i] = CAPTURE_BASE + mvv_lva + history_score;
             continue;
@@ -491,7 +488,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         best_score = static_eval;
     }
 
-    const int futility_margin = 200;
+    const int futility_margin = QS_FUTILITY_MARGIN;
     int futility_base = in_check ? 0 : static_eval + futility_margin;
 
     MoveList move_list = {0};
@@ -536,7 +533,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
                     continue;
                 }
 
-                if (futility_base <= alpha && !see_ge(board, move, 1))
+                if (futility_base <= alpha && !see_ge(board, move, QS_FUTILITY_SEE_THRESHOLD))
                 {
                     if (futility_base > best_score)
                         best_score = futility_base;
@@ -544,7 +541,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
                 }
             }
 
-            if (!see_ge(board, move, 0))
+            if (!see_ge(board, move, QS_SEE_THRESHOLD))
                 continue;
         }
 
@@ -663,7 +660,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (in_check && depth < MAX_DEPTH)
         depth++;
 
-    if (depth >= 4 && tt_move == 0 && !in_check)
+    if (depth >= IIR_MIN_DEPTH && tt_move == 0 && !in_check)
     {
         depth--;
     }
@@ -690,9 +687,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             eval_stack[ply] = ceval;
         }
 
-        if (!root_node && !excluded && depth <= 6 && !is_mate_score(beta))
+        if (!root_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
         {
-            int margin = 100 * depth;
+            int margin = RFP_MARGIN * depth;
 
             if (ceval - margin >= beta)
             {
@@ -702,9 +699,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
         }
         bool has_non_pawn_material = (board->color[board->turn] & ~(board->pieces[0] | board->pieces[5])) != 0;
-        if (!excluded && depth >= 3 && !root_node && ceval >= beta && has_non_pawn_material)
+        if (!excluded && depth >= NMP_MIN_DEPTH && !root_node && ceval >= beta && has_non_pawn_material)
         {
-            int R = 3 + depth / 6 + (ceval - beta > 300 ? 1 : 0);
+            int R = NMP_BASE_R + depth / NMP_DEPTH_DIV + (ceval - beta > NMP_EVAL_MARGIN ? 1 : 0);
             if (R > depth - 1)
                 R = depth - 1;
 
@@ -728,17 +725,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
 
-    if (!pv && !in_check && depth >= 5 &&
+    if (!pv && !in_check && depth >= PROBCUT_MIN_DEPTH &&
         abs(beta) < MATE_SCORE && stack->excluded_move == 0)
     {
-        int probcut_beta = beta + 150;
-        int probcut_depth = depth - 4;
+        int probcut_beta = beta + PROBCUT_MARGIN;
+        int probcut_depth = depth - PROBCUT_DEPTH_REDUCTION;
 
         bool tt_hit = (entry != NULL);
         int tt_depth = tt_hit ? entry->depth : 0;
         int tt_score = tt_hit ? score_from_tt(entry->score, ply) : 0;
 
-        if (!tt_hit || tt_depth + 3 < depth || tt_score >= probcut_beta)
+        if (!tt_hit || tt_depth + PROBCUT_TT_DEPTH_MARGIN < depth || tt_score >= probcut_beta)
         {
             MoveList captures = {0};
             qsearchMoves(board, &captures, board->turn);
@@ -748,7 +745,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 uint16_t move = captures.movelist[i];
 
-                if (!see_ge(board, move, 100))
+                if (!see_ge(board, move, PROBCUT_SEE_THRESHOLD))
                     continue;
 
                 nnue_update(board, move, ply, ply + 1);
@@ -832,21 +829,21 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (!root_node &&
             !in_check &&
-            depth <= 3 &&
+            depth <= LMP_MAX_DEPTH &&
             !is_capture &&
             !is_killer &&
-            (int)i >= (improving ? 24 : 16))
+            (int)i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT))
         {
             continue;
         }
 
         if (!root_node &&
             !in_check &&
-            depth <= 8 &&
+            depth <= SEE_PRUNE_MAX_DEPTH &&
             !is_mate_score(alpha) &&
             !is_mate_score(beta))
         {
-            int see_threshold = is_capture ? -90 * depth : -50 * depth;
+            int see_threshold = is_capture ? -SEE_PRUNE_CAPTURE_MARGIN * depth : -SEE_PRUNE_QUIET_MARGIN * depth;
             if (!see_ge(board, move, see_threshold))
                 continue;
         }
@@ -855,19 +852,19 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !is_capture &&
             !is_killer &&
             !is_promotion &&
-            depth <= 3 &&
-            (int)i >= 4 &&
+            depth <= HISTPRUNE_MAX_DEPTH &&
+            (int)i >= HISTPRUNE_MIN_MOVES &&
             move != tt_move)
         {
             int hist_score = quiet_history_score(board, ply, move);
-            int history_threshold = -6000 * depth;
+            int history_threshold = -HISTPRUNE_MARGIN * depth;
             if (hist_score < history_threshold)
                 continue;
         }
 
-        if (depth <= 3 && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
+        if (depth <= FUTILITY_MAX_DEPTH && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
-            int futility_margin = 120 + 90 * depth;
+            int futility_margin = FUTILITY_BASE + FUTILITY_DEPTH_MARGIN * depth;
             if (ceval + futility_margin <= alpha)
             {
                 if (!is_capture && !is_promotion)
@@ -884,14 +881,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             move == tt_move &&
             entry != NULL &&
             entry->move == tt_move &&
-            depth >= 8 &&
-            entry->depth >= depth - 3 &&
+            depth >= SE_MIN_DEPTH &&
+            entry->depth >= depth - SE_TT_DEPTH_MARGIN &&
             entry->flag != TT_ALPHA &&
             !is_mate_score(entry->score))
         {
             int tt_score = score_from_tt(entry->score, ply);
-            int singular_beta = tt_score - 2 * depth;
-            int singular_depth = (depth - 1) / 2;
+            int singular_beta = tt_score - SE_BETA_MARGIN * depth;
+            int singular_depth = (depth - SE_DEPTH_SUB) / SE_DEPTH_DIV;
 
             SearchStack singular_stack = {.excluded_move = move};
 
@@ -904,7 +901,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (se_result.score < singular_beta)
             {
-                extension = 1;
+                extension = SE_EXTENSION;
             }
             else if (se_result.score >= beta && (beta - alpha) == 1)
             {
@@ -912,7 +909,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
             else if (tt_score >= beta)
             {
-                extension = -1;
+                extension = -SE_NEG_EXTENSION;
             }
         }
 
@@ -943,7 +940,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         PVLine child_pv = {0};
         int score;
 
-        if (i == 0 || depth <= 2)
+        if (i == 0 || depth < PVS_MIN_DEPTH)
         {
             score = -search(&copy, depth - 1 + extension, ply + 1,
                             -beta, -alpha, stop, &child_pv, &no_excl)
@@ -952,7 +949,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         else
         {
             int reduction = 0;
-            if (!root_node && !in_check && depth >= 3 && i >= 4 &&
+            if (!root_node && !in_check && depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVES &&
                 !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
                 int is_pv_node = (beta - alpha) > 1;
@@ -962,16 +959,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
                 reduction = lmr_reduction(depth, i + 1) * 1024;
 
-                if (is_pv_node){
-                    reduction -= 1024;
-                }
-                if (hist > 4000)
+                if (is_pv_node)
                 {
-                    reduction -= 1024;
+                    reduction -= LMR_PV_NODE_SCALAR;
                 }
-                else if (hist < -4000)
+                if (hist > LMR_BFHIST_THRESHOLD_PENALTY_SCALAR)
                 {
-                    reduction += 1024;
+                    reduction -= LMR_BFHIST_PENALTY_SCALAR;
+                }
+                else if (hist < -LMR_BFHIST_THRESHOLD_BONUS_SCALAR)
+                {
+                    reduction += LMR_BFHIST_BONUS_SCALAR;
                 }
                 reduction /= 1024;
                 reduction = clamp_int(reduction, 0, depth - 1);
@@ -1034,26 +1032,26 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (!is_capture && !is_promotion)
             {
-                int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
+                int malus = -clamp_int(HIST_MALUS_MULT * depth - HIST_MALUS_BASE, 0, HIST_MAX);
 
                 butterfly_hist[board->turn][from][to] +=
                     malus -
                     butterfly_hist[board->turn][from][to] *
-                        abs(malus) / MAX_HISTORY;
+                        abs(malus) / HIST_MAX;
 
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
                 {
                     int pp = cont_stack[ply - 1].piece;
                     int pt = cont_stack[ply - 1].to;
                     int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
-                    *ch += malus - *ch * abs(malus) / MAX_HISTORY;
+                    *ch += malus - *ch * abs(malus) / HIST_MAX;
                 }
             }
             else if (is_capture && captured_piece != -1)
             {
-                int malus = -clamp_int(160 * depth - 200, 0, MAX_HISTORY);
+                int malus = -clamp_int(HIST_MALUS_MULT * depth - HIST_MALUS_BASE, 0, HIST_MAX);
                 int *history_entry = &capture_history[board->turn][moved_piece][to][captured_piece];
-                *history_entry += malus - *history_entry * abs(malus) / MAX_HISTORY;
+                *history_entry += malus - *history_entry * abs(malus) / HIST_MAX;
             }
         }
 
@@ -1064,15 +1062,15 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (!is_capture && !is_promotion)
             {
-                int clampedBonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
-                butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / MAX_HISTORY;
+                int clampedBonus = clamp_int(HIST_BONUS_MULT * depth - HIST_BONUS_BASE, 0, HIST_MAX);
+                butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / HIST_MAX;
 
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
                 {
                     int pp = cont_stack[ply - 1].piece;
                     int pt = cont_stack[ply - 1].to;
                     int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
-                    *ch += clampedBonus - *ch * abs(clampedBonus) / MAX_HISTORY;
+                    *ch += clampedBonus - *ch * abs(clampedBonus) / HIST_MAX;
                 }
 
                 if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
@@ -1083,10 +1081,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
             else if (is_capture && captured_piece != -1)
             {
-                int bonus = clamp_int(320 * depth - 400, 0, MAX_HISTORY);
+                int bonus = clamp_int(HIST_BONUS_MULT * depth - HIST_BONUS_BASE, 0, HIST_MAX);
 
                 int *cutoff_capture_entry = &capture_history[board->turn][moved_piece][to][captured_piece];
-                *cutoff_capture_entry += bonus - *cutoff_capture_entry * abs(bonus) / MAX_HISTORY;
+                *cutoff_capture_entry += bonus - *cutoff_capture_entry * abs(bonus) / HIST_MAX;
 
                 for (int k = 0; k < num_tried_captures; k++)
                 {
@@ -1106,7 +1104,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
                     int *other_capture_entry = &capture_history[board->turn][other_attacker][tried_to][other_victim];
                     int malus = -bonus;
-                    *other_capture_entry += malus - *other_capture_entry * abs(malus) / MAX_HISTORY;
+                    *other_capture_entry += malus - *other_capture_entry * abs(malus) / HIST_MAX;
                 }
             }
 
@@ -1151,18 +1149,13 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     long long search_start = get_time_ms();
 
     int prev_score = 0;
-    int aspiration_delta = 25;
-    int ASPIRATION_MAX_DELTA = 500;
-    int ASP_REDUCTION_MAX = 3;
+    int aspiration_delta = ASP_DELTA;
 
     uint16_t prev_best_move = 0;
     int last_best_move_change = 0;
 
     double bm_changes = 0;
-    double BM_INST_SCALE = 2.20;
     double score_factor = 1.0;
-    double SCORE_SWING_SCALE = 25.0;
-    int SCORE_DROP_DEPTH = 7;
 
     SearchStack no_excl = {0};
     nnue_refresh(board, 0);
@@ -1172,13 +1165,13 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         if (stop->soft_time > 0)
         {
             int iterations_stable = depth - last_best_move_change;
-            double factor = 1.2 - 0.05 * (double)iterations_stable;
-            if (factor < 0.8)
-                factor = 0.8;
-            if (factor > 1.2)
-                factor = 1.2;
+            double factor = TM_STABLE_BASE - TM_STABLE_STEP * (double)iterations_stable;
+            if (factor < TM_STABLE_MIN)
+                factor = TM_STABLE_MIN;
+            if (factor > TM_STABLE_MAX)
+                factor = TM_STABLE_MAX;
 
-            double instability = 1.0 + BM_INST_SCALE * bm_changes;
+            double instability = 1.0 + TM_BM_INST_SCALE * bm_changes;
 
             int64_t effective_soft = (int64_t)(stop->soft_time * factor * instability * score_factor);
             if (effective_soft > (int64_t)stop->max_time)
@@ -1200,7 +1193,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         searchOutput out;
 
         int alpha, beta;
-        bool first_attempt = (depth == 1);
+        bool first_attempt = (depth < ASP_MIN_DEPTH);
         if (first_attempt)
         {
             alpha = -MATE_SCORE;
@@ -1214,7 +1207,6 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         int delta = aspiration_delta;
         int research_count = 0;
-        int MAX_RESEARCH = 5;
         int asp_reduction = 0;
 
         while (1)
@@ -1249,8 +1241,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
                     beta = MATE_SCORE;
             }
 
-            delta *= 2;
-            if (delta > ASPIRATION_MAX_DELTA)
+            delta = (int)(delta * ASP_DELTA_GROWTH);
+            if (delta > ASP_MAX_DELTA)
             {
                 asp_reduction = 0;
                 alpha = -MATE_SCORE;
@@ -1258,7 +1250,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             }
 
             research_count++;
-            if (research_count >= MAX_RESEARCH)
+            if (research_count >= ASP_MAX_RESEARCH)
             {
                 alpha = -MATE_SCORE;
                 beta = MATE_SCORE;
@@ -1270,15 +1262,15 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         if (stop->stop)
             break;
-        if (depth >= SCORE_DROP_DEPTH)
+        if (depth >= TM_SCORE_DROP_DEPTH)
         {
             double diff = (double)(prev_score - out.score);
-            if (diff > SCORE_SWING_SCALE)
-                diff = SCORE_SWING_SCALE;
-            if (diff < -SCORE_SWING_SCALE)
-                diff = -SCORE_SWING_SCALE;
+            if (diff > TM_SCORE_SWING_SCALE)
+                diff = TM_SCORE_SWING_SCALE;
+            if (diff < -TM_SCORE_SWING_SCALE)
+                diff = -TM_SCORE_SWING_SCALE;
 
-            score_factor = pow(2.0, diff / SCORE_SWING_SCALE);
+            score_factor = pow(2.0, diff / TM_SCORE_SWING_SCALE);
         }
         else
         {
@@ -1299,7 +1291,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             best_pv = pv;
         }
 
-        bm_changes *= 0.5;
+        bm_changes *= TM_BM_DECAY;
 
         int64_t elapsed = get_time_ms() - search_start;
         long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;

@@ -17,7 +17,8 @@ SRCS := \
 	tt.c \
 	uci.c \
 	zobrist.c \
-	magics.c
+	magics.c \
+	params.c
 
 OBJS := $(SRCS:.c=.o)
 
