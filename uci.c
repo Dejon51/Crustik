@@ -973,6 +973,7 @@ void uciStart()
                 if (hard <= 0)
                     hard = 50;
 
+                    
                 stopConditions stop = {};
                 stop.start_time = get_time_ms();
                 stop.soft_time = soft;
