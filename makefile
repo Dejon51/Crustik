@@ -48,11 +48,15 @@ else
 	ARCH :=
 endif
 
+# Link-time optimization: "auto" lets GCC pick a parallel job count
+# (GCC 10+). For older GCC use e.g. LTO := -flto=4
+LTO ?= -flto=auto
+
 # Optimizations
-OPT := -O3 -DNDEBUG -flto $(ARCH)
+OPT := -O3 -DNDEBUG $(LTO) $(ARCH)
 
 CFLAGS := $(STD) $(DEFS) $(WARN) $(OPT) $(EVALDEF)
-LDFLAGS := -flto
+LDFLAGS := $(LTO)
 LDLIBS := -lm
 
 all: $(EXE)

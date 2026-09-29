@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <math.h>
+#include <inttypes.h>
 
 #include "play.h"
 #include "lmath.h"
@@ -949,7 +950,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         else
         {
             int reduction = 0;
-            if (!root_node && !in_check && depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVES &&
+            if (!root_node && !in_check && depth >= LMR_MIN_DEPTH && (int)i >= LMR_MIN_MOVES &&
                 !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
                 int is_pv_node = (beta - alpha) > 1;
@@ -1320,9 +1321,9 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
         if (pos > 0 && pv_str[pos - 1] == ' ')
             pv_str[pos - 1] = '\0';
 
-        printf("info depth %d seldepth %d score %s nodes %llu nps %lld time %lld pv %s\n",
+        printf("info depth %d seldepth %d score %s nodes %" PRIu64 " nps %lld time %" PRId64 " pv %s\n",
                depth, stop->seldepth, score_str,
-               (unsigned long long)stop->nodes,
+               (uint64_t)stop->nodes,
                nps, elapsed,
                pv_str);
         fflush(stdout);
