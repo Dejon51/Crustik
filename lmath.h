@@ -140,11 +140,25 @@ int matoi(const char *str);
 
 float logf(float x);
 
-int move_from(uint16_t move);
-int move_to(uint16_t move);
-int move_flag(uint16_t move);
-int piece_on_square(Position *board, int sq);
-bool is_capture_move(Position *board, uint16_t move);
-bool is_promotion_move(uint16_t move);
+static inline int move_from(uint16_t move) {
+    return (move >> 6) & 0x3F;
+}
+static inline int move_to(uint16_t move) {
+    return move & 0x3F;
+}
+static inline int move_flag(uint16_t move) {
+    return (move >> 12) & 0xF;
+}
+static inline int piece_on_square(const Position *board, int sq) {
+    int p = board->mailbox[sq];
+    return (p < 6) ? p : -1;
+}
+static inline bool is_capture_move(const Position *board, uint16_t move) {
+    return board->mailbox[move & 0x3F] < 6;
+}
+static inline bool is_promotion_move(uint16_t move) {
+    int flag = (move >> 12) & 0xF;
+    return flag >= 5 && flag <= 8;
+}
 
 #endif
