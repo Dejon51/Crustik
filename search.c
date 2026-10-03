@@ -13,44 +13,26 @@
 #include "tt.h"
 #include "zobrist.h"
 #include "params.h"
-
-#define MATE_SCORE 32000
-#define MAX_DEPTH 200
-#define MAX_GAME_PLY 2048
-#define MAX_LMR_MOVES 50
-
-#define NO_EVAL (-32001)
-
-#define MAX_SEARCH_PLY 128
-
-#define CORRHIST_SIZE 16384
-#define CORRHIST_MASK (CORRHIST_SIZE - 1)
+#include "ordermoves.h"
 
 uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
 
 static uint64_t search_path_hash[MAX_SEARCH_PLY];
 
-static int butterfly_hist[2][64][64];
-static uint16_t killer_moves[MAX_GAME_PLY][2];
-static int eval_stack[MAX_GAME_PLY];
+int butterfly_hist[2][64][64];
+uint16_t killer_moves[MAX_GAME_PLY][2];
+int eval_stack[MAX_GAME_PLY];
 
-static int cont_hist[2][6][64][6][64];
-static int capture_history[2][6][64][6];
+int cont_hist[2][6][64][6][64];
+int capture_history[2][6][64][6];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
 static int nonpawn_corrhist[2][CORRHIST_SIZE];
 static uint64_t pawn_corrhist_keys[2][64];
 static bool corrhist_initialized = false;
 
-typedef struct
-{
-    int piece;
-    int to;
-    bool valid;
-} ContRecord;
-
-static ContRecord cont_stack[MAX_SEARCH_PLY];
+ContRecord cont_stack[MAX_SEARCH_PLY];
 
 static void init_corrhist(void)
 {
@@ -178,26 +160,6 @@ static int score_to_tt(int score, int ply)
     if (score < -31000)
         return score - ply;
     return score;
-}
-
-static int piece_value_lva(int piece)
-{
-    switch (piece)
-    {
-    case 0:
-        return PIECE_VALUE_PAWN;
-    case 1:
-        return PIECE_VALUE_KNIGHT;
-    case 2:
-        return PIECE_VALUE_BISHOP;
-    case 3:
-        return PIECE_VALUE_ROOK;
-    case 4:
-        return PIECE_VALUE_QUEEN;
-    case 5:
-        return PIECE_VALUE_KING;
-    }
-    return 0;
 }
 
 static void make_null_move(Position *board)
@@ -342,91 +304,6 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
 
     int *npc = &nonpawn_corrhist[side][mkey];
     *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
-}
-
-MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
-{
-    MoveList ordered = *move_list;
-    int scores[256] = {0};
-
-    const int TT_SCORE = 100000000;
-    const int CAPTURE_BASE = 90000000;
-    const int KILLER_BASE = 80000000;
-
-    bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid);
-    int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
-    int cont_to = have_cont ? cont_stack[ply - 1].to : 0;
-
-    for (unsigned int i = 0; i < ordered.offset; i++)
-    {
-        uint16_t move = ordered.movelist[i];
-
-        if (move == tt_move)
-        {
-            scores[i] = TT_SCORE;
-            continue;
-        }
-
-        int from = move_from(move);
-        int to = move_to(move);
-        int attacker = piece_on_square(board, from);
-        int victim = piece_on_square(board, to);
-        bool is_capture = is_capture_move(board, move);
-
-        if (is_capture && attacker != -1)
-        {
-            if (victim == -1)
-                victim = 0;
-
-            int mvv_lva = piece_value_lva(victim) * MVV_LVA_VICTIM_MULT - piece_value_lva(attacker);
-            int history_score = capture_history[board->turn][attacker][to][victim];
-            scores[i] = CAPTURE_BASE + mvv_lva + history_score;
-            continue;
-        }
-
-        bool is_killer = false;
-        if (ply < MAX_GAME_PLY)
-        {
-            if (move == killer_moves[ply][0] || move == killer_moves[ply][1])
-            {
-                int bonus = (move == killer_moves[ply][0]) ? 1 : 0;
-                scores[i] = KILLER_BASE + bonus;
-                is_killer = true;
-            }
-        }
-
-        if (!is_killer)
-        {
-            int score = butterfly_hist[board->turn][from][to];
-
-            if (have_cont && attacker != -1)
-                score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
-
-            scores[i] = score;
-        }
-    }
-
-    for (unsigned int i = 0; i < ordered.offset; i++)
-    {
-        unsigned int best = i;
-        for (unsigned int j = i + 1; j < ordered.offset; j++)
-        {
-            if (scores[j] > scores[best])
-                best = j;
-        }
-        if (best != i)
-        {
-            uint16_t tmp_move = ordered.movelist[i];
-            ordered.movelist[i] = ordered.movelist[best];
-            ordered.movelist[best] = tmp_move;
-
-            int tmp_score = scores[i];
-            scores[i] = scores[best];
-            scores[best] = tmp_score;
-        }
-    }
-
-    return ordered;
 }
 
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
@@ -786,11 +663,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
         }
     }
-    MoveList move_list = {0};
-    legalMoveGen(board, &move_list);
-    move_list = ordermoves(board, &move_list, ply, tt_move);
 
-    if (move_list.offset == 0)
+    MovePicker mp;
+    movepicker_init(&mp, board, ply, tt_move);
+
+    if (mp.list.offset == 0 && mp.tt_move == 0)
     {
         output.score = in_check ? -MATE_SCORE + ply : 0;
         output.move = 0;
@@ -799,17 +676,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     int best_score = -MATE_SCORE;
 
-    uint16_t best_move = move_list.movelist[0];
+    uint16_t best_move = mp.tt_move ? mp.tt_move : mp.list.movelist[0];
 
     int searched_any = 0;
 
     uint16_t tried_captures[64];
     int num_tried_captures = 0;
 
-    for (unsigned int i = 0; i < move_list.offset; i++)
+    uint16_t move;
+    int i = 0;
+    for (; (move = movepicker_next(&mp)) != 0; i++)
     {
-        uint16_t move = move_list.movelist[i];
-
         if (move == stack->excluded_move)
             continue;
 
@@ -833,7 +710,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             depth <= LMP_MAX_DEPTH &&
             !is_capture &&
             !is_killer &&
-            (int)i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT))
+            i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT))
         {
             continue;
         }
@@ -854,7 +731,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !is_killer &&
             !is_promotion &&
             depth <= HISTPRUNE_MAX_DEPTH &&
-            (int)i >= HISTPRUNE_MIN_MOVES &&
+            i >= HISTPRUNE_MIN_MOVES &&
             move != tt_move)
         {
             int hist_score = quiet_history_score(board, ply, move);
@@ -925,7 +802,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
-        makeMove(&copy, &move_list, i);
+        moveint(&copy, move);
         searched_any = 1;
 
         if (is_capture && captured_piece != -1 && num_tried_captures < 64)
@@ -950,7 +827,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         else
         {
             int reduction = 0;
-            if (!root_node && !in_check && depth >= LMR_MIN_DEPTH && (int)i >= LMR_MIN_MOVES &&
+            if (!root_node && !in_check && depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVES &&
                 !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
                 int is_pv_node = (beta - alpha) > 1;

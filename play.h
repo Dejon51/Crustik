@@ -43,4 +43,6 @@ uint64_t perftbulk(Position *board, int depth);
 
 bool see_ge(Position *board, uint16_t move, int threshold);
 
+int piece_value_lva(int piece);
+
 #endif

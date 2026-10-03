@@ -18,7 +18,8 @@ SRCS := \
 	uci.c \
 	zobrist.c \
 	magics.c \
-	params.c
+	params.c \
+	ordermoves.c
 
 OBJS := $(SRCS:.c=.o)
 
