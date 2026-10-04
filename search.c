@@ -556,6 +556,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         ceval = corrected_eval(board, static_eval);
 
+        bool corrplexity = abs(static_eval - ceval) > 80;
+        int corrplexity_value = abs(static_eval - ceval);
+
         if (ply < MAX_GAME_PLY)
         {
             improving = (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
@@ -569,7 +572,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             int margin = RFP_MARGIN * depth;
 
-            if (ceval - margin >= beta)
+            if (ceval - margin >= beta + (corrplexity * RFP_CORRPLEXITY_MULT) / RFP_CORRPLEXITY_DIVISOR)
             {
                 return (searchOutput){
                     .score = (ceval + beta) / 2,
