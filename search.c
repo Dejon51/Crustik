@@ -568,6 +568,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (!root_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
         {
             int margin = RFP_MARGIN * depth;
+            if (!improving)
+                margin -= 60;
 
             if (ceval - margin >= beta)
             {
@@ -738,6 +740,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (depth <= FUTILITY_MAX_DEPTH && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
         {
             int futility_margin = FUTILITY_BASE + FUTILITY_DEPTH_MARGIN * depth;
+            if (!improving)
+                futility_margin -= 40;
             if (ceval + futility_margin <= alpha)
             {
                 if (!is_capture && !is_promotion)
