@@ -18,7 +18,7 @@ int PVS_MIN_DEPTH = 3;
 int RFP_MAX_DEPTH = 6;
 int RFP_MARGIN = 100;
 
-/* ---------- Null move pruning ---------- */
+/* ---------- Null move pruning ---------- */ 
 int NMP_MIN_DEPTH = 3;
 int NMP_BASE_R = 3;
 int NMP_DEPTH_DIV = 6;
