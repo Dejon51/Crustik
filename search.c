@@ -32,6 +32,30 @@ static int nonpawn_corrhist[2][CORRHIST_SIZE];
 static uint64_t pawn_corrhist_keys[2][64];
 static bool corrhist_initialized = false;
 
+
+#ifndef LMRCORR_SIZE
+#define LMRCORR_SIZE 16384
+#endif
+#define LMRCORR_MASK (LMRCORR_SIZE - 1)
+
+#ifndef LMRCORR_LIMIT
+#define LMRCORR_LIMIT 16384 
+#endif
+
+#ifndef LMRCORR_GRAIN
+#define LMRCORR_GRAIN 16
+#endif
+
+#ifndef LMRC_FAIL_HIGH_MULT
+#define LMRC_FAIL_HIGH_MULT 96
+#endif
+
+#ifndef LMRC_FAIL_LOW_MULT
+#define LMRC_FAIL_LOW_MULT 6
+#endif
+
+static int lmr_corrhist[2][LMRCORR_SIZE];
+
 ContRecord cont_stack[MAX_SEARCH_PLY];
 
 static void init_corrhist(void)
@@ -61,6 +85,7 @@ void reset_history(void)
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
+    memset(lmr_corrhist, 0, sizeof lmr_corrhist);
     if (!corrhist_initialized)
         init_corrhist();
     for (int i = 0; i < MAX_GAME_PLY; i++)
@@ -306,6 +331,19 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
     *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
 }
 
+static void update_lmr_corrhist(int side, int key, int depth, bool fail_high)
+{
+    int bonus;
+
+    if (fail_high)
+        bonus = -clamp_int_local(depth * LMRC_FAIL_HIGH_MULT, 0, LMRCORR_LIMIT / 4);
+    else
+        bonus = clamp_int_local(depth * LMRC_FAIL_LOW_MULT, 0, LMRCORR_LIMIT / 4);
+
+    int *c = &lmr_corrhist[side][key];
+    *c += bonus - *c * abs(bonus) / LMRCORR_LIMIT;
+}
+
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 {
     stop->nodes++;
@@ -547,6 +585,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int ceval = 0;
     bool improving = false;
 
+    int lmr_pkey = 0;
+
     if (!in_check)
     {
         if (entry && entry->eval != NO_EVAL)
@@ -555,6 +595,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             static_eval = eval(board, ply);
 
         ceval = corrected_eval(board, static_eval);
+
+        lmr_pkey = (int)(compute_pawn_key(board) & LMRCORR_MASK);
 
         if (ply < MAX_GAME_PLY)
         {
@@ -852,6 +894,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 {
                     reduction += LMR_BFHIST_BONUS_SCALAR;
                 }
+
+                reduction += lmr_corrhist[board->turn][lmr_pkey] / LMRCORR_GRAIN;
+
                 reduction /= 1024;
                 reduction = clamp_int(reduction, 0, depth - 1);
             }
@@ -861,6 +906,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 score = -search(&copy, depth - 1 - reduction, ply + 1,
                                 -alpha - 1, -alpha, stop, NULL, &no_excl)
                              .score;
+
+                if (!stop->stop)
+                    update_lmr_corrhist(board->turn, lmr_pkey, depth, score > alpha);
 
                 if (!stop->stop && score > alpha)
                 {
