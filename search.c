@@ -665,20 +665,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     }
 
     MovePicker mp;
-    movepicker_init(&mp, board, ply, tt_move);
-
-    if (mp.list.offset == 0 && mp.tt_move == 0)
-    {
-        output.score = in_check ? -MATE_SCORE + ply : 0;
-        output.move = 0;
-        return output;
-    }
+    movepicker_init(&mp, board, ply, tt_move, in_check);
 
     int best_score = -MATE_SCORE;
-
-    uint16_t best_move = mp.tt_move ? mp.tt_move : mp.list.movelist[0];
-
+    uint16_t best_move = 0;
     int searched_any = 0;
+    int moves_seen = 0;
 
     uint16_t tried_captures[64];
     int num_tried_captures = 0;
@@ -689,6 +681,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
         if (move == stack->excluded_move)
             continue;
+
+        moves_seen++;
 
         if (ply == 0 && stop->print_info)
         {
@@ -712,6 +706,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !is_killer &&
             i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT))
         {
+            mp.skip_quiets = true;
             continue;
         }
 
@@ -800,10 +795,18 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 captured_piece = 0;
         }
 
-        nnue_update(board, move, ply, ply + 1);
         Position copy = *board;
         moveint(&copy, move);
+
+        uint64_t mover_king_bb = copy.pieces[5] & copy.color[board->turn];
+        if (!mover_king_bb ||
+            squareAttacked(&copy, __builtin_ctzll(mover_king_bb), !board->turn))
+            continue;
+
+        nnue_update(board, move, ply, ply + 1);
         searched_any = 1;
+        if (best_move == 0)
+            best_move = move;
 
         if (is_capture && captured_piece != -1 && num_tried_captures < 64)
             tried_captures[num_tried_captures++] = move;
@@ -989,9 +992,25 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             break;
         }
     }
+
     if (!searched_any)
-        return (searchOutput){.score = excluded ? alpha : (in_check ? eval(board, ply) : static_eval),
-                              .move = 0};
+    {
+        if (excluded)
+            return (searchOutput){.score = alpha, .move = 0};
+
+        bool no_legal = (moves_seen == 0);
+        if (!no_legal)
+        {
+            MoveList tmp = {0};
+            legalMoveGen(board, &tmp);
+            no_legal = (tmp.offset == 0);
+        }
+
+        if (no_legal)
+            return (searchOutput){.score = in_check ? -MATE_SCORE + ply : 0, .move = 0};
+
+        return (searchOutput){.score = in_check ? eval(board, ply) : static_eval, .move = 0};
+    }
 
     if (!stop->stop && stack->excluded_move == 0 && !in_check)
         update_corrhist(board, depth, static_eval, best_score);

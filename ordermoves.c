@@ -1,9 +1,14 @@
 #include <stdbool.h>
+#include <stdlib.h>
 #include "lmath.h"
 #include "search.h"
 #include "params.h"
 #include "play.h"
+#include "magics.h"
+#include "precomputed.h"
 #include "ordermoves.h"
+
+void quietMoves(Position *board, MoveList *list, bool color);
 
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
@@ -90,134 +95,243 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 	return ordered;
 }
 
+#define PK_CAPTURE_BASE 90000000
+#define PK_KILLER_BASE 80000000
 
-enum { STAGE_TT, STAGE_NOISY, STAGE_QUIET, STAGE_DONE };
-
-void movepicker_init(MovePicker *mp, Position *board, int ply, uint16_t tt_move)
+bool move_is_pseudolegal(Position *b, uint16_t m)
 {
-	mp->board = board;
-	mp->ply = ply;
-	mp->stage = STAGE_TT;
-	mp->idx = 0;
-	mp->end = 0;
-	mp->tt_move = 0;
-	mp->list.offset = 0;
-	mp->num_noisy = 0;
+	int from = move_from(m), to = move_to(m), flag = move_flag(m);
+	int us = b->turn;
+	if (from == to)
+		return false;
 
-	MoveList all = {0};
-	legalMoveGen(board, &all);
+	int pc = b->mailbox[from];
+	uint64_t from_bb = 1ULL << from, to_bb = 1ULL << to;
+	if (pc >= 6 || !(b->color[us] & from_bb))
+		return false;
+	if (b->color[us] & to_bb)
+		return false;
 
-	const int CAPTURE_BASE = 90000000;
-	const int KILLER_BASE = 80000000;
+	uint64_t occ = b->color[WHITE] | b->color[BLACK];
+	bool promo = flag >= 5 && flag <= 8;
 
-	bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid);
-	int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
-	int cont_to = have_cont ? cont_stack[ply - 1].to : 0;
-
-	uint16_t quiet_moves[256];
-	int quiet_scores[256];
-	unsigned num_quiets = 0;
-
-	for (unsigned i = 0; i < all.offset; i++)
+	if (pc == PAWNNUMBER)
 	{
-		uint16_t move = all.movelist[i];
+		if (flag >= 1 && flag <= 4)
+			return false;
+		int dir = (us == 0) ? -8 : 8;
+		int start_row = (us == 0) ? 6 : 1;
+		int promo_row = (us == 0) ? 1 : 6;
+		if (promo != ((from >> 3) == promo_row))
+			return false;
 
-		if (tt_move != 0 && move == tt_move)
-		{
-			mp->tt_move = move;
-			continue;
-		}
-
-		int from = move_from(move);
-		int to = move_to(move);
-		int attacker = piece_on_square(board, from);
-		int victim = piece_on_square(board, to);
-		bool is_cap = is_capture_move(board, move);
-		bool is_promo = is_promotion_move(move);
-
-		if ((is_cap || is_promo) && attacker != -1)
-		{
-			if (victim == -1)
-				victim = 0; // en passant
-
-			int s = CAPTURE_BASE;
-			if (is_cap)
-				s += piece_value_lva(victim) * MVV_LVA_VICTIM_MULT -
-					 piece_value_lva(attacker) +
-					 capture_history[board->turn][attacker][to][victim];
-			if (is_promo)
-				s += 1000000;
-
-			mp->scores[mp->num_noisy] = s;
-			mp->list.movelist[mp->num_noisy++] = move;
-		}
-		else
-		{
-			int s;
-			if (ply < MAX_GAME_PLY && move == killer_moves[ply][0])
-				s = KILLER_BASE + 1;
-			else if (ply < MAX_GAME_PLY && move == killer_moves[ply][1])
-				s = KILLER_BASE;
-			else
-			{
-				s = butterfly_hist[board->turn][from][to];
-				if (have_cont && attacker != -1)
-					s += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
-			}
-			quiet_scores[num_quiets] = s;
-			quiet_moves[num_quiets++] = move;
-		}
+		int diff = to - from;
+		if (diff == dir)
+			return !(occ & to_bb);
+		if (diff == 2 * dir)
+			return (from >> 3) == start_row && !(occ & to_bb) &&
+				   !(occ & (1ULL << (from + dir)));
+		if ((diff == dir - 1 || diff == dir + 1) &&
+			abs((to & 7) - (from & 7)) == 1)
+			return (b->color[!us] & to_bb) || (to == b->epsquare && b->epsquare != -1);
+		return false;
 	}
 
-	// quiets go after the noisy moves in the same arrays
-	for (unsigned i = 0; i < num_quiets; i++)
+	if (promo)
+		return false;
+
+	if (pc == KINGNUMBER)
 	{
-		mp->list.movelist[mp->num_noisy + i] = quiet_moves[i];
-		mp->scores[mp->num_noisy + i] = quiet_scores[i];
+		if (flag >= 1 && flag <= 4)
+		{
+			MoveList t = {0};
+			quietMoves(b, &t, us);
+			for (unsigned i = 0; i < t.offset; i++)
+				if (t.movelist[i] == m)
+					return true;
+			return false;
+		}
+		return flag == 0 && (kingtable[from] & to_bb);
 	}
-	mp->list.offset = mp->num_noisy + num_quiets;
+
+	if (flag)
+		return false;
+	if (pc == HORSENUMBER)
+		return (knighttable[from] & to_bb) != 0;
+
+	uint64_t att = 0;
+	if (pc == BISHOPNUMBER || pc == QUEENNUMBER)
+		att |= getBishopAttacks(from, occ);
+	if (pc == ROOKNUMBER || pc == QUEENNUMBER)
+		att |= getRookAttacks(from, occ);
+	return (att & to_bb) != 0;
 }
 
-static uint16_t pick_best(MovePicker *mp)
+static int score_noisy(Position *b, uint16_t m)
 {
-	unsigned best = mp->idx;
-	for (unsigned j = mp->idx + 1; j < mp->end; j++)
-		if (mp->scores[j] > mp->scores[best])
-			best = j;
+	int from = move_from(m), to = move_to(m);
+	int att = piece_on_square(b, from);
+	int victim = piece_on_square(b, to);
+	if (victim == -1 && att == 0 && (from & 7) != (to & 7))
+		victim = 0;
 
-	uint16_t m = mp->list.movelist[best];
-	mp->list.movelist[best] = mp->list.movelist[mp->idx];
-	mp->scores[best] = mp->scores[mp->idx];
-	mp->idx++;
+	int s = 0;
+	if (victim != -1 && att != -1)
+		s = piece_value_lva(victim) * MVV_LVA_VICTIM_MULT - piece_value_lva(att) +
+			capture_history[b->turn][att][to][victim];
+	if (is_promotion_move(m))
+		s += 1000000;
+	return s;
+}
+
+static int score_quiet(Position *b, int ply, uint16_t m)
+{
+	if (ply < MAX_GAME_PLY)
+	{
+		if (m == killer_moves[ply][0])
+			return PK_KILLER_BASE + 1;
+		if (m == killer_moves[ply][1])
+			return PK_KILLER_BASE;
+	}
+
+	int from = move_from(m), to = move_to(m);
+	int piece = piece_on_square(b, from);
+	int s = butterfly_hist[b->turn][from][to];
+
+	if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
+		s += cont_hist[b->turn][cont_stack[ply - 1].piece][cont_stack[ply - 1].to][piece][to];
+	return s;
+}
+
+static uint16_t pick_best(uint16_t *mv, int *sc, int i, int n)
+{
+	int best = i;
+	for (int j = i + 1; j < n; j++)
+		if (sc[j] > sc[best])
+			best = j;
+	uint16_t m = mv[best];
+	int s = sc[best];
+	mv[best] = mv[i];
+	sc[best] = sc[i];
+	mv[i] = m;
+	sc[i] = s;
 	return m;
+}
+
+void movepicker_init(MovePicker *mp, Position *b, int ply, uint16_t tt_move, bool in_check)
+{
+	mp->board = b;
+	mp->ply = ply;
+	mp->in_check = in_check;
+	mp->tt_move = (tt_move && move_is_pseudolegal(b, tt_move)) ? tt_move : 0;
+	mp->caps.offset = 0;
+	mp->quiets.offset = 0;
+	mp->cap_i = 0;
+	mp->quiet_i = 0;
+	mp->n_bad = 0;
+	mp->bad_i = 0;
+	mp->skip_quiets = false;
+	mp->stage = mp->tt_move ? ST_TT : (in_check ? ST_GEN_EVASIONS : ST_GEN_CAPS);
 }
 
 uint16_t movepicker_next(MovePicker *mp)
 {
-	if (mp->stage == STAGE_TT)
-	{
-		mp->stage = STAGE_NOISY;
-		mp->idx = 0;
-		mp->end = mp->num_noisy;
-		if (mp->tt_move)
-			return mp->tt_move;
-	}
+	Position *b = mp->board;
 
-	if (mp->stage == STAGE_NOISY)
+	switch (mp->stage)
 	{
-		if (mp->idx < mp->end)
-			return pick_best(mp);
-		mp->stage = STAGE_QUIET;
-		mp->idx = mp->num_noisy;
-		mp->end = mp->list.offset;
-	}
+	case ST_TT:
+		mp->stage = mp->in_check ? ST_GEN_EVASIONS : ST_GEN_CAPS;
+		return mp->tt_move;
 
-	if (mp->stage == STAGE_QUIET)
-	{
-		if (mp->idx < mp->end)
-			return pick_best(mp);
-		mp->stage = STAGE_DONE;
-	}
+	case ST_GEN_CAPS:
+		mp->caps.offset = 0;
+		qsearchMoves(b, &mp->caps, b->turn);
+		for (unsigned i = 0; i < mp->caps.offset; i++)
+			mp->cap_scores[i] = score_noisy(b, mp->caps.movelist[i]);
+		mp->stage = ST_GOOD_CAPS;
+		
 
-	return 0;
+	case ST_GOOD_CAPS:
+		while (mp->cap_i < (int)mp->caps.offset)
+		{
+			uint16_t m = pick_best(mp->caps.movelist, mp->cap_scores,
+								   mp->cap_i, mp->caps.offset);
+			mp->cap_i++;
+			if (m == mp->tt_move)
+				continue;
+			if (!see_ge(b, m, 0))
+			{
+				if (mp->n_bad < 64)
+					mp->bad[mp->n_bad++] = m;
+				continue;
+			}
+			return m;
+		}
+		mp->stage = ST_GEN_QUIETS;
+		
+
+	case ST_GEN_QUIETS:
+		if (mp->skip_quiets)
+		{
+			mp->stage = ST_BAD_CAPS;
+			goto bad_caps;
+		}
+		mp->quiets.offset = 0;
+		quietMoves(b, &mp->quiets, b->turn);
+		for (unsigned i = 0; i < mp->quiets.offset; i++)
+			mp->quiet_scores[i] = score_quiet(b, mp->ply, mp->quiets.movelist[i]);
+		mp->stage = ST_QUIETS;
+		
+
+	case ST_QUIETS:
+		while (!mp->skip_quiets && mp->quiet_i < (int)mp->quiets.offset)
+		{
+			uint16_t m = pick_best(mp->quiets.movelist, mp->quiet_scores,
+								   mp->quiet_i, mp->quiets.offset);
+			mp->quiet_i++;
+			if (m == mp->tt_move)
+				continue;
+			return m;
+		}
+		mp->stage = ST_BAD_CAPS;
+		
+
+	case ST_BAD_CAPS:
+	bad_caps:
+		if (mp->bad_i < mp->n_bad)
+			return mp->bad[mp->bad_i++];
+		mp->stage = ST_DONE;
+		return 0;
+
+	case ST_GEN_EVASIONS:
+		mp->caps.offset = 0;
+		legalMoveGen(b, &mp->caps);
+		for (unsigned i = 0; i < mp->caps.offset; i++)
+		{
+			uint16_t m = mp->caps.movelist[i];
+			mp->cap_scores[i] = (is_capture_move(b, m) || is_promotion_move(m))
+									? PK_CAPTURE_BASE + score_noisy(b, m)
+									: score_quiet(b, mp->ply, m);
+		}
+		mp->stage = ST_EVASIONS;
+		
+
+	case ST_EVASIONS:
+		while (mp->cap_i < (int)mp->caps.offset)
+		{
+			uint16_t m = pick_best(mp->caps.movelist, mp->cap_scores,
+								   mp->cap_i, mp->caps.offset);
+			mp->cap_i++;
+			if (m == mp->tt_move)
+				continue;
+			return m;
+		}
+		mp->stage = ST_DONE;
+		return 0;
+
+	case ST_DONE:
+	default:
+		return 0;
+	}
 }

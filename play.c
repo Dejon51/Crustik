@@ -1520,10 +1520,15 @@ void moveint(Position *board, uint16_t move)
 
 void quietMoves(Position *board, MoveList *list, bool color)
 {
+    board->color[OCCUPANCY] = board->color[WHITE] | board->color[BLACK];
+
     uint64_t own = board->color[color];
+    uint64_t enemies = board->color[!color];
     uint64_t occ = board->color[OCCUPANCY];
     uint64_t empty = ~occ;
 
+    const uint64_t FILE_A = 0x0101010101010101ULL;
+    const uint64_t FILE_H = 0x8080808080808080ULL;
     const uint64_t RANK_7 = 0x000000000000FF00ULL;
     const uint64_t RANK_3 = 0x0000FF0000000000ULL;
     const uint64_t RANK_2 = 0x00FF000000000000ULL;
@@ -1548,11 +1553,34 @@ void quietMoves(Position *board, MoveList *list, bool color)
             ADD_MOVE(list, to + 16, to);
         }
 
-        uint64_t prom = ((pawns & RANK_7) >> 8) & empty;
+        uint64_t prom_pawns = pawns & RANK_7;
+
+        // underpromotion pushes (queen push is in qsearchMoves)
+        uint64_t prom = (prom_pawns >> 8) & empty;
         while (prom)
         {
             int to = pop_lsb(&prom);
             int from = to + 8;
+            ADD_FLAG_MOVE(list, 5, from, to);
+            ADD_FLAG_MOVE(list, 6, from, to);
+            ADD_FLAG_MOVE(list, 7, from, to);
+        }
+
+        // underpromotion captures (queen capture is in captureMoves)
+        uint64_t pcl = ((prom_pawns & ~FILE_A) >> 9) & enemies;
+        uint64_t pcr = ((prom_pawns & ~FILE_H) >> 7) & enemies;
+        while (pcl)
+        {
+            int to = pop_lsb(&pcl);
+            int from = to + 9;
+            ADD_FLAG_MOVE(list, 5, from, to);
+            ADD_FLAG_MOVE(list, 6, from, to);
+            ADD_FLAG_MOVE(list, 7, from, to);
+        }
+        while (pcr)
+        {
+            int to = pop_lsb(&pcr);
+            int from = to + 7;
             ADD_FLAG_MOVE(list, 5, from, to);
             ADD_FLAG_MOVE(list, 6, from, to);
             ADD_FLAG_MOVE(list, 7, from, to);
@@ -1575,11 +1603,32 @@ void quietMoves(Position *board, MoveList *list, bool color)
             ADD_MOVE(list, to - 16, to);
         }
 
-        uint64_t prom = ((pawns & RANK_2) << 8) & empty;
+        uint64_t prom_pawns = pawns & RANK_2;
+
+        uint64_t prom = (prom_pawns << 8) & empty;
         while (prom)
         {
             int to = pop_lsb(&prom);
             int from = to - 8;
+            ADD_FLAG_MOVE(list, 5, from, to);
+            ADD_FLAG_MOVE(list, 6, from, to);
+            ADD_FLAG_MOVE(list, 7, from, to);
+        }
+
+        uint64_t pcl = ((prom_pawns & ~FILE_A) << 7) & enemies;
+        uint64_t pcr = ((prom_pawns & ~FILE_H) << 9) & enemies;
+        while (pcl)
+        {
+            int to = pop_lsb(&pcl);
+            int from = to - 7;
+            ADD_FLAG_MOVE(list, 5, from, to);
+            ADD_FLAG_MOVE(list, 6, from, to);
+            ADD_FLAG_MOVE(list, 7, from, to);
+        }
+        while (pcr)
+        {
+            int to = pop_lsb(&pcr);
+            int from = to - 9;
             ADD_FLAG_MOVE(list, 5, from, to);
             ADD_FLAG_MOVE(list, 6, from, to);
             ADD_FLAG_MOVE(list, 7, from, to);
@@ -1636,7 +1685,7 @@ void quietMoves(Position *board, MoveList *list, bool color)
         ADD_MOVE(list, from, to);
     }
 
-    // Castling (king must not be in check, nor pass through / land on attacked)
+    // Castling: king not in check, and neither transit nor landing square attacked
     int them = !color;
     if (color == 0 && from == E1)
     {
@@ -1674,51 +1723,98 @@ void quietMoves(Position *board, MoveList *list, bool color)
 
 void captureMoves(Position *board, MoveList *list, bool color)
 {
+    board->color[OCCUPANCY] = board->color[WHITE] | board->color[BLACK];
+
     uint64_t own = board->color[color];
     uint64_t enemies = board->color[!color];
     uint64_t occ = board->color[OCCUPANCY];
 
     const uint64_t FILE_A = 0x0101010101010101ULL;
     const uint64_t FILE_H = 0x8080808080808080ULL;
+    const uint64_t RANK_7 = 0x000000000000FF00ULL;
+    const uint64_t RANK_2 = 0x00FF000000000000ULL;
 
     uint64_t pawns = board->pieces[PAWNNUMBER] & own;
+    int ep = board->epsquare;
+    uint64_t ep_bb = (ep != -1) ? (1ULL << ep) : 0;
 
     if (color == 0)
     {
-        uint64_t cap_l = ((pawns & ~FILE_A) >> 9) & enemies;
-        uint64_t cap_r = ((pawns & ~FILE_H) >> 7) & enemies;
+        uint64_t norm = pawns & ~RANK_7;
+        uint64_t prom = pawns & RANK_7;
 
+        uint64_t cap_l = ((norm & ~FILE_A) >> 9) & enemies;
+        uint64_t cap_r = ((norm & ~FILE_H) >> 7) & enemies;
         while (cap_l)
         {
             int to = pop_lsb(&cap_l);
-            int from = to + 9;
-            ADD_MOVE(list, from, to);
+            ADD_MOVE(list, to + 9, to);
         }
-
         while (cap_r)
         {
             int to = pop_lsb(&cap_r);
-            int from = to + 7;
-            ADD_MOVE(list, from, to);
+            ADD_MOVE(list, to + 7, to);
+        }
+
+        // queen promotion captures (underpromotions are in quietMoves)
+        uint64_t pcl = ((prom & ~FILE_A) >> 9) & enemies;
+        uint64_t pcr = ((prom & ~FILE_H) >> 7) & enemies;
+        while (pcl)
+        {
+            int to = pop_lsb(&pcl);
+            ADD_FLAG_MOVE(list, 8, to + 9, to);
+        }
+        while (pcr)
+        {
+            int to = pop_lsb(&pcr);
+            ADD_FLAG_MOVE(list, 8, to + 7, to);
+        }
+
+        if (ep_bb)
+        {
+            if (((pawns & ~FILE_A) >> 9) & ep_bb)
+                ADD_MOVE(list, ep + 9, ep);
+            if (((pawns & ~FILE_H) >> 7) & ep_bb)
+                ADD_MOVE(list, ep + 7, ep);
         }
     }
     else
     {
-        uint64_t cap_l = ((pawns & ~FILE_A) << 7) & enemies;
-        uint64_t cap_r = ((pawns & ~FILE_H) << 9) & enemies;
+        uint64_t norm = pawns & ~RANK_2;
+        uint64_t prom = pawns & RANK_2;
 
+        uint64_t cap_l = ((norm & ~FILE_A) << 7) & enemies;
+        uint64_t cap_r = ((norm & ~FILE_H) << 9) & enemies;
         while (cap_l)
         {
             int to = pop_lsb(&cap_l);
-            int from = to - 7;
-            ADD_MOVE(list, from, to);
+            ADD_MOVE(list, to - 7, to);
         }
-
         while (cap_r)
         {
             int to = pop_lsb(&cap_r);
-            int from = to - 9;
-            ADD_MOVE(list, from, to);
+            ADD_MOVE(list, to - 9, to);
+        }
+
+        uint64_t pcl = ((prom & ~FILE_A) << 7) & enemies;
+        uint64_t pcr = ((prom & ~FILE_H) << 9) & enemies;
+        while (pcl)
+        {
+            int to = pop_lsb(&pcl);
+            ADD_FLAG_MOVE(list, 8, to - 7, to);
+        }
+        while (pcr)
+        {
+            int to = pop_lsb(&pcr);
+            ADD_FLAG_MOVE(list, 8, to - 9, to);
+        }
+
+        if (ep_bb)
+        {
+            if (((pawns & ~FILE_A) << 7) & ep_bb)
+                ADD_MOVE(list, ep - 7, ep);
+            if (((pawns & ~FILE_H) << 9) & ep_bb)
+                ADD_MOVE(list, ep - 9, ep);
         }
     }
 
@@ -2037,7 +2133,6 @@ bool see_ge(Position *board, uint16_t move, int threshold)
         occ &= ~(1ULL << cap_sq);
     }
 
-    /* Invariant across the whole exchange - hoist out of the loop */
     const uint64_t diag_pieces =
         board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER];
     const uint64_t orth_pieces =
