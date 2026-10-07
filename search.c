@@ -474,6 +474,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     searchOutput output = {0};
     int alpha_orig = alpha;
     uint16_t tt_move = 0;
+    const bool pv_node = (beta - alpha) > 1;
 
     SearchStack no_excl = {0};
     if (!stack)
@@ -513,7 +514,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     {
         tt_move = entry->move;
 
-        if (entry->depth >= depth && !pv && stack->excluded_move == 0)
+        if (entry->depth >= depth && !pv_node && stack->excluded_move == 0)
         {
             int tt_score = score_from_tt(entry->score, ply);
 
@@ -565,7 +566,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             eval_stack[ply] = ceval;
         }
 
-        if (!root_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
+        if (!root_node && !pv_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
         {
             int margin = RFP_MARGIN * depth;
 
@@ -577,7 +578,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
         }
         bool has_non_pawn_material = (board->color[board->turn] & ~(board->pieces[0] | board->pieces[5])) != 0;
-        if (!excluded && depth >= NMP_MIN_DEPTH && !root_node && ceval >= beta && has_non_pawn_material)
+        if (!excluded && depth >= NMP_MIN_DEPTH && !root_node && !pv_node &&
+            ceval >= beta && has_non_pawn_material)
         {
             int R = NMP_BASE_R + depth / NMP_DEPTH_DIV + (ceval - beta > NMP_EVAL_MARGIN ? 1 : 0);
             if (R > depth - 1)
@@ -603,7 +605,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
 
-    if (!pv && !in_check && depth >= PROBCUT_MIN_DEPTH &&
+    if (!pv_node && !in_check && depth >= PROBCUT_MIN_DEPTH &&
         abs(beta) < MATE_SCORE && stack->excluded_move == 0)
     {
         int probcut_beta = beta + PROBCUT_MARGIN;
@@ -700,6 +702,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         bool is_promotion = is_promotion_move(move);
 
         if (!root_node &&
+            !pv_node &&
             !in_check &&
             depth <= LMP_MAX_DEPTH &&
             !is_capture &&
@@ -711,6 +714,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
 
         if (!root_node &&
+            !pv_node &&
             !in_check &&
             depth <= SEE_PRUNE_MAX_DEPTH &&
             !is_mate_score(alpha) &&
@@ -721,6 +725,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 continue;
         }
         if (!root_node &&
+            !pv_node &&
             !in_check &&
             !is_capture &&
             !is_killer &&
@@ -735,7 +740,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 continue;
         }
 
-        if (depth <= FUTILITY_MAX_DEPTH && !in_check && !is_mate_score(alpha) && !is_mate_score(beta))
+        if (!root_node && !pv_node && depth <= FUTILITY_MAX_DEPTH && !in_check &&
+            !is_mate_score(alpha) && !is_mate_score(beta))
         {
             int futility_margin = FUTILITY_BASE + FUTILITY_DEPTH_MARGIN * depth;
             if (ceval + futility_margin <= alpha)
