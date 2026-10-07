@@ -2165,6 +2165,7 @@ bool see_ge(Position *board, uint16_t move, int threshold)
             }
         }
 
+        
         d++;
         gain[d] = PIECE_VALUES[attacking_piece] - gain[d - 1];
 
