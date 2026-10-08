@@ -960,7 +960,7 @@ void uciStart()
                 int overhead = 100;
 
                 int soft = time_left / 30 + increment;
-                int hard = time_left / 3 + increment; 
+                int hard = time_left / 8 + increment; 
 
                 if (soft < 10)
                     soft = 10;
