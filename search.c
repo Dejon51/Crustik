@@ -472,7 +472,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     stopConditions *stop, PVLine *pv, SearchStack *stack)
 {
     searchOutput output = {0};
-    int alpha_orig = alpha;
     uint16_t tt_move = 0;
     const bool pv_node = (beta - alpha) > 1;
 
@@ -502,6 +501,19 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (ply >= MAX_SEARCH_PLY - 1)
         return (searchOutput){.score = eval(board, ply), .move = 0};
+
+    int mate_alpha = -MATE_SCORE + ply;
+    int mate_beta = MATE_SCORE - ply - 1;
+
+    if (alpha < mate_alpha)
+        alpha = mate_alpha;
+    if (beta > mate_beta)
+        beta = mate_beta;
+
+    if (alpha >= beta)
+        return (searchOutput){.score = alpha, .move = 0};
+
+    int alpha_orig = alpha;
 
     if (ply < MAX_SEARCH_PLY)
         search_path_hash[ply] = board->hash;
