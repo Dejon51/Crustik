@@ -707,6 +707,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             depth <= LMP_MAX_DEPTH &&
             !is_capture &&
             !is_killer &&
+            !is_mate_score(alpha) &&
+            !is_mate_score(beta) &&
             i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT))
         {
             mp.skip_quiets = true;
