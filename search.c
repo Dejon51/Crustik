@@ -25,6 +25,7 @@ uint16_t killer_moves[MAX_GAME_PLY][2];
 int eval_stack[MAX_GAME_PLY];
 
 int cont_hist[2][6][64][6][64];
+int cont_hist2[2][6][64][6][64];
 int capture_history[2][6][64][6];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
@@ -57,6 +58,7 @@ void reset_history(void)
     memset(butterfly_hist, 0, sizeof butterfly_hist);
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
+    memset(cont_hist2, 0, sizeof cont_hist2);
     memset(capture_history, 0, sizeof capture_history);
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
@@ -100,14 +102,44 @@ static inline int quiet_history_score(Position *board, int ply, int move)
 
     int score = butterfly_hist[board->turn][from][to];
 
-    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
+    if (piece != -1)
     {
-        int prev_piece = cont_stack[ply - 1].piece;
-        int prev_to = cont_stack[ply - 1].to;
-        score += cont_hist[board->turn][prev_piece][prev_to][piece][to];
+        if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+        {
+            int prev_piece = cont_stack[ply - 1].piece;
+            int prev_to = cont_stack[ply - 1].to;
+            score += cont_hist[board->turn][prev_piece][prev_to][piece][to];
+        }
+        if (ply > 1 && ply - 2 < MAX_SEARCH_PLY && cont_stack[ply - 2].valid)
+        {
+            int prev_piece = cont_stack[ply - 2].piece;
+            int prev_to = cont_stack[ply - 2].to;
+            score += cont_hist2[board->turn][prev_piece][prev_to][piece][to];
+        }
     }
 
     return score;
+}
+
+static inline void update_hist_entry(int *e, int bonus)
+{
+    *e += bonus - *e * abs(bonus) / HIST_MAX;
+}
+
+static inline void update_cont_hists(Position *board, int ply, int piece, int to, int bonus)
+{
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+    {
+        int pp = cont_stack[ply - 1].piece;
+        int pt = cont_stack[ply - 1].to;
+        update_hist_entry(&cont_hist[board->turn][pp][pt][piece][to], bonus);
+    }
+    if (ply > 1 && ply - 2 < MAX_SEARCH_PLY && cont_stack[ply - 2].valid)
+    {
+        int pp = cont_stack[ply - 2].piece;
+        int pt = cont_stack[ply - 2].to;
+        update_hist_entry(&cont_hist2[board->turn][pp][pt][piece][to], bonus);
+    }
 }
 
 static void move_to_uci(uint16_t move, char *buf)
@@ -921,18 +953,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 int malus = -clamp_int(HIST_MALUS_MULT * depth - HIST_MALUS_BASE, 0, HIST_MAX);
 
-                butterfly_hist[board->turn][from][to] +=
-                    malus -
-                    butterfly_hist[board->turn][from][to] *
-                        abs(malus) / HIST_MAX;
-
-                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
-                {
-                    int pp = cont_stack[ply - 1].piece;
-                    int pt = cont_stack[ply - 1].to;
-                    int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
-                    *ch += malus - *ch * abs(malus) / HIST_MAX;
-                }
+                update_hist_entry(&butterfly_hist[board->turn][from][to], malus);
+                update_cont_hists(board, ply, moved_piece, to, malus);
             }
             else if (is_capture && captured_piece != -1)
             {
@@ -950,15 +972,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!is_capture && !is_promotion)
             {
                 int clampedBonus = clamp_int(HIST_BONUS_MULT * depth - HIST_BONUS_BASE, 0, HIST_MAX);
-                butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / HIST_MAX;
 
-                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
-                {
-                    int pp = cont_stack[ply - 1].piece;
-                    int pt = cont_stack[ply - 1].to;
-                    int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
-                    *ch += clampedBonus - *ch * abs(clampedBonus) / HIST_MAX;
-                }
+                update_hist_entry(&butterfly_hist[board->turn][from][to], clampedBonus);
+                update_cont_hists(board, ply, moved_piece, to, clampedBonus);
 
                 if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
                 {
