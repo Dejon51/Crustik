@@ -446,9 +446,21 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 
         if (score >= beta)
         {
-            tt_store(board->hash, score_to_tt(score, ply), move, 0, TT_BETA, 1,
+            int soft_score = score;
+
+            if (!in_check &&
+                is_capture_move(board, move) &&
+                !is_mate_score(score) &&
+                !is_mate_score(beta))
+            {
+                soft_score = (score + beta) / 2;
+            }
+
+            tt_store(board->hash, score_to_tt(soft_score, ply), move, 0,
+                     TT_BETA, 1,
                      in_check ? NO_EVAL : static_eval);
-            return score;
+
+            return soft_score;
         }
 
         if (score > alpha)
