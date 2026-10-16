@@ -110,24 +110,84 @@ static inline void nnue_addFeature(int16_t acc[NNUE_HL], int input_index) {
 		acc[h] += w[h];
 }
 
-static inline void nnue_addSub(int16_t *dst, const int16_t *src,
-							   const int16_t *a, const int16_t *s) {
-	for (int i = 0; i < NNUE_HL; i++)
-		dst[i] = src[i] + a[i] - s[i];
+// Single-perspective helpers (used only for the rare king-mirror-flip path).
+static inline void nnue_addSub(int16_t *restrict dst, const int16_t *restrict src,
+							   const int16_t *restrict a, const int16_t *restrict s) {
+	for (int h = 0; h < NNUE_HL; h++)
+		dst[h] = src[h] + a[h] - s[h];
 }
 
-static inline void nnue_addSubSub(int16_t *dst, const int16_t *src,
-								  const int16_t *a, const int16_t *s1,
-								  const int16_t *s2) {
-	for (int i = 0; i < NNUE_HL; i++)
-		dst[i] = src[i] + a[i] - s1[i] - s2[i];
+static inline void nnue_addSubSub(int16_t *restrict dst, const int16_t *restrict src,
+								  const int16_t *restrict a, const int16_t *restrict s1,
+								  const int16_t *restrict s2) {
+	for (int h = 0; h < NNUE_HL; h++)
+		dst[h] = src[h] + a[h] - s1[h] - s2[h];
 }
 
-static inline void nnue_addSubAddSub(int16_t *dst, const int16_t *src,
-									 const int16_t *a1, const int16_t *s1,
-									 const int16_t *a2, const int16_t *s2) {
-	for (int i = 0; i < NNUE_HL; i++)
-		dst[i] = src[i] + a1[i] - s1[i] + a2[i] - s2[i];
+static inline void nnue_addSubAddSub(int16_t *restrict dst, const int16_t *restrict src,
+									 const int16_t *restrict a1, const int16_t *restrict s1,
+									 const int16_t *restrict a2, const int16_t *restrict s2) {
+	for (int h = 0; h < NNUE_HL; h++)
+		dst[h] = src[h] + a1[h] - s1[h] + a2[h] - s2[h];
+}
+
+// Fused both-perspective helpers, unrolled by 4.
+static inline void nnue_addSub_both(
+	int16_t *restrict d0, const int16_t *restrict p0,
+	const int16_t *restrict a0, const int16_t *restrict s0,
+	int16_t *restrict d1, const int16_t *restrict p1,
+	const int16_t *restrict a1, const int16_t *restrict s1)
+{
+	for (int h = 0; h < NNUE_HL; h += 4) {
+		d0[h]   = p0[h]   + a0[h]   - s0[h];
+		d0[h+1] = p0[h+1] + a0[h+1] - s0[h+1];
+		d0[h+2] = p0[h+2] + a0[h+2] - s0[h+2];
+		d0[h+3] = p0[h+3] + a0[h+3] - s0[h+3];
+		d1[h]   = p1[h]   + a1[h]   - s1[h];
+		d1[h+1] = p1[h+1] + a1[h+1] - s1[h+1];
+		d1[h+2] = p1[h+2] + a1[h+2] - s1[h+2];
+		d1[h+3] = p1[h+3] + a1[h+3] - s1[h+3];
+	}
+}
+
+static inline void nnue_addSubSub_both(
+	int16_t *restrict d0, const int16_t *restrict p0,
+	const int16_t *restrict a0, const int16_t *restrict s00,
+	const int16_t *restrict s01,
+	int16_t *restrict d1, const int16_t *restrict p1,
+	const int16_t *restrict a1, const int16_t *restrict s10,
+	const int16_t *restrict s11)
+{
+	for (int h = 0; h < NNUE_HL; h += 4) {
+		d0[h]   = p0[h]   + a0[h]   - s00[h]   - s01[h];
+		d0[h+1] = p0[h+1] + a0[h+1] - s00[h+1] - s01[h+1];
+		d0[h+2] = p0[h+2] + a0[h+2] - s00[h+2] - s01[h+2];
+		d0[h+3] = p0[h+3] + a0[h+3] - s00[h+3] - s01[h+3];
+		d1[h]   = p1[h]   + a1[h]   - s10[h]   - s11[h];
+		d1[h+1] = p1[h+1] + a1[h+1] - s10[h+1] - s11[h+1];
+		d1[h+2] = p1[h+2] + a1[h+2] - s10[h+2] - s11[h+2];
+		d1[h+3] = p1[h+3] + a1[h+3] - s10[h+3] - s11[h+3];
+	}
+}
+
+static inline void nnue_addSubAddSub_both(
+	int16_t *restrict d0, const int16_t *restrict p0,
+	const int16_t *restrict a00, const int16_t *restrict s00,
+	const int16_t *restrict a01, const int16_t *restrict s01,
+	int16_t *restrict d1, const int16_t *restrict p1,
+	const int16_t *restrict a10, const int16_t *restrict s10,
+	const int16_t *restrict a11, const int16_t *restrict s11)
+{
+	for (int h = 0; h < NNUE_HL; h += 4) {
+		d0[h]   = p0[h]   + a00[h]   - s00[h]   + a01[h]   - s01[h];
+		d0[h+1] = p0[h+1] + a00[h+1] - s00[h+1] + a01[h+1] - s01[h+1];
+		d0[h+2] = p0[h+2] + a00[h+2] - s00[h+2] + a01[h+2] - s01[h+2];
+		d0[h+3] = p0[h+3] + a00[h+3] - s00[h+3] + a01[h+3] - s01[h+3];
+		d1[h]   = p1[h]   + a10[h]   - s10[h]   + a11[h]   - s11[h];
+		d1[h+1] = p1[h+1] + a10[h+1] - s10[h+1] + a11[h+1] - s11[h+1];
+		d1[h+2] = p1[h+2] + a10[h+2] - s10[h+2] + a11[h+2] - s11[h+2];
+		d1[h+3] = p1[h+3] + a10[h+3] - s10[h+3] + a11[h+3] - s11[h+3];
+	}
 }
 
 static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL],
@@ -227,37 +287,40 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 	bool kingMirrorFlip =
 		(piece == KINGNUMBER) && (((from & 7) > 3) != ((to & 7) > 3));
 
-	for (int persp = 0; persp < 2; persp++) {
-		if (kingMirrorFlip && persp == color) {
-			child->mirror[persp] = ((to & 7) > 3);
-			child->needsRefresh[persp] = 1;
-			continue;
-		}
+	// Mirror state is copied for both perspectives up front.
+	child->mirror[0] = parent->mirror[0];
+	child->mirror[1] = parent->mirror[1];
+	child->needsRefresh[0] = 0;
+	child->needsRefresh[1] = 0;
 
-		bool mir = parent->mirror[persp];
-		child->mirror[persp] = parent->mirror[persp];
-		child->needsRefresh[persp] = 0;
+	// Rare path: king crosses the mid-file, so one perspective needs a refresh.
+	// Fall back to a single-perspective update for the other perspective.
+	if (kingMirrorFlip) {
+		int refreshPersp = color;
+		int updatePersp = them;
 
-		int own = (color == persp);
-		int theirs = (them == persp);
+		child->mirror[refreshPersp] = ((to & 7) > 3);
+		child->needsRefresh[refreshPersp] = 1;
+
+		bool mir = parent->mirror[updatePersp];
+		int own = (color == updatePersp);
+		int theirs = (them == updatePersp);
 		int addIdx[2], subIdx[2], na = 0, ns = 0;
 
-		subIdx[ns++] = nnue_inputIndex(persp, own, piece, from, mir);
+		subIdx[ns++] = nnue_inputIndex(updatePersp, own, piece, from, mir);
 		if (isEp)
-			subIdx[ns++] =
-				nnue_inputIndex(persp, theirs, PAWNNUMBER, capSq, mir);
+			subIdx[ns++] = nnue_inputIndex(updatePersp, theirs, PAWNNUMBER, capSq, mir);
 		else if (victim != EMPTYNUMBER)
-			subIdx[ns++] = nnue_inputIndex(persp, theirs, victim, to, mir);
+			subIdx[ns++] = nnue_inputIndex(updatePersp, theirs, victim, to, mir);
 
-		addIdx[na++] = nnue_inputIndex(persp, own, placed, to, mir);
+		addIdx[na++] = nnue_inputIndex(updatePersp, own, placed, to, mir);
 		if (rookFrom >= 0) {
-			subIdx[ns++] =
-				nnue_inputIndex(persp, own, ROOKNUMBER, rookFrom, mir);
-			addIdx[na++] = nnue_inputIndex(persp, own, ROOKNUMBER, rookTo, mir);
+			subIdx[ns++] = nnue_inputIndex(updatePersp, own, ROOKNUMBER, rookFrom, mir);
+			addIdx[na++] = nnue_inputIndex(updatePersp, own, ROOKNUMBER, rookTo, mir);
 		}
 
-		int16_t *dst = child->vector[persp];
-		const int16_t *src = parent->vector[persp];
+		int16_t *dst = child->vector[updatePersp];
+		const int16_t *src = parent->vector[updatePersp];
 
 		if (na == 1 && ns == 1)
 			nnue_addSub(dst, src, nnue_featureWeights[addIdx[0]],
@@ -266,11 +329,66 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 			nnue_addSubSub(dst, src, nnue_featureWeights[addIdx[0]],
 						   nnue_featureWeights[subIdx[0]],
 						   nnue_featureWeights[subIdx[1]]);
-		else 
+		else
 			nnue_addSubAddSub(dst, src, nnue_featureWeights[addIdx[0]],
 							  nnue_featureWeights[subIdx[0]],
 							  nnue_featureWeights[addIdx[1]],
 							  nnue_featureWeights[subIdx[1]]);
+		return;
+	}
+
+	// Common path: both perspectives update normally. Compute indices for
+	// both, then run a single fused, unrolled loop over both accumulators.
+	int addIdx[2][2], subIdx[2][2], na[2] = {0, 0}, ns[2] = {0, 0};
+
+	for (int persp = 0; persp < 2; persp++) {
+		bool mir = parent->mirror[persp];
+		int own = (color == persp);
+		int theirs = (them == persp);
+
+		subIdx[persp][ns[persp]++] =
+			nnue_inputIndex(persp, own, piece, from, mir);
+		if (isEp)
+			subIdx[persp][ns[persp]++] =
+				nnue_inputIndex(persp, theirs, PAWNNUMBER, capSq, mir);
+		else if (victim != EMPTYNUMBER)
+			subIdx[persp][ns[persp]++] =
+				nnue_inputIndex(persp, theirs, victim, to, mir);
+
+		addIdx[persp][na[persp]++] =
+			nnue_inputIndex(persp, own, placed, to, mir);
+		if (rookFrom >= 0) {
+			subIdx[persp][ns[persp]++] =
+				nnue_inputIndex(persp, own, ROOKNUMBER, rookFrom, mir);
+			addIdx[persp][na[persp]++] =
+				nnue_inputIndex(persp, own, ROOKNUMBER, rookTo, mir);
+		}
+	}
+
+	int16_t *d0 = child->vector[0];
+	int16_t *d1 = child->vector[1];
+	const int16_t *p0 = parent->vector[0];
+	const int16_t *p1 = parent->vector[1];
+
+	if (na[0] == 1 && ns[0] == 1) {
+		nnue_addSub_both(d0, p0,
+			nnue_featureWeights[addIdx[0][0]], nnue_featureWeights[subIdx[0][0]],
+			d1, p1,
+			nnue_featureWeights[addIdx[1][0]], nnue_featureWeights[subIdx[1][0]]);
+	} else if (na[0] == 1 && ns[0] == 2) {
+		nnue_addSubSub_both(d0, p0,
+			nnue_featureWeights[addIdx[0][0]],
+			nnue_featureWeights[subIdx[0][0]], nnue_featureWeights[subIdx[0][1]],
+			d1, p1,
+			nnue_featureWeights[addIdx[1][0]],
+			nnue_featureWeights[subIdx[1][0]], nnue_featureWeights[subIdx[1][1]]);
+	} else {
+		nnue_addSubAddSub_both(d0, p0,
+			nnue_featureWeights[addIdx[0][0]], nnue_featureWeights[subIdx[0][0]],
+			nnue_featureWeights[addIdx[0][1]], nnue_featureWeights[subIdx[0][1]],
+			d1, p1,
+			nnue_featureWeights[addIdx[1][0]], nnue_featureWeights[subIdx[1][0]],
+			nnue_featureWeights[addIdx[1][1]], nnue_featureWeights[subIdx[1][1]]);
 	}
 }
 

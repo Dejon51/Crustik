@@ -234,6 +234,7 @@ void movepicker_init(MovePicker *mp, Position *b, int ply, uint16_t tt_move, boo
     mp->quiets.offset = 0;
     mp->cap_i = 0;
     mp->quiet_i = 0;
+    mp->killer_i = 0;
     mp->n_bad = 0;
     mp->bad_i = 0;
     mp->skip_quiets = false;
@@ -274,6 +275,32 @@ uint16_t movepicker_next(MovePicker *mp)
             }
             return m;
         }
+        mp->stage = ST_KILLERS;
+        FALLTHROUGH;
+
+    case ST_KILLERS:
+        if (mp->ply >= 0 && mp->ply < MAX_GAME_PLY)
+        {
+            while (mp->killer_i < 2)
+            {
+                uint16_t m = killer_moves[mp->ply][mp->killer_i];
+                mp->killer_i++;
+
+                if (m == 0)
+                    continue;
+                if (m == mp->tt_move)
+                    continue;
+
+                if (mp->killer_i == 2 &&
+                    m == killer_moves[mp->ply][0])
+                    continue;
+
+                if (!move_is_pseudolegal(b, m))
+                    continue;
+
+                return m;
+            }
+        }
         mp->stage = ST_GEN_QUIETS;
         FALLTHROUGH;
 
@@ -298,6 +325,14 @@ uint16_t movepicker_next(MovePicker *mp)
             mp->quiet_i++;
             if (m == mp->tt_move)
                 continue;
+
+            if (mp->ply >= 0 && mp->ply < MAX_GAME_PLY)
+            {
+                if (m == killer_moves[mp->ply][0] ||
+                    m == killer_moves[mp->ply][1])
+                    continue;
+            }
+
             return m;
         }
         mp->stage = ST_BAD_CAPS;

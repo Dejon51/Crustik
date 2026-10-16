@@ -7,38 +7,41 @@
 
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move);
 
-typedef enum
-{
-	ST_TT,
-	ST_GEN_CAPS,
-	ST_GOOD_CAPS,
-	ST_GEN_QUIETS,
-	ST_QUIETS,
-	ST_BAD_CAPS,
-	ST_GEN_EVASIONS,
-	ST_EVASIONS,
-	ST_DONE
-} PickerStage;
+typedef enum {
+    ST_TT,
+    ST_GEN_CAPS,
+    ST_GOOD_CAPS,
+    ST_KILLERS,  
+    ST_GEN_QUIETS,
+    ST_QUIETS,
+    ST_BAD_CAPS,
+    ST_GEN_EVASIONS,
+    ST_EVASIONS,
+    ST_DONE
+} MovePickerStage;
 
-typedef struct
-{
-	Position *board;
-	int ply;
-	int stage;
-	bool in_check;
-	bool skip_quiets;
-	uint16_t tt_move;
+typedef struct {
+    Position *board;
+    int ply;
+    bool in_check;
+    uint16_t tt_move;
 
-	MoveList caps;
-	MoveList quiets;
-	int cap_scores[256];
-	int quiet_scores[256];
-	int cap_i;
-	int quiet_i;
+    MoveList caps;
+    MoveList quiets;
 
-	uint16_t bad[64];
-	int n_bad;
-	int bad_i;
+    int cap_scores[256];
+    int quiet_scores[256];
+
+    int cap_i;
+    int quiet_i;
+    int killer_i;
+
+    uint16_t bad[64];
+    int n_bad;
+    int bad_i;
+
+    bool skip_quiets;
+    int stage;
 } MovePicker;
 
 void movepicker_init(MovePicker *mp, Position *board, int ply, uint16_t tt_move, bool in_check);
