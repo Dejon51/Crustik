@@ -71,21 +71,20 @@ int lmr_table[MAX_DEPTH + 1][MAX_LMR_MOVES + 1];
 
 void init_lmr()
 {
+    const double divisor = (double)LMR_DIVISOR * (double)LMR_DIV_SCALE;
+
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
         for (int move = 1; move <= MAX_LMR_MOVES; move++)
         {
-            int r = (int)(log((double)depth) *
-                          log((double)move) / LMR_DIVISOR);
+            int r = (int)(1024.0 * log((double)depth) *
+                          log((double)move) / divisor);
 
-            if (r < 1)
-                r = 1;
+            if (r < LMR_TABLE_FLOOR)
+                r = LMR_TABLE_FLOOR;
 
-            if (r > depth - 2)
-                r = depth - 2;
-
-            if (r > LMR_MAX)
-                r = LMR_MAX;
+            if (r > LMR_MAX * 1024)
+                r = LMR_MAX * 1024;
 
             lmr_table[depth][move] = r;
         }
@@ -468,8 +467,9 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     return best_score;
 }
 
-searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
-                    stopConditions *stop, PVLine *pv, SearchStack *stack)
+static searchOutput search_impl(Position *board, int depth, int ply, int alpha, int beta,
+                                stopConditions *stop, PVLine *pv, SearchStack *stack,
+                                bool cut_node)
 {
     searchOutput output = {0};
     int alpha_orig = alpha;
@@ -592,9 +592,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (ply < MAX_SEARCH_PLY)
                 cont_stack[ply].valid = false;
 
-            int score = -search(&copy, depth - R - 1,
-                                ply + 1, -beta, -beta + 1,
-                                stop, NULL, &no_excl)
+            int score = -search_impl(&copy, depth - R - 1,
+                                     ply + 1, -beta, -beta + 1,
+                                     stop, NULL, &no_excl, !cut_node)
                              .score;
 
             if (stop->stop)
@@ -644,9 +644,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
                 if (!stop->stop && probcut_value >= probcut_beta)
                 {
-                    probcut_value = -search(&copy, probcut_depth, ply + 1,
-                                            -probcut_beta, -probcut_beta + 1,
-                                            stop, NULL, &no_excl)
+                    probcut_value = -search_impl(&copy, probcut_depth, ply + 1,
+                                                 -probcut_beta, -probcut_beta + 1,
+                                                 stop, NULL, &no_excl, !cut_node)
                                          .score;
                 }
 
@@ -771,9 +771,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             SearchStack singular_stack = {.excluded_move = move};
 
-            searchOutput se_result = search(board, singular_depth, ply,
-                                            singular_beta - 1, singular_beta,
-                                            stop, NULL, &singular_stack);
+            searchOutput se_result = search_impl(board, singular_depth, ply,
+                                                 singular_beta - 1, singular_beta,
+                                                 stop, NULL, &singular_stack, cut_node);
 
             if (stop->stop)
                 return (searchOutput){0};
@@ -829,8 +829,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (i == 0 || depth < PVS_MIN_DEPTH)
         {
-            score = -search(&copy, depth - 1 + extension, ply + 1,
-                            -beta, -alpha, stop, &child_pv, &no_excl)
+            score = -search_impl(&copy, depth - 1 + extension, ply + 1,
+                                 -beta, -alpha, stop, &child_pv, &no_excl,
+                                 pv_node ? false : !cut_node)
                          .score;
         }
         else
@@ -839,54 +840,55 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!root_node && !in_check && depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVES &&
                 !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
-                int is_pv_node = (beta - alpha) > 1;
-                int from = move_from(move);
-                int to = move_to(move);
-                int hist = butterfly_hist[board->turn][from][to];
+                int r = lmr_reduction(depth, i + 1);
 
-                reduction = lmr_reduction(depth, i + 1) * 1024;
+                if (pv_node)
+                    r -= LMR_PV_NODE_SCALAR;
 
-                if (is_pv_node)
-                {
-                    reduction -= LMR_PV_NODE_SCALAR;
-                }
-                if (hist > LMR_BFHIST_THRESHOLD_PENALTY_SCALAR)
-                {
-                    reduction -= LMR_BFHIST_PENALTY_SCALAR;
-                }
-                else if (hist < -LMR_BFHIST_THRESHOLD_BONUS_SCALAR)
-                {
-                    reduction += LMR_BFHIST_BONUS_SCALAR;
-                }
-                reduction /= 1024;
-                reduction = clamp_int(reduction, 0, depth - 1);
+                if (!improving)
+                    r += LMR_NOT_IMPROVING;
+
+                if (cut_node)
+                    r += LMR_CUT_NODE;
+
+                int hist = quiet_history_score(board, ply, move);
+                int hist_adj = hist * 1024 / LMR_HIST_DIV;
+                hist_adj = clamp_int(hist_adj, -LMR_HIST_CLAMP, LMR_HIST_CLAMP);
+                r -= hist_adj;
+
+                if (r < 0)
+                    r = 0;
+
+                reduction = clamp_int(r / 1024, 0, depth - 1);
             }
 
             if (reduction > 0)
             {
-                score = -search(&copy, depth - 1 - reduction, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, &no_excl)
+                score = -search_impl(&copy, depth - 1 - reduction, ply + 1,
+                                     -alpha - 1, -alpha, stop, NULL, &no_excl, true)
                              .score;
 
                 if (!stop->stop && score > alpha)
                 {
-                    score = -search(&copy, depth - 1 + extension, ply + 1,
-                                    -alpha - 1, -alpha, stop, NULL, &no_excl)
+                    score = -search_impl(&copy, depth - 1 + extension, ply + 1,
+                                         -alpha - 1, -alpha, stop, NULL, &no_excl,
+                                         !cut_node)
                                  .score;
                 }
             }
             else
             {
-                score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, &no_excl)
+                score = -search_impl(&copy, depth - 1 + extension, ply + 1,
+                                     -alpha - 1, -alpha, stop, NULL, &no_excl,
+                                     !cut_node)
                              .score;
             }
 
             if (!stop->stop && score > alpha && score < beta)
             {
                 child_pv.length = 0;
-                score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -beta, -alpha, stop, &child_pv, &no_excl)
+                score = -search_impl(&copy, depth - 1 + extension, ply + 1,
+                                     -beta, -alpha, stop, &child_pv, &no_excl, false)
                              .score;
             }
         }
@@ -1043,6 +1045,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     output.score = best_score;
     output.move = best_move;
     return output;
+}
+
+searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
+                    stopConditions *stop, PVLine *pv, SearchStack *stack)
+{
+    return search_impl(board, depth, ply, alpha, beta, stop, pv, stack, false);
 }
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
