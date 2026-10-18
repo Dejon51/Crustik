@@ -784,7 +784,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
             else if (se_result.score >= beta && (beta - alpha) == 1)
             {
-                return (searchOutput){.score = beta, .move = 0};
+                return (searchOutput){.score = se_result.score, .move = 0};
             }
             else if (tt_score >= beta)
             {
