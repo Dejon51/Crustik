@@ -67,6 +67,15 @@ void reset_history(void)
         eval_stack[i] = NO_EVAL;
 }
 
+static void decay_main_history(void)
+{
+    for (int c = 0; c < 2; c++)
+        for (int from = 0; from < 64; from++)
+            for (int to = 0; to < 64; to++)
+                butterfly_hist[c][from][to] =
+                    butterfly_hist[c][from][to] * 729 / 1024;
+}
+
 int lmr_table[MAX_DEPTH + 1][MAX_LMR_MOVES + 1];
 
 void init_lmr()
@@ -1091,6 +1100,8 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             break;
 
         stop->seldepth = 0;
+
+        decay_main_history(); 
 
         PVLine pv = {0};
         searchOutput out;
