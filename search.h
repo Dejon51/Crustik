@@ -24,6 +24,12 @@ extern int eval_stack[MAX_GAME_PLY];
 extern int cont_hist[2][6][64][6][64];
 extern int capture_history[2][6][64][6];
 
+typedef enum {
+    PV_NODE = 0,
+    CUT_NODE,
+    ALL_NODE
+} NodeType;
+
 typedef struct
 {
     int piece;
@@ -49,7 +55,7 @@ typedef struct {
     int64_t soft_time;
     uint8_t depth;
     int seldepth;
-    int print_info; 
+    int print_info;
 } stopConditions;
 
 typedef struct {
@@ -59,6 +65,7 @@ typedef struct {
 
 typedef struct {
     uint16_t excluded_move;
+    NodeType node_type;
 } SearchStack;
 
 

@@ -15,6 +15,9 @@
 #include "params.h"
 #include "ordermoves.h"
 
+#define IIR_CUT_MIN_DEPTH 6
+#define IIR_CUT_REDUCTION 2
+
 uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
 
@@ -185,6 +188,13 @@ static inline int lmr_reduction(int depth, int move_number)
         move_number = MAX_LMR_MOVES;
 
     return lmr_table[depth][move_number];
+}
+
+static inline NodeType first_child_of(NodeType parent)
+{
+    if (parent == PV_NODE)  return PV_NODE;
+    if (parent == CUT_NODE) return ALL_NODE;
+    return CUT_NODE;
 }
 
 static bool is_repetition_or_fifty(Position *board, int ply)
@@ -481,6 +491,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         stack = &no_excl;
 
     bool excluded = stack->excluded_move != 0;
+    NodeType node_type = stack->node_type;
 
     stop->nodes++;
 
@@ -541,7 +552,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
     if (depth >= IIR_MIN_DEPTH && tt_move == 0 && !in_check)
     {
-        depth--;
+        if (node_type == CUT_NODE && depth >= IIR_CUT_MIN_DEPTH)
+            depth -= IIR_CUT_REDUCTION;
+        else
+            depth--;
     }
 
     int static_eval = 0;
@@ -824,13 +838,16 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             cont_stack[ply].valid = true;
         }
 
+        NodeType child_type = (i == 0) ? first_child_of(node_type) : CUT_NODE;
+        SearchStack child_stack = { .node_type = child_type };
+
         PVLine child_pv = {0};
         int score;
 
         if (i == 0 || depth < PVS_MIN_DEPTH)
         {
             score = -search(&copy, depth - 1 + extension, ply + 1,
-                            -beta, -alpha, stop, &child_pv, &no_excl)
+                            -beta, -alpha, stop, &child_pv, &child_stack)
                          .score;
         }
         else
@@ -865,28 +882,29 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (reduction > 0)
             {
                 score = -search(&copy, depth - 1 - reduction, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, &no_excl)
+                                -alpha - 1, -alpha, stop, NULL, &child_stack)
                              .score;
 
                 if (!stop->stop && score > alpha)
                 {
                     score = -search(&copy, depth - 1 + extension, ply + 1,
-                                    -alpha - 1, -alpha, stop, NULL, &no_excl)
+                                    -alpha - 1, -alpha, stop, NULL, &child_stack)
                                  .score;
                 }
             }
             else
             {
                 score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, &no_excl)
+                                -alpha - 1, -alpha, stop, NULL, &child_stack)
                              .score;
             }
 
             if (!stop->stop && score > alpha && score < beta)
             {
+                child_stack.node_type = PV_NODE;
                 child_pv.length = 0;
                 score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -beta, -alpha, stop, &child_pv, &no_excl)
+                                -beta, -alpha, stop, &child_pv, &child_stack)
                              .score;
             }
         }
