@@ -21,6 +21,27 @@ extern int game_history_count;
 
 static bool use_soft_nodes = false;
 
+uint16_t tm_last_best_move = 0;
+int tm_stability_count = 0;
+
+inline void tm_update_stability(uint16_t best_move) {
+    if (best_move == tm_last_best_move)
+        tm_stability_count++;
+    else
+        tm_stability_count = 0;
+    tm_last_best_move = best_move;
+}
+
+double tm_stability_factor(void) {
+    if (tm_stability_count >= 6) return 0.65;
+    if (tm_stability_count >= 5) return 0.70;
+    if (tm_stability_count >= 4) return 0.75;
+    if (tm_stability_count >= 3) return 0.82;
+    if (tm_stability_count >= 2) return 0.90;
+    if (tm_stability_count >= 1) return 0.95;
+    return 1.0;
+}
+
 static int str_eq_ci(const char *a, const char *b)
 {
     while (*a && *b)
@@ -583,6 +604,8 @@ void uciStart()
             fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w",
                     "KQkq", "-", "0", "1");
             game_history_count = 0;
+            tm_last_best_move = 0;
+            tm_stability_count = 0;
         }
         else if (strcmp(tokens[0], "position") == 0)
         {
@@ -961,6 +984,7 @@ void uciStart()
 
                 int soft = time_left / 30 + increment;
                 int hard = time_left / 3 + increment; 
+                soft = (int)(soft * tm_stability_factor());
 
                 if (soft < 10)
                     soft = 10;
@@ -973,7 +997,6 @@ void uciStart()
                 if (hard <= 0)
                     hard = 50;
 
-                    
                 stopConditions stop = {};
                 stop.start_time = get_time_ms();
                 stop.soft_time = soft;
@@ -984,6 +1007,8 @@ void uciStart()
 
                 uint16_t result = iterative_deepening(&board, &stop);
 
+                if (result != 0)
+                    tm_update_stability(result);
                 if (result == 0)
                 {
                     uint64_t king_bb = board.pieces[5] & board.color[board.turn];
