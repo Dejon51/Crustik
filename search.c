@@ -346,6 +346,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     }
 
     int static_eval;
+    int ceval = NO_EVAL;
     int best_score;
 
     if (in_check)
@@ -357,17 +358,19 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     {
         static_eval = (entry && entry->eval != NO_EVAL) ? entry->eval : eval(board, ply);
 
-        if (static_eval >= beta)
-            return static_eval;
+        ceval = corrected_eval(board, static_eval);
 
-        if (static_eval > alpha)
-            alpha = static_eval;
+        if (ceval >= beta)
+            return ceval;
 
-        best_score = static_eval;
+        if (ceval > alpha)
+            alpha = ceval;
+
+        best_score = ceval;
     }
 
     const int futility_margin = QS_FUTILITY_MARGIN;
-    int futility_base = in_check ? 0 : static_eval + futility_margin;
+    int futility_base = in_check ? 0 : ceval + futility_margin;
 
     MoveList move_list = {0};
 
