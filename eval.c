@@ -13,13 +13,13 @@
 #define ALIGN64 __attribute__((aligned(64)))
 
 #ifndef EVALFILE
-#define EVALFILE "quant384hl.bin"
+#define EVALFILE "quant512hl.bin"
 #endif
 
 INCBIN(EvalFile, EVALFILE);
 
 #define NNUE_INPUT 768
-#define NNUE_HL 384
+#define NNUE_HL 512
 #define HIDDEN_QUANT_SCALE 255
 #define NNUE_OUTPUT_SCALE 64
 #define NNUE_SCALE (400.0 * 0.5485330048769478)
