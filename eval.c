@@ -22,7 +22,7 @@ INCBIN(EvalFile, EVALFILE);
 #define NNUE_HL 384
 #define HIDDEN_QUANT_SCALE 255
 #define NNUE_OUTPUT_SCALE 64
-#define NNUE_SCALE 400
+#define NNUE_SCALE (400.0 * 0.5485330048769478)
 
 #define NNUE_FLIP(sq) ((sq) ^ 56)
 
