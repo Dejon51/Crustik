@@ -29,8 +29,13 @@ int capture_history[2][6][64][6];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
 static int nonpawn_corrhist[2][CORRHIST_SIZE];
-static uint64_t pawn_corrhist_keys[2][64];
+static int minor_corrhist[2][CORRHIST_SIZE];
+static int major_corrhist[2][CORRHIST_SIZE];
+static uint64_t corrhist_keys[2][6][64];
 static bool corrhist_initialized = false;
+
+static const int minor_corrhist_types[3] = {1, 2, 5};
+static const int major_corrhist_types[3] = {3, 4, 5};
 
 ContRecord cont_stack[MAX_SEARCH_PLY];
 
@@ -39,14 +44,17 @@ static void init_corrhist(void)
     uint64_t seed = 0x9E3779B97F4A7C15ULL;
     for (int c = 0; c < 2; c++)
     {
-        for (int sq = 0; sq < 64; sq++)
+        for (int type = 0; type < 6; type++)
         {
-            seed += 0x9E3779B97F4A7C15ULL;
-            uint64_t z = seed;
-            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-            z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-            z = z ^ (z >> 31);
-            pawn_corrhist_keys[c][sq] = z;
+            for (int sq = 0; sq < 64; sq++)
+            {
+                seed += 0x9E3779B97F4A7C15ULL;
+                uint64_t z = seed;
+                z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+                z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+                z = z ^ (z >> 31);
+                corrhist_keys[c][type][sq] = z;
+            }
         }
     }
     corrhist_initialized = true;
@@ -61,6 +69,8 @@ void reset_history(void)
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
+    memset(minor_corrhist, 0, sizeof minor_corrhist);
+    memset(major_corrhist, 0, sizeof major_corrhist);
     if (!corrhist_initialized)
         init_corrhist();
     for (int i = 0; i < MAX_GAME_PLY; i++)
@@ -230,7 +240,7 @@ static uint64_t compute_pawn_key(Position *board)
     while (bb)
     {
         int sq = __builtin_ctzll(bb);
-        key ^= pawn_corrhist_keys[0][sq];
+        key ^= corrhist_keys[0][0][sq];
         bb &= bb - 1;
     }
 
@@ -238,11 +248,44 @@ static uint64_t compute_pawn_key(Position *board)
     while (bb)
     {
         int sq = __builtin_ctzll(bb);
-        key ^= pawn_corrhist_keys[1][sq];
+        key ^= corrhist_keys[1][0][sq];
         bb &= bb - 1;
     }
 
     return key;
+}
+
+static uint64_t compute_piece_set_key(Position *board, const int *types, int count)
+{
+    uint64_t key = 0;
+
+    for (int i = 0; i < count; i++)
+    {
+        int type = types[i];
+
+        for (int c = 0; c < 2; c++)
+        {
+            uint64_t bb = board->pieces[type] & board->color[c];
+            while (bb)
+            {
+                int sq = __builtin_ctzll(bb);
+                key ^= corrhist_keys[c][type][sq];
+                bb &= bb - 1;
+            }
+        }
+    }
+
+    return key;
+}
+
+static uint64_t compute_minor_key(Position *board)
+{
+    return compute_piece_set_key(board, minor_corrhist_types, 3);
+}
+
+static uint64_t compute_major_key(Position *board)
+{
+    return compute_piece_set_key(board, major_corrhist_types, 3);
 }
 
 static int compute_material_key(Position *board)
@@ -277,9 +320,15 @@ static int corrected_eval(Position *board, int raw_eval)
 {
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
     int mkey = compute_material_key(board);
+    uint64_t minkey = compute_minor_key(board) & CORRHIST_MASK;
+    uint64_t majkey = compute_major_key(board) & CORRHIST_MASK;
 
-    int correction = pawn_corrhist[board->turn][pkey] +
-                     nonpawn_corrhist[board->turn][mkey];
+    int side = board->turn;
+
+    int correction = pawn_corrhist[side][pkey] +
+                     nonpawn_corrhist[side][mkey] +
+                     minor_corrhist[side][minkey] +
+                     major_corrhist[side][majkey];
 
     correction /= CORRHIST_GRAIN;
     correction = clamp_int_local(correction, -CORRHIST_MAX_APPLY, CORRHIST_MAX_APPLY);
@@ -297,6 +346,8 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
 
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
     int mkey = compute_material_key(board);
+    uint64_t minkey = compute_minor_key(board) & CORRHIST_MASK;
+    uint64_t majkey = compute_major_key(board) & CORRHIST_MASK;
     int side = board->turn;
 
     int *pc = &pawn_corrhist[side][pkey];
@@ -304,6 +355,12 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
 
     int *npc = &nonpawn_corrhist[side][mkey];
     *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
+
+    int *minc = &minor_corrhist[side][minkey];
+    *minc += bonus - *minc * abs(bonus) / CORRHIST_LIMIT;
+
+    int *majc = &major_corrhist[side][majkey];
+    *majc += bonus - *majc * abs(bonus) / CORRHIST_LIMIT;
 }
 
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
