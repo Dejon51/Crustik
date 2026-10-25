@@ -29,7 +29,7 @@ typedef struct
 	bool skip_quiets;
 	uint16_t tt_move;
 
-	uint64_t pawn_key;
+	int pawn_idx;
 
 	MoveList caps;
 	MoveList quiets;

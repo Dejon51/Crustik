@@ -17,7 +17,7 @@
 #define CORRHIST_SIZE 16384
 #define CORRHIST_MASK (CORRHIST_SIZE - 1)
 
-#define PAWN_HIST_SIZE 8192
+#define PAWN_HIST_SIZE 4096
 #define PAWN_HIST_MASK (PAWN_HIST_SIZE - 1)
 
 extern int butterfly_hist[2][64][64];
@@ -27,7 +27,9 @@ extern int eval_stack[MAX_GAME_PLY];
 extern int cont_hist[2][6][64][6][64];
 extern int capture_history[2][6][64][6];
 
-extern int pawn_hist[2][6][64][PAWN_HIST_SIZE];
+extern int pawn_hist[2][PAWN_HIST_SIZE][6][64];
+
+int pawn_hist_index(Position *board);
 
 typedef struct
 {
@@ -54,7 +56,7 @@ typedef struct {
     int64_t soft_time;
     uint8_t depth;
     int seldepth;
-    int print_info; 
+    int print_info;
 } stopConditions;
 
 typedef struct {
@@ -70,8 +72,6 @@ typedef struct {
 void init_lmr();
 
 void reset_history(void);
-
-uint64_t compute_pawn_key(Position *board);
 
 searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *pv, SearchStack *stack);
 

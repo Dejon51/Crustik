@@ -25,7 +25,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     const int CAPTURE_BASE = 90000000;
     const int KILLER_BASE = 80000000;
 
-    uint64_t pawn_key = compute_pawn_key(board) & PAWN_HIST_MASK;
+    int pawn_idx = pawn_hist_index(board);
 
     bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid);
     int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
@@ -73,8 +73,8 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         {
             int score = butterfly_hist[board->turn][from][to];
 
-            if (attacker >= 0)
-                score += pawn_hist[board->turn][attacker][to][pawn_key];
+            if (attacker >= 0 && attacker < 6)
+                score += pawn_hist[board->turn][pawn_idx][attacker][to];
 
             if (have_cont && attacker != -1)
                 score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
@@ -195,7 +195,7 @@ static int score_noisy(Position *b, uint16_t m)
     return s;
 }
 
-static int score_quiet(Position *b, int ply, uint16_t m, uint64_t pawn_key)
+static int score_quiet(Position *b, int ply, uint16_t m, int pawn_idx)
 {
     if (ply < MAX_GAME_PLY)
     {
@@ -209,8 +209,8 @@ static int score_quiet(Position *b, int ply, uint16_t m, uint64_t pawn_key)
     int piece = piece_on_square(b, from);
     int s = butterfly_hist[b->turn][from][to];
 
-    if (piece >= 0)
-        s += pawn_hist[b->turn][piece][to][pawn_key];
+    if (piece >= 0 && piece < 6)
+        s += pawn_hist[b->turn][pawn_idx][piece][to];
 
     if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
         s += cont_hist[b->turn][cont_stack[ply - 1].piece][cont_stack[ply - 1].to][piece][to];
@@ -238,7 +238,7 @@ void movepicker_init(MovePicker *mp, Position *b, int ply, uint16_t tt_move, boo
     mp->ply = ply;
     mp->in_check = in_check;
     mp->tt_move = (tt_move && move_is_pseudolegal(b, tt_move)) ? tt_move : 0;
-    mp->pawn_key = compute_pawn_key(b) & PAWN_HIST_MASK;
+    mp->pawn_idx = pawn_hist_index(b);
     mp->caps.offset = 0;
     mp->quiets.offset = 0;
     mp->cap_i = 0;
@@ -296,7 +296,7 @@ uint16_t movepicker_next(MovePicker *mp)
         quietMoves(b, &mp->quiets, b->turn);
         for (unsigned i = 0; i < mp->quiets.offset; i++)
             mp->quiet_scores[i] = score_quiet(b, mp->ply, mp->quiets.movelist[i],
-                                              mp->pawn_key);
+                                              mp->pawn_idx);
         mp->stage = ST_QUIETS;
         FALLTHROUGH;
 
@@ -328,7 +328,7 @@ uint16_t movepicker_next(MovePicker *mp)
             uint16_t m = mp->caps.movelist[i];
             mp->cap_scores[i] = (is_capture_move(b, m) || is_promotion_move(m))
                                     ? PK_CAPTURE_BASE + score_noisy(b, m)
-                                    : score_quiet(b, mp->ply, m, mp->pawn_key);
+                                    : score_quiet(b, mp->ply, m, mp->pawn_idx);
         }
         mp->stage = ST_EVASIONS;
         FALLTHROUGH;
