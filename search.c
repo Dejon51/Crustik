@@ -26,6 +26,7 @@ int eval_stack[MAX_GAME_PLY];
 
 int cont_hist[2][6][64][6][64];
 int capture_history[2][6][64][6];
+int pawn_hist[2][6][64][PAWN_HIST_SIZE];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
 static int nonpawn_corrhist[2][CORRHIST_SIZE];
@@ -58,6 +59,7 @@ void reset_history(void)
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(capture_history, 0, sizeof capture_history);
+    memset(pawn_hist, 0, sizeof pawn_hist);
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
@@ -92,13 +94,17 @@ void init_lmr()
     }
 }
 
-static inline int quiet_history_score(Position *board, int ply, int move)
+static inline int quiet_history_score(Position *board, int ply, int move,
+                                      uint64_t pawn_key)
 {
     int from = move_from(move);
     int to = move_to(move);
     int piece = piece_on_square(board, from);
 
     int score = butterfly_hist[board->turn][from][to];
+
+    if (piece >= 0)
+        score += pawn_hist[board->turn][piece][to][pawn_key];
 
     if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
     {
@@ -221,7 +227,7 @@ static bool is_repetition_or_fifty(Position *board, int ply)
     return false;
 }
 
-static uint64_t compute_pawn_key(Position *board)
+uint64_t compute_pawn_key(Position *board)
 {
     uint64_t key = 0;
     uint64_t bb;
@@ -666,6 +672,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         }
     }
 
+    uint64_t pawn_key = compute_pawn_key(board) & PAWN_HIST_MASK;
+
     MovePicker mp;
     movepicker_init(&mp, board, ply, tt_move, in_check);
 
@@ -734,7 +742,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             i >= HISTPRUNE_MIN_MOVES &&
             move != tt_move)
         {
-            int hist_score = quiet_history_score(board, ply, move);
+            int hist_score = quiet_history_score(board, ply, move, pawn_key);
             int history_threshold = -HISTPRUNE_MARGIN * depth;
             if (hist_score < history_threshold)
                 continue;
@@ -844,6 +852,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 int to = move_to(move);
                 int hist = butterfly_hist[board->turn][from][to];
 
+                if (moved_piece >= 0)
+                    hist += pawn_hist[board->turn][moved_piece][to][pawn_key];
+
                 reduction = lmr_reduction(depth, i + 1) * 1024;
 
                 if (is_pv_node)
@@ -926,6 +937,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     butterfly_hist[board->turn][from][to] *
                         abs(malus) / HIST_MAX;
 
+                if (moved_piece >= 0)
+                {
+                    int *ph = &pawn_hist[board->turn][moved_piece][to][pawn_key];
+                    *ph += malus - *ph * abs(malus) / HIST_MAX;
+                }
+
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
                 {
                     int pp = cont_stack[ply - 1].piece;
@@ -951,6 +968,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 int clampedBonus = clamp_int(HIST_BONUS_MULT * depth - HIST_BONUS_BASE, 0, HIST_MAX);
                 butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / HIST_MAX;
+
+                if (moved_piece >= 0)
+                {
+                    int *ph = &pawn_hist[board->turn][moved_piece][to][pawn_key];
+                    *ph += clampedBonus - *ph * abs(clampedBonus) / HIST_MAX;
+                }
 
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
                 {

@@ -29,6 +29,8 @@ typedef struct
 	bool skip_quiets;
 	uint16_t tt_move;
 
+	uint64_t pawn_key;
+
 	MoveList caps;
 	MoveList quiets;
 	int cap_scores[256];
