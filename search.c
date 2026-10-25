@@ -19,6 +19,7 @@ uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
 
 static uint64_t search_path_hash[MAX_SEARCH_PLY];
+static int check_count_stack[MAX_SEARCH_PLY];
 
 int butterfly_hist[2][64][64];
 uint16_t killer_moves[MAX_GAME_PLY][2];
@@ -61,6 +62,7 @@ void reset_history(void)
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
+    memset(check_count_stack, 0, sizeof check_count_stack);
     if (!corrhist_initialized)
         init_corrhist();
     for (int i = 0; i < MAX_GAME_PLY; i++)
@@ -533,10 +535,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int in_check = king_in_check(board, board->turn);
     bool root_node = (ply == 0);
 
+    int parent_checks = (ply > 0) ? check_count_stack[ply - 1] : 0;
+    int check_count = parent_checks + (in_check ? 1 : 0);
+    check_count_stack[ply] = check_count;
+
     if (in_check && ply < MAX_GAME_PLY)
         eval_stack[ply] = NO_EVAL;
 
-    if (in_check && depth < MAX_DEPTH)
+    if (in_check && depth < MAX_DEPTH& & check_count <= 6)
         depth++;
 
     if (depth >= IIR_MIN_DEPTH && tt_move == 0 && !in_check)
