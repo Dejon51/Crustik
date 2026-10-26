@@ -710,7 +710,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             !is_capture &&
             !is_killer &&
             i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT) &&
-            complexity > 150
+            !(complexity > 150)
         )
         {
             mp.skip_quiets = true;
