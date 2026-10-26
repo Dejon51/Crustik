@@ -777,8 +777,10 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (stop->stop)
                 return (searchOutput){0};
-
-            if (se_result.score < singular_beta)
+            if (se_result.score < singular_beta - SE_DOUBLE_MARGIN){
+                extension = 2;
+            }
+            else if (se_result.score < singular_beta)
             {
                 extension = SE_EXTENSION;
             }
