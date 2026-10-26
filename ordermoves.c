@@ -29,6 +29,10 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
     int cont_to = have_cont ? cont_stack[ply - 1].to : 0;
 
+    bool have_cont2 = (ply > 1 && ply - 2 < MAX_SEARCH_PLY && cont_stack[ply - 2].valid);
+    int cont2_piece = have_cont2 ? cont_stack[ply - 2].piece : 0;
+    int cont2_to = have_cont2 ? cont_stack[ply - 2].to : 0;
+
     for (unsigned int i = 0; i < ordered.offset; i++)
     {
         uint16_t move = ordered.movelist[i];
@@ -71,8 +75,14 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         {
             int score = butterfly_hist[board->turn][from][to];
 
-            if (have_cont && attacker != -1)
-                score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
+            if (attacker != -1)
+            {
+                if (have_cont)
+                    score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
+
+                if (have_cont2)
+                    score += cont_hist2[board->turn][cont2_piece][cont2_to][attacker][to];
+            }
 
             scores[i] = score;
         }
@@ -204,8 +214,15 @@ static int score_quiet(Position *b, int ply, uint16_t m)
     int piece = piece_on_square(b, from);
     int s = butterfly_hist[b->turn][from][to];
 
-    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
-        s += cont_hist[b->turn][cont_stack[ply - 1].piece][cont_stack[ply - 1].to][piece][to];
+    if (piece != -1)
+    {
+        if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+            s += cont_hist[b->turn][cont_stack[ply - 1].piece][cont_stack[ply - 1].to][piece][to];
+
+        if (ply > 1 && ply - 2 < MAX_SEARCH_PLY && cont_stack[ply - 2].valid)
+            s += cont_hist2[b->turn][cont_stack[ply - 2].piece][cont_stack[ply - 2].to][piece][to];
+    }
+
     return s;
 }
 

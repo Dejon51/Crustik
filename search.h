@@ -22,6 +22,7 @@ extern uint16_t killer_moves[MAX_GAME_PLY][2];
 extern int eval_stack[MAX_GAME_PLY];
 
 extern int cont_hist[2][6][64][6][64];
+extern int cont_hist2[2][6][64][6][64];
 extern int capture_history[2][6][64][6];
 
 typedef struct
