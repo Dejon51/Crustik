@@ -19,6 +19,7 @@ uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
 
 static uint64_t search_path_hash[MAX_SEARCH_PLY];
+static uint64_t root_move_nodes[4096];
 
 int butterfly_hist[2][64][64];
 uint16_t killer_moves[MAX_GAME_PLY][2];
@@ -61,6 +62,7 @@ void reset_history(void)
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
+    memset(root_move_nodes, 0, sizeof root_move_nodes);
     if (!corrhist_initialized)
         init_corrhist();
     for (int i = 0; i < MAX_GAME_PLY; i++)
@@ -826,6 +828,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         PVLine child_pv = {0};
         int score;
+        uint64_t nodes_before = stop->nodes;
 
         if (i == 0 || depth < PVS_MIN_DEPTH)
         {
@@ -890,6 +893,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                              .score;
             }
         }
+
+        if (root_node)
+            root_move_nodes[move & 0xFFF] += stop->nodes - nodes_before;
 
         if (stop->stop)
             break;
@@ -1059,8 +1065,11 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
     double bm_changes = 0;
     double score_factor = 1.0;
+    double node_factor = 1.0;
 
     SearchStack no_excl = {0};
+
+    memset(root_move_nodes, 0, sizeof root_move_nodes);
     nnue_refresh(board, 0);
 
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
@@ -1076,7 +1085,13 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
             double instability = 1.0 + TM_BM_INST_SCALE * bm_changes;
 
-            int64_t effective_soft = (int64_t)(stop->soft_time * factor * instability * score_factor);
+            double tm_factor = factor * instability * score_factor * node_factor;
+            if (tm_factor < TM_TOTAL_MIN)
+                tm_factor = TM_TOTAL_MIN;
+            if (tm_factor > TM_TOTAL_MAX)
+                tm_factor = TM_TOTAL_MAX;
+
+            int64_t effective_soft = (int64_t)(stop->soft_time * tm_factor);
             if (effective_soft > (int64_t)stop->max_time)
                 effective_soft = (int64_t)stop->max_time;
 
@@ -1192,6 +1207,22 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             prev_best_move = out.move;
             best_move_so_far = out.move;
             best_pv = pv;
+        }
+
+        if (depth >= TM_NODE_MIN_DEPTH && best_move_so_far != 0 && stop->nodes > 0)
+        {
+            double frac = (double)root_move_nodes[best_move_so_far & 0xFFF] /
+                          (double)stop->nodes;
+
+            node_factor = (TM_NODE_BASE - frac) * TM_NODE_MULT;
+            if (node_factor < TM_NODE_MIN)
+                node_factor = TM_NODE_MIN;
+            if (node_factor > TM_NODE_MAX)
+                node_factor = TM_NODE_MAX;
+        }
+        else
+        {
+            node_factor = 1.0;
         }
 
         bm_changes *= TM_BM_DECAY;

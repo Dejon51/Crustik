@@ -110,4 +110,15 @@ extern double TM_STABLE_STEP;
 extern double TM_STABLE_MIN;
 extern double TM_STABLE_MAX;
 
+/* ---------- Node-based time management ---------- */
+extern int TM_NODE_MIN_DEPTH;
+extern double TM_NODE_BASE;
+extern double TM_NODE_MULT;
+extern double TM_NODE_MIN;
+extern double TM_NODE_MAX;
+
+/* ---------- Combined TM clamp ---------- */
+extern double TM_TOTAL_MIN;
+extern double TM_TOTAL_MAX;
+
 #endif

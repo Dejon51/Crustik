@@ -18,7 +18,7 @@ int PVS_MIN_DEPTH = 3;
 int RFP_MAX_DEPTH = 6;
 int RFP_MARGIN = 100;
 
-/* ---------- Null move pruning ---------- */ 
+/* ---------- Null move pruning ---------- */
 int NMP_MIN_DEPTH = 3;
 int NMP_BASE_R = 3;
 int NMP_DEPTH_DIV = 6;
@@ -108,3 +108,14 @@ double TM_STABLE_BASE = 1.2;
 double TM_STABLE_STEP = 0.05;
 double TM_STABLE_MIN = 0.8;
 double TM_STABLE_MAX = 1.2;
+
+/* ---------- Node-based time management ---------- */
+int TM_NODE_MIN_DEPTH = 5;
+double TM_NODE_BASE = 1.50;
+double TM_NODE_MULT = 1.35;
+double TM_NODE_MIN = 0.60;
+double TM_NODE_MAX = 1.45;
+
+/* ---------- Combined TM clamp ---------- */
+double TM_TOTAL_MIN = 0.35;
+double TM_TOTAL_MAX = 8.0;
