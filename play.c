@@ -1436,15 +1436,6 @@ void legalMoveGen(Position *board, MoveList *list)
                                                                                \
         board->hash ^= zobrist_table[(c * 384) + (piece * 64) + to];           \
                                                                                \
-        if (to == H1)                                                          \
-            board->castling &= ~(1U << WHITE_KINGSIDE);                        \
-        if (to == A1)                                                          \
-            board->castling &= ~(1U << WHITE_QUEENSIDE);                       \
-        if (to == H8)                                                          \
-            board->castling &= ~(1U << BLACK_KINGSIDE);                        \
-        if (to == A8)                                                          \
-            board->castling &= ~(1U << BLACK_QUEENSIDE);                       \
-                                                                               \
         if (moving_piece == 0)                                                 \
         {                                                                      \
             int from_y = from >> 3;                                            \
