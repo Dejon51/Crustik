@@ -327,15 +327,16 @@ void genfensRun(int argc, char **argv)
 {
     char cmdbuf[4096];
     cmdbuf[0] = '\0';
-    for (int i = 1; i < argc; i++) {
+    for (int i = 1; i < argc; i++)
+    {
         if (i > 1)
             strncat(cmdbuf, " ", sizeof(cmdbuf) - strlen(cmdbuf) - 1);
         strncat(cmdbuf, argv[i], sizeof(cmdbuf) - strlen(cmdbuf) - 1);
     }
 
     char *new_argv[64];
-    int   new_argc = 0;
-    new_argv[new_argc++] = argv[0];  
+    int new_argc = 0;
+    new_argv[new_argc++] = argv[0];
 
     for (char *tok = strtok(cmdbuf, " \t");
          tok && new_argc < 63;
@@ -610,19 +611,27 @@ void uciStart()
             }
             else if (strcmp(tokens[1], "fen") == 0)
             {
-                fenRead(&board, tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7]);
-                game_history_count = 0;
-
-                int i = 8;
-                if (tokens[i] && strcmp(tokens[i], "moves") == 0)
-                    i++;
-                while (tokens[i])
+                if (tokens[2] == NULL)
                 {
-                    uint16_t move = parsemove(&board, tokens[i]);
-                    moveint(&board, move);
-                    if (game_history_count < MAX_GAME_PLY)
-                        game_history[game_history_count++] = board.hash;
-                    i++;
+                    printf("position: missing fen\n");
+                }
+                else
+                {
+
+                    fenRead(&board, tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7]);
+                    game_history_count = 0;
+
+                    int i = 8;
+                    if (tokens[i] && strcmp(tokens[i], "moves") == 0)
+                        i++;
+                    while (tokens[i])
+                    {
+                        uint16_t move = parsemove(&board, tokens[i]);
+                        moveint(&board, move);
+                        if (game_history_count < MAX_GAME_PLY)
+                            game_history[game_history_count++] = board.hash;
+                        i++;
+                    }
                 }
             }
             else
@@ -814,7 +823,7 @@ void uciStart()
                 {
                     int depth = 0;
                     int divide = 0;
-                    int bulk = 0;
+                    bool bulk = 0;
                     int valid = 1;
 
                     for (int i = 0; tokens[2][i] != '\0'; i++)
@@ -873,7 +882,6 @@ void uciStart()
 #else
                         clock_gettime(CLOCK_MONOTONIC, &start_time);
 #endif
-
                         if (bulk)
                         {
                             total_nodes = perftbulk(&board, depth);
@@ -960,7 +968,7 @@ void uciStart()
                 int overhead = 100;
 
                 int soft = time_left / 30 + increment;
-                int hard = time_left / 3 + increment; 
+                int hard = time_left / 3 + increment;
 
                 if (soft < 10)
                     soft = 10;
@@ -973,7 +981,6 @@ void uciStart()
                 if (hard <= 0)
                     hard = 50;
 
-                    
                 stopConditions stop = {};
                 stop.start_time = get_time_ms();
                 stop.soft_time = soft;

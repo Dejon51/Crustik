@@ -1181,7 +1181,7 @@ static void kingMovesLegal(Position *board, MoveList *list, bool color,
 
 static uint64_t BISHOP_PSEUDO[64];
 static uint64_t ROOK_PSEUDO[64];
- 
+
 void init_pseudo_attacks(void)
 {
     for (int sq = 0; sq < 64; sq++)
@@ -1190,45 +1190,45 @@ void init_pseudo_attacks(void)
         ROOK_PSEUDO[sq] = getRookAttacks(sq, 0);
     }
 }
- 
+
 void legalMoveGen(Position *board, MoveList *list)
 {
     board->color[OCCUPANCY] = board->color[WHITE] | board->color[BLACK];
- 
+
     int us = board->turn;
     int them = !us;
- 
+
     uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];
     if (!king_bb)
         return;
- 
+
     int king_sq = __builtin_ctzll(king_bb);
     uint64_t occ = board->color[OCCUPANCY];
     uint64_t them_bb = board->color[them];
     uint64_t us_bb = board->color[us];
- 
+
     uint64_t checkers =
         (((them == 0 ? white_pawn_attacks[king_sq] : black_pawn_attacks[king_sq]) &
           board->pieces[PAWNNUMBER]) |
          (knighttable[king_sq] & board->pieces[HORSENUMBER])) &
         them_bb;
- 
+
     uint64_t bq = board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER];
     uint64_t rq = board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER];
- 
+
     uint64_t sliders = ((BISHOP_PSEUDO[king_sq] & bq) |
                         (ROOK_PSEUDO[king_sq] & rq)) &
                        them_bb;
- 
+
     uint64_t pinned_pieces = 0;
     uint64_t pinner_ray[64];
- 
+
     while (sliders)
     {
         int s = pop_lsb(&sliders);
         uint64_t ray = ray_between_table[king_sq * 64 + s];
         uint64_t between = ray & occ;
- 
+
         if (!between)
         {
             checkers |= 1ULL << s;
@@ -1240,9 +1240,9 @@ void legalMoveGen(Position *board, MoveList *list)
             pinner_ray[psq] = ray | (1ULL << s);
         }
     }
- 
+
     int check_count = __builtin_popcountll(checkers);
- 
+
     uint64_t check_mask = 0xFFFFFFFFFFFFFFFFULL;
     if (check_count == 1)
     {
@@ -1254,34 +1254,34 @@ void legalMoveGen(Position *board, MoveList *list)
     {
         check_mask = 0ULL;
     }
- 
+
     AttackSet enemyAttacks = buildAttackSet(board, them);
- 
+
     kingMovesLegal(board, list, us, check_count, &enemyAttacks);
- 
+
     if (check_count >= 2)
         return;
- 
+
     if (check_count == 0 && pinned_pieces == 0 && board->epsquare == -1)
     {
         if (us == 0)
             pawnMovesWhite(board, list);
         else
             pawnMovesBlack(board, list);
- 
+
         horseMovesLegal(board, list, us, 0xFFFFFFFFFFFFFFFFULL, 0);
         bishopMoves(board, list, us);
         rookMoves(board, list, us);
         return;
     }
- 
+
     if (us == 0)
         pawnMovesWhiteLegal(board, list, check_mask, pinned_pieces, pinner_ray,
                             check_count, king_sq, them, occ);
     else
         pawnMovesBlackLegal(board, list, check_mask, pinned_pieces, pinner_ray,
                             check_count, king_sq, them, occ);
- 
+
     horseMovesLegal(board, list, us, check_mask, pinned_pieces);
     bishopMovesLegal(board, list, us, check_mask, pinned_pieces, pinner_ray);
     rookMovesLegal(board, list, us, check_mask, pinned_pieces, pinner_ray);
