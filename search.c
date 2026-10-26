@@ -548,15 +548,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     int ceval = 0;
     bool improving = false;
 
+    if (entry && entry->eval != NO_EVAL)
+        static_eval = entry->eval;
+    else
+        static_eval = eval(board, ply);
+
+    ceval = corrected_eval(board, static_eval);
+    int complexity = abs(static_eval - ceval);
+    bool is_complex = complexity > 81;
+
     if (!in_check)
     {
-        if (entry && entry->eval != NO_EVAL)
-            static_eval = entry->eval;
-        else
-            static_eval = eval(board, ply);
-
-        ceval = corrected_eval(board, static_eval);
-
         if (ply < MAX_GAME_PLY)
         {
             improving = (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
@@ -707,7 +709,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             depth <= LMP_MAX_DEPTH &&
             !is_capture &&
             !is_killer &&
-            i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT))
+            i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT) &&
+            complexity > 150
+        )
         {
             mp.skip_quiets = true;
             continue;
