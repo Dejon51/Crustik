@@ -13,6 +13,7 @@ int main(int argc, char **argv) {
 	init_castling_mask();
 	initMagics();
 	init_tables();
+	init_pseudo_attacks();
 
 	if (argc > 1 && strcmp(argv[1], "bench") == 0) {
 		bench();
