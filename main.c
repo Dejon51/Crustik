@@ -10,6 +10,7 @@
 
 int main(int argc, char **argv) {
 	init_between_bb();
+	init_castling_mask();
 	initMagics();
 	init_tables();
 

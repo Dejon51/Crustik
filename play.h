@@ -14,6 +14,7 @@ typedef struct {
 
 void init_between_bb(void);
 
+void init_castling_mask(void);
 Bitboard pawnMask(Position *board, bool color);
 
 Bitboard horseMask(Position *board, bool color);

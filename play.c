@@ -86,6 +86,20 @@ void init_between_bb(void)
     }
 }
 
+static uint8_t castling_mask[64];
+
+void init_castling_mask(void)
+{
+    for (int i = 0; i < 64; i++)
+        castling_mask[i] = 0xFF;
+    castling_mask[A1] &= ~(1U << WHITE_QUEENSIDE);
+    castling_mask[H1] &= ~(1U << WHITE_KINGSIDE);
+    castling_mask[E1] &= ~((1U << WHITE_KINGSIDE) | (1U << WHITE_QUEENSIDE));
+    castling_mask[A8] &= ~(1U << BLACK_QUEENSIDE);
+    castling_mask[H8] &= ~(1U << BLACK_KINGSIDE);
+    castling_mask[E8] &= ~((1U << BLACK_KINGSIDE) | (1U << BLACK_QUEENSIDE));
+}
+
 static inline bool squareAttacked_fast(int sq, int enemy, uint64_t occ,
                                        const AttackSet *a)
 {
@@ -1248,8 +1262,8 @@ void legalMoveGen(Position *board, MoveList *list)
 }
 
 #define DEFINE_MAKEMOVE(COLOR, c)                                              \
-    static inline void makeMove##COLOR(Position *board, MoveList *list,        \
-                                       int move)                               \
+    static inline void makeMove##COLOR(Position *restrict board,               \
+                                       MoveList *restrict list, int move)      \
     {                                                                          \
         int to = list->movelist[move] & 0x3F;                                  \
         int from = (list->movelist[move] >> 6) & 0x3F;                         \
@@ -1286,25 +1300,7 @@ void legalMoveGen(Position *board, MoveList *list)
             else                                                               \
                 board->halfmoves++;                                            \
                                                                                \
-            if (piece == KINGNUMBER)                                           \
-            {                                                                  \
-                if (c == 0)                                                    \
-                    board->castling &=                                         \
-                        ~((1U << WHITE_KINGSIDE) | (1U << WHITE_QUEENSIDE));   \
-                else                                                           \
-                    board->castling &=                                         \
-                        ~((1U << BLACK_KINGSIDE) | (1U << BLACK_QUEENSIDE));   \
-            }                                                                  \
-                                                                               \
-            if (from == H1)                                                    \
-                board->castling &= ~(1U << WHITE_KINGSIDE);                    \
-            if (from == A1)                                                    \
-                board->castling &= ~(1U << WHITE_QUEENSIDE);                   \
-            if (from == H8)                                                    \
-                board->castling &= ~(1U << BLACK_KINGSIDE);                    \
-            if (from == A8)                                                    \
-                board->castling &= ~(1U << BLACK_QUEENSIDE);                   \
-                                                                               \
+            board->castling &= castling_mask[from] & castling_mask[to];        \
             board->pieces[moving_piece] &= ~frombb;                            \
             board->color[c] &= ~frombb;                                        \
             board->mailbox[from] = 6;                                          \
@@ -1315,16 +1311,6 @@ void legalMoveGen(Position *board, MoveList *list)
                                                                                \
             board->hash ^=                                                     \
                 zobrist_table[(c * 384) + (moving_piece * 64) + to];           \
-                                                                               \
-            if (to == H1)                                                      \
-                board->castling &= ~(1U << WHITE_KINGSIDE);                    \
-            if (to == A1)                                                      \
-                board->castling &= ~(1U << WHITE_QUEENSIDE);                   \
-            if (to == H8)                                                      \
-                board->castling &= ~(1U << BLACK_KINGSIDE);                    \
-            if (to == A8)                                                      \
-                board->castling &= ~(1U << BLACK_QUEENSIDE);                   \
-                                                                               \
             if (moving_piece == 0)                                             \
             {                                                                  \
                 int from_rank = from >> 3;                                     \
@@ -1364,27 +1350,7 @@ void legalMoveGen(Position *board, MoveList *list)
                                ? 0                                             \
                                : board->halfmoves + 1;                         \
                                                                                \
-        if (piece == KINGNUMBER)                                               \
-        {                                                                      \
-            if (c == 0)                                                        \
-                board->castling &=                                             \
-                    ~((1U << WHITE_KINGSIDE) | (1U << WHITE_QUEENSIDE));       \
-            else                                                               \
-                board->castling &=                                             \
-                    ~((1U << BLACK_KINGSIDE) | (1U << BLACK_QUEENSIDE));       \
-        }                                                                      \
-                                                                               \
-        if (piece == 3)                                                        \
-        {                                                                      \
-            if (from == H1)                                                    \
-                board->castling &= ~(1U << WHITE_KINGSIDE);                    \
-            if (from == A1)                                                    \
-                board->castling &= ~(1U << WHITE_QUEENSIDE);                   \
-            if (from == H8)                                                    \
-                board->castling &= ~(1U << BLACK_KINGSIDE);                    \
-            if (from == A8)                                                    \
-                board->castling &= ~(1U << BLACK_QUEENSIDE);                   \
-        }                                                                      \
+        board->castling &= castling_mask[from] & castling_mask[to];            \
                                                                                \
         switch (flag)                                                          \
         {                                                                      \
@@ -2165,7 +2131,6 @@ bool see_ge(Position *board, uint16_t move, int threshold)
             }
         }
 
-        
         d++;
         gain[d] = PIECE_VALUES[attacking_piece] - gain[d - 1];
 
