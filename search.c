@@ -9,7 +9,7 @@
 #include "play.h"
 #include "lmath.h"
 #include "eval.h"
-#include "search.h" 
+#include "search.h"
 #include "tt.h"
 #include "zobrist.h"
 #include "params.h"
@@ -1130,10 +1130,15 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
             if (out.score <= alpha)
             {
+                beta = (alpha + beta) / 2;
+
                 asp_reduction = 0;
                 alpha = out.score - delta;
                 if (alpha < -MATE_SCORE)
                     alpha = -MATE_SCORE;
+
+                if (beta <= alpha)
+                    beta = alpha + 1;
             }
             else if (out.score >= beta)
             {
