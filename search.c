@@ -840,9 +840,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
                 int is_pv_node = (beta - alpha) > 1;
-                int from = move_from(move);
-                int to = move_to(move);
-                int hist = butterfly_hist[board->turn][from][to];
+                int hist = quiet_history_score(board, ply, move);
 
                 reduction = lmr_reduction(depth, i + 1) * 1024;
 
