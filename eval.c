@@ -46,6 +46,15 @@ typedef struct {
 
 static NnueAccumulator nnue_stack[NNUE_MAX_PLY] ALIGN64;
 
+#define NNUE_CACHE_KEYS 2
+
+typedef struct {
+	int16_t acc[NNUE_HL] ALIGN64;
+	uint64_t pieces[2][6];
+} NnueCacheEntry;
+
+static NnueCacheEntry nnue_cache[2][NNUE_CACHE_KEYS] ALIGN64;
+
 static inline int nnue_clampPly(int ply) {
 	if (ply < 0)
 		return 0;
@@ -95,6 +104,17 @@ static int nnue_load(void) {
 	return 0;
 }
 
+static void nnue_initCache(void) {
+	for (int p = 0; p < 2; p++) {
+		for (int k = 0; k < NNUE_CACHE_KEYS; k++) {
+			memcpy(nnue_cache[p][k].acc, nnue_hiddenBiases,
+				   sizeof(nnue_hiddenBiases));
+			memset(nnue_cache[p][k].pieces, 0,
+				   sizeof(nnue_cache[p][k].pieces));
+		}
+	}
+}
+
 static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece,
 								  int sq, bool mirror) {
 	int nnue_piece = internal_to_nnue_encoding[internal_piece];
@@ -108,6 +128,12 @@ static inline void nnue_addFeature(int16_t acc[NNUE_HL], int input_index) {
 	const int16_t *w = nnue_featureWeights[input_index];
 	for (int h = 0; h < NNUE_HL; h++)
 		acc[h] += w[h];
+}
+
+static inline void nnue_subFeature(int16_t acc[NNUE_HL], int input_index) {
+	const int16_t *w = nnue_featureWeights[input_index];
+	for (int h = 0; h < NNUE_HL; h++)
+		acc[h] -= w[h];
 }
 
 static inline void nnue_addSub(int16_t *dst, const int16_t *src,
@@ -130,30 +156,34 @@ static inline void nnue_addSubAddSub(int16_t *dst, const int16_t *src,
 		dst[i] = src[i] + a1[i] - s1[i] + a2[i] - s2[i];
 }
 
-static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL],
-						   bool mirror) {
-	memcpy(acc, nnue_hiddenBiases, sizeof(nnue_hiddenBiases));
-	int otherSide = ownSide ^ 1;
-
-	for (int p = 0; p < 6; p++) {
-		uint64_t bb = board->pieces[p] & board->color[ownSide];
-		while (bb) {
-			int sq = pop_lsb(&bb);
-			nnue_addFeature(acc, nnue_inputIndex(ownSide, 1, p, sq, mirror));
-		}
-		bb = board->pieces[p] & board->color[otherSide];
-		while (bb) {
-			int sq = pop_lsb(&bb);
-			nnue_addFeature(acc, nnue_inputIndex(ownSide, 0, p, sq, mirror));
-		}
-	}
-}
-
 static void nnue_refreshPersp(Position *board, NnueAccumulator *acc,
 							  int persp) {
-	acc->mirror[persp] =
-		mirror_or_not(board->pieces[KINGNUMBER] & board->color[persp]);
-	nnue_buildSide(board, persp, acc->vector[persp], acc->mirror[persp]);
+	bool mir = mirror_or_not(board->pieces[KINGNUMBER] & board->color[persp]);
+	NnueCacheEntry *e = &nnue_cache[persp][mir ? 1 : 0];
+
+	for (int c = 0; c < 2; c++) {
+		int own = (c == persp);
+		for (int p = 0; p < 6; p++) {
+			uint64_t now = board->pieces[p] & board->color[c];
+			uint64_t was = e->pieces[c][p];
+			if (now == was)
+				continue;
+			uint64_t add = now & ~was;
+			uint64_t sub = was & ~now;
+			while (add) {
+				int sq = pop_lsb(&add);
+				nnue_addFeature(e->acc, nnue_inputIndex(persp, own, p, sq, mir));
+			}
+			while (sub) {
+				int sq = pop_lsb(&sub);
+				nnue_subFeature(e->acc, nnue_inputIndex(persp, own, p, sq, mir));
+			}
+			e->pieces[c][p] = now;
+		}
+	}
+
+	memcpy(acc->vector[persp], e->acc, sizeof(e->acc));
+	acc->mirror[persp] = mir;
 	acc->needsRefresh[persp] = 0;
 }
 
@@ -304,6 +334,7 @@ void init_tables(void) {
 						"with EVALFILE=" EVALFILE ")\n");
 		exit(1);
 	}
+	nnue_initCache();
 }
 
 int material_phase(Position *board) {
