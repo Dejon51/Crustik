@@ -526,11 +526,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 return (searchOutput){.score = tt_score, .move = tt_move};
         }
     }
+    int in_check = king_in_check(board, board->turn);
 
-    if (depth <= 0)
+    if (depth <= 0 && !in_check)
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
-    int in_check = king_in_check(board, board->turn);
+    depth = max(depth,0);
     bool root_node = (ply == 0);
 
     if (in_check && ply < MAX_GAME_PLY)
