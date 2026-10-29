@@ -531,7 +531,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (depth <= 0 && !in_check)
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
-    depth = max(depth,0);
+    depth = fmax(depth,0);
     bool root_node = (ply == 0);
 
     if (in_check && ply < MAX_GAME_PLY)
