@@ -9,7 +9,7 @@
 #include "play.h"
 #include "lmath.h"
 #include "eval.h"
-#include "search.h" 
+#include "search.h"
 #include "tt.h"
 #include "zobrist.h"
 #include "params.h"
@@ -531,7 +531,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (depth <= 0 && !in_check)
         return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
 
-    depth = fmax(depth,0);
+    depth = fmax(depth, 0);
     bool root_node = (ply == 0);
 
     if (in_check && ply < MAX_GAME_PLY)
@@ -841,9 +841,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 !is_capture && !is_promotion && move != tt_move && !is_killer)
             {
                 int is_pv_node = (beta - alpha) > 1;
-                int from = move_from(move);
-                int to = move_to(move);
-                int hist = butterfly_hist[board->turn][from][to];
+                int hist = quiet_history_score(board, ply, move);
 
                 reduction = lmr_reduction(depth, i + 1) * 1024;
 
