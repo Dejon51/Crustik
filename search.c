@@ -9,7 +9,7 @@
 #include "play.h"
 #include "lmath.h"
 #include "eval.h"
-#include "search.h" 
+#include "search.h"
 #include "tt.h"
 #include "zobrist.h"
 #include "params.h"
@@ -26,6 +26,8 @@ int eval_stack[MAX_GAME_PLY];
 
 int cont_hist[2][6][64][6][64];
 int capture_history[2][6][64][6];
+
+uint16_t counter_moves[2][6][64];
 
 static int pawn_corrhist[2][CORRHIST_SIZE];
 static int nonpawn_corrhist[2][CORRHIST_SIZE];
@@ -58,6 +60,7 @@ void reset_history(void)
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(capture_history, 0, sizeof capture_history);
+    memset(counter_moves, 0, sizeof counter_moves); 
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
@@ -964,6 +967,12 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 {
                     killer_moves[ply][1] = killer_moves[ply][0];
                     killer_moves[ply][0] = move;
+                }
+                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+                {
+                    int pp = cont_stack[ply - 1].piece;
+                    int pt = cont_stack[ply - 1].to;
+                    counter_moves[board->turn ^ 1][pp][pt] = move;
                 }
             }
             else if (is_capture && captured_piece != -1)

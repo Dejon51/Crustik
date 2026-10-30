@@ -24,6 +24,9 @@ extern int eval_stack[MAX_GAME_PLY];
 extern int cont_hist[2][6][64][6][64];
 extern int capture_history[2][6][64][6];
 
+extern uint16_t counter_moves[2][6][64];
+
+
 typedef struct
 {
     int piece;
