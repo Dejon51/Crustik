@@ -192,6 +192,7 @@ static int score_noisy(Position *b, uint16_t m)
     return s;
 }
 
+
 static int score_quiet(Position *b, int ply, uint16_t m)
 {
     int from = move_from(m), to = move_to(m);
