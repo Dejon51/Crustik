@@ -185,8 +185,10 @@ static int score_noisy(Position *b, uint16_t m)
 
     int s = 0;
     if (victim != -1 && att != -1)
-        s = piece_value_lva(victim) * MVV_LVA_VICTIM_MULT - piece_value_lva(att) +
-            capture_history[b->turn][att][to][victim];
+    {
+        int see = see_value(b, m);
+        s = see * 100 + capture_history[b->turn][att][to][victim];
+    }
     if (is_promotion_move(m))
         s += 1000000;
     return s;

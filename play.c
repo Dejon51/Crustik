@@ -2084,7 +2084,7 @@ int get_lva(Position *board, uint64_t attackers, int side, int *piece_type)
 
 static const int PIECE_VALUES[7] = {100, 300, 300, 500, 900, 20000, 0};
 
-bool see_ge(Position *board, uint16_t move, int threshold)
+int see_value(Position *board, uint16_t move)
 {
     int from = (move >> 6) & 0x3F;
     int to = move & 0x3F;
@@ -2092,7 +2092,7 @@ bool see_ge(Position *board, uint16_t move, int threshold)
 
     int from_piece = board->mailbox[from];
     if (from_piece >= 6)
-        return false;
+        return 0;
 
     int target_piece = board->mailbox[to];
 
@@ -2108,14 +2108,10 @@ bool see_ge(Position *board, uint16_t move, int threshold)
     int promo_piece = -1;
     if (flag >= 5 && flag <= 8)
     {
-        if (flag == 5)
-            promo_piece = BISHOPNUMBER;
-        if (flag == 6)
-            promo_piece = HORSENUMBER;
-        if (flag == 7)
-            promo_piece = ROOKNUMBER;
-        if (flag == 8)
-            promo_piece = QUEENNUMBER;
+        if (flag == 5) promo_piece = BISHOPNUMBER;
+        if (flag == 6) promo_piece = HORSENUMBER;
+        if (flag == 7) promo_piece = ROOKNUMBER;
+        if (flag == 8) promo_piece = QUEENNUMBER;
     }
 
     int gain[32];
@@ -2123,12 +2119,7 @@ bool see_ge(Position *board, uint16_t move, int threshold)
 
     gain[d] = PIECE_VALUES[target_piece];
     if (promo_piece != -1)
-    {
         gain[d] += PIECE_VALUES[promo_piece] - PIECE_VALUES[PAWNNUMBER];
-    }
-
-    if (gain[d] < threshold)
-        return false;
 
     uint64_t occ = board->color[WHITE] | board->color[BLACK];
     uint64_t attackers = get_attackers(board, to, occ);
@@ -2169,16 +2160,11 @@ bool see_ge(Position *board, uint16_t move, int threshold)
         if (next_piece == KINGNUMBER)
         {
             if (attackers & board->color[!side])
-            {
                 break;
-            }
         }
 
         d++;
         gain[d] = PIECE_VALUES[attacking_piece] - gain[d - 1];
-
-        if (gain[d] < threshold && -gain[d - 1] >= threshold)
-            break;
 
         occ &= ~(1ULL << lva_sq);
 
@@ -2202,7 +2188,12 @@ bool see_ge(Position *board, uint16_t move, int threshold)
         d--;
     }
 
-    return gain[0] >= threshold;
+    return gain[0];
+}
+
+bool see_ge(Position *board, uint16_t move, int threshold)
+{
+    return see_value(board, move) >= threshold;
 }
 
 int piece_value_lva(int piece)
