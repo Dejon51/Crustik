@@ -1191,100 +1191,109 @@ void init_pseudo_attacks(void)
     }
 }
 
+static void legalMoveGenWhite(Position *board, MoveList *list);
+static void legalMoveGenBlack(Position *board, MoveList *list);
+
+#define DEFINE_LEGALMOVEGEN(COLOR, US, THEM)                                    \
+    static void legalMoveGen##COLOR(Position *board, MoveList *list)            \
+    {                                                                           \
+        board->color[OCCUPANCY] = board->color[WHITE] | board->color[BLACK];    \
+                                                                                \
+        const int us   = US;                                                    \
+        const int them = THEM;                                                  \
+                                                                                \
+        uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];        \
+        if (!king_bb)                                                           \
+            return;                                                             \
+                                                                                \
+        int king_sq       = __builtin_ctzll(king_bb);                           \
+        uint64_t occ      = board->color[OCCUPANCY];                            \
+        uint64_t them_bb  = board->color[them];                                 \
+        uint64_t us_bb    = board->color[us];                                   \
+                                                                                \
+        uint64_t checkers =                                                     \
+            (((THEM == 0 ? white_pawn_attacks[king_sq]                          \
+                         : black_pawn_attacks[king_sq]) &                       \
+              board->pieces[PAWNNUMBER]) |                                      \
+             (knighttable[king_sq] & board->pieces[HORSENUMBER])) &             \
+            them_bb;                                                            \
+                                                                                \
+        uint64_t bq = board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]; \
+        uint64_t rq = board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER]; \
+                                                                                \
+        uint64_t sliders = ((BISHOP_PSEUDO[king_sq] & bq) |                     \
+                            (ROOK_PSEUDO[king_sq]   & rq)) &                    \
+                           them_bb;                                             \
+                                                                                \
+        uint64_t pinned_pieces = 0;                                             \
+        uint64_t pinner_ray[64];                                                \
+                                                                                \
+        while (sliders)                                                         \
+        {                                                                       \
+            int s = pop_lsb(&sliders);                                          \
+            uint64_t ray     = ray_between_table[king_sq * 64 + s];             \
+            uint64_t between = ray & occ;                                       \
+                                                                                \
+            if (!between)                                                       \
+            {                                                                   \
+                checkers |= 1ULL << s;                                          \
+            }                                                                   \
+            else if ((between & (between - 1)) == 0 && (between & us_bb))       \
+            {                                                                   \
+                int psq = __builtin_ctzll(between);                             \
+                pinned_pieces |= between;                                       \
+                pinner_ray[psq] = ray | (1ULL << s);                            \
+            }                                                                   \
+        }                                                                       \
+                                                                                \
+        int check_count = __builtin_popcountll(checkers);                       \
+                                                                                \
+        uint64_t check_mask = 0xFFFFFFFFFFFFFFFFULL;                            \
+        if (check_count == 1)                                                   \
+        {                                                                       \
+            int checker_sq = __builtin_ctzll(checkers);                         \
+            check_mask = ray_between_table[king_sq * 64 + checker_sq] |         \
+                         (1ULL << checker_sq);                                  \
+        }                                                                       \
+        else if (check_count >= 2)                                              \
+        {                                                                       \
+            check_mask = 0ULL;                                                  \
+        }                                                                       \
+                                                                                \
+        AttackSet enemyAttacks = buildAttackSet(board, them);                   \
+                                                                                \
+        kingMovesLegal(board, list, us, check_count, &enemyAttacks);            \
+                                                                                \
+        if (check_count >= 2)                                                   \
+            return;                                                             \
+                                                                                \
+        if (check_count == 0 && pinned_pieces == 0 && board->epsquare == -1)    \
+        {                                                                       \
+            pawnMoves##COLOR(board, list);                                      \
+            horseMovesLegal(board, list, us, 0xFFFFFFFFFFFFFFFFULL, 0);         \
+            bishopMoves(board, list, us);                                       \
+            rookMoves(board, list, us);                                         \
+            return;                                                             \
+        }                                                                       \
+                                                                                \
+        pawnMoves##COLOR##Legal(board, list, check_mask, pinned_pieces,         \
+                                pinner_ray, check_count, king_sq, them, occ);   \
+                                                                                \
+        horseMovesLegal(board, list, us, check_mask, pinned_pieces);            \
+        bishopMovesLegal(board, list, us, check_mask, pinned_pieces,            \
+                         pinner_ray);                                           \
+        rookMovesLegal(board, list, us, check_mask, pinned_pieces, pinner_ray); \
+    }
+
+DEFINE_LEGALMOVEGEN(White, 0, 1)
+DEFINE_LEGALMOVEGEN(Black, 1, 0)
+
 void legalMoveGen(Position *board, MoveList *list)
 {
-    board->color[OCCUPANCY] = board->color[WHITE] | board->color[BLACK];
-
-    int us = board->turn;
-    int them = !us;
-
-    uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];
-    if (!king_bb)
-        return;
-
-    int king_sq = __builtin_ctzll(king_bb);
-    uint64_t occ = board->color[OCCUPANCY];
-    uint64_t them_bb = board->color[them];
-    uint64_t us_bb = board->color[us];
-
-    uint64_t checkers =
-        (((them == 0 ? white_pawn_attacks[king_sq] : black_pawn_attacks[king_sq]) &
-          board->pieces[PAWNNUMBER]) |
-         (knighttable[king_sq] & board->pieces[HORSENUMBER])) &
-        them_bb;
-
-    uint64_t bq = board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER];
-    uint64_t rq = board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER];
-
-    uint64_t sliders = ((BISHOP_PSEUDO[king_sq] & bq) |
-                        (ROOK_PSEUDO[king_sq] & rq)) &
-                       them_bb;
-
-    uint64_t pinned_pieces = 0;
-    uint64_t pinner_ray[64];
-
-    while (sliders)
-    {
-        int s = pop_lsb(&sliders);
-        uint64_t ray = ray_between_table[king_sq * 64 + s];
-        uint64_t between = ray & occ;
-
-        if (!between)
-        {
-            checkers |= 1ULL << s;
-        }
-        else if ((between & (between - 1)) == 0 && (between & us_bb))
-        {
-            int psq = __builtin_ctzll(between);
-            pinned_pieces |= between;
-            pinner_ray[psq] = ray | (1ULL << s);
-        }
-    }
-
-    int check_count = __builtin_popcountll(checkers);
-
-    uint64_t check_mask = 0xFFFFFFFFFFFFFFFFULL;
-    if (check_count == 1)
-    {
-        int checker_sq = __builtin_ctzll(checkers);
-        check_mask =
-            ray_between_table[king_sq * 64 + checker_sq] | (1ULL << checker_sq);
-    }
-    else if (check_count >= 2)
-    {
-        check_mask = 0ULL;
-    }
-
-    AttackSet enemyAttacks = buildAttackSet(board, them);
-
-    kingMovesLegal(board, list, us, check_count, &enemyAttacks);
-
-    if (check_count >= 2)
-        return;
-
-    if (check_count == 0 && pinned_pieces == 0 && board->epsquare == -1)
-    {
-        if (us == 0)
-            pawnMovesWhite(board, list);
-        else
-            pawnMovesBlack(board, list);
-
-        horseMovesLegal(board, list, us, 0xFFFFFFFFFFFFFFFFULL, 0);
-        bishopMoves(board, list, us);
-        rookMoves(board, list, us);
-        return;
-    }
-
-    if (us == 0)
-        pawnMovesWhiteLegal(board, list, check_mask, pinned_pieces, pinner_ray,
-                            check_count, king_sq, them, occ);
+    if (board->turn == 0)
+        legalMoveGenWhite(board, list);
     else
-        pawnMovesBlackLegal(board, list, check_mask, pinned_pieces, pinner_ray,
-                            check_count, king_sq, them, occ);
-
-    horseMovesLegal(board, list, us, check_mask, pinned_pieces);
-    bishopMovesLegal(board, list, us, check_mask, pinned_pieces, pinner_ray);
-    rookMovesLegal(board, list, us, check_mask, pinned_pieces, pinner_ray);
+        legalMoveGenBlack(board, list);
 }
 
 #define DEFINE_MAKEMOVE(COLOR, c)                                              \
@@ -1895,85 +1904,102 @@ bool king_in_check(Position *board, int us)
     return squareAttacked_fast(king_sq, !us, occ, &enemyAttacks);
 }
 
+static void perft_print_move(uint16_t move, uint64_t move_nodes)
+{
+    int from = (move >> 6) & 0x3F;
+    int to   =  move        & 0x3F;
+    int flag = (move >> 12) & 0xF;
+
+    int x1 = from % 8;
+    int y1 = 8 - (from / 8);
+    int x2 = to   % 8;
+    int y2 = 8 - (to   / 8);
+
+    char promotion = 0;
+    if      (flag == 5) promotion = 'b';
+    else if (flag == 6) promotion = 'n';
+    else if (flag == 7) promotion = 'r';
+    else if (flag == 8) promotion = 'q';
+
+    if (promotion)
+        printf("%c%i%c%i%c - %" PRIu64 "\n",
+               'a' + x1, y1, 'a' + x2, y2, promotion, move_nodes);
+    else
+        printf("%c%i%c%i - %" PRIu64 "\n",
+               'a' + x1, y1, 'a' + x2, y2, move_nodes);
+}
+
+static uint64_t perftWhite(Position *board, int depth, int divide);
+static uint64_t perftBlack(Position *board, int depth, int divide);
+
+#define DEFINE_PERFT(COLOR, OTHER_COLOR)                                        \
+    static uint64_t perft##COLOR(Position *board, int depth, int divide)        \
+    {                                                                           \
+        if (depth == 0)                                                         \
+            return 1;                                                           \
+                                                                                \
+        MoveList move_list;                                                     \
+        move_list.offset = 0;                                                   \
+        legalMoveGen(board, &move_list);                                        \
+                                                                                \
+        uint64_t nodes = 0;                                                     \
+        for (unsigned int i = 0; i < move_list.offset; i++)                     \
+        {                                                                       \
+            Position copy = *board;                                             \
+            makeMove##COLOR(&copy, &move_list, i);                              \
+                                                                                \
+            uint64_t move_nodes =                                               \
+                perft##OTHER_COLOR(&copy, depth - 1, divide);                   \
+            nodes += move_nodes;                                                \
+                                                                                \
+            if (depth == divide && divide != 0)                                 \
+                perft_print_move(move_list.movelist[i], move_nodes);            \
+        }                                                                       \
+        return nodes;                                                           \
+    }
+
+DEFINE_PERFT(White, Black)
+DEFINE_PERFT(Black, White)
+
 uint64_t perft(Position *board, int depth, int divide)
 {
-    if (depth == 0)
-        return 1;
-
-    MoveList move_list;
-    move_list.offset = 0;
-    legalMoveGen(board, &move_list);
-
-    uint64_t nodes = 0;
-    for (unsigned int i = 0; i < move_list.offset; i++)
-    {
-        Position copy = *board;
-
-        if (copy.turn == 0)
-            makeMoveWhite(&copy, &move_list, i);
-        else
-            makeMoveBlack(&copy, &move_list, i);
-
-        uint64_t move_nodes = perft(&copy, depth - 1, divide);
-        nodes += move_nodes;
-
-        if (depth == divide && divide != 0)
-        {
-            int from = (move_list.movelist[i] >> 6) & 0x3F;
-            int to = move_list.movelist[i] & 0x3F;
-            int flag = (move_list.movelist[i] >> 12) & 0xF;
-
-            int x1 = from % 8;
-            int y1 = 8 - (from / 8);
-            int x2 = to % 8;
-            int y2 = 8 - (to / 8);
-
-            char promotion = 0;
-            if (flag == 5)
-                promotion = 'b';
-            else if (flag == 6)
-                promotion = 'n';
-            else if (flag == 7)
-                promotion = 'r';
-            else if (flag == 8)
-                promotion = 'q';
-
-            if (promotion)
-                printf("%c%i%c%i%c - %" PRIu64 "\n", 'a' + x1, y1, 'a' + x2, y2,
-                       promotion, move_nodes);
-            else
-                printf("%c%i%c%i - %" PRIu64 "\n", 'a' + x1, y1, 'a' + x2, y2,
-                       move_nodes);
-        }
-    }
-    return nodes;
+    return (board->turn == 0) ? perftWhite(board, depth, divide)
+                              : perftBlack(board, depth, divide);
 }
+
+static uint64_t perftbulkWhite(Position *board, int depth);
+static uint64_t perftbulkBlack(Position *board, int depth);
+
+#define DEFINE_PERFTBULK(COLOR, OTHER_COLOR)                                    \
+    static uint64_t perftbulk##COLOR(Position *board, int depth)                \
+    {                                                                           \
+        if (depth == 0)                                                         \
+            return 1;                                                           \
+                                                                                \
+        MoveList move_list;                                                     \
+        move_list.offset = 0;                                                   \
+        legalMoveGen(board, &move_list);                                        \
+                                                                                \
+        if (depth == 1)                                                         \
+            return move_list.offset;                                            \
+                                                                                \
+        uint64_t nodes = 0;                                                     \
+        for (unsigned int i = 0; i < move_list.offset; i++)                     \
+        {                                                                       \
+            Position copy = *board;                                             \
+            makeMove##COLOR(&copy, &move_list, i);                              \
+            nodes += perftbulk##OTHER_COLOR(&copy, depth - 1);                  \
+        }                                                                       \
+        return nodes;                                                           \
+    }
+
+DEFINE_PERFTBULK(White, Black)
+DEFINE_PERFTBULK(Black, White)
 
 uint64_t perftbulk(Position *board, int depth)
 {
-    if (depth == 0)
-        return 1;
-
-    MoveList move_list;
-    move_list.offset = 0;
-    legalMoveGen(board, &move_list);
-
-    if (depth == 1)
-        return move_list.offset;
-
-    uint64_t nodes = 0;
-    for (unsigned int i = 0; i < move_list.offset; i++)
-    {
-        Position copy = *board;
-
-        if (copy.turn == 0)
-            makeMoveWhite(&copy, &move_list, i);
-        else
-            makeMoveBlack(&copy, &move_list, i);
-
-        nodes += perftbulk(&copy, depth - 1);
-    }
-    return nodes;
+    return (board->turn == 0) ? perftbulkWhite(board, depth)
+                              : perftbulkBlack(board, depth);
 }
 
 static inline int lva_pick(uint64_t subset)
