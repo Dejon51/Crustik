@@ -16,6 +16,7 @@
 
 void quietMoves(Position *board, MoveList *list, bool color);
 
+
 MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList ordered = *move_list;
@@ -103,6 +104,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
 #define PK_CAPTURE_BASE 90000000
 #define PK_KILLER_BASE 80000000
+#define PK_COUNTER_BASE 70000000
 
 bool move_is_pseudolegal(Position *b, uint16_t m)
 {
@@ -192,6 +194,9 @@ static int score_noisy(Position *b, uint16_t m)
 
 static int score_quiet(Position *b, int ply, uint16_t m)
 {
+    int from = move_from(m), to = move_to(m);
+    int piece = piece_on_square(b, from);
+
     if (ply < MAX_GAME_PLY)
     {
         if (m == killer_moves[ply][0])
@@ -200,13 +205,20 @@ static int score_quiet(Position *b, int ply, uint16_t m)
             return PK_KILLER_BASE;
     }
 
-    int from = move_from(m), to = move_to(m);
-    int piece = piece_on_square(b, from);
-    int s = butterfly_hist[b->turn][from][to];
+    int bf = butterfly_hist[b->turn][from][to];
+    int ch = 0;
 
     if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
-        s += cont_hist[b->turn][cont_stack[ply - 1].piece][cont_stack[ply - 1].to][piece][to];
-    return s;
+    {
+        int pp = cont_stack[ply - 1].piece;
+        int pt = cont_stack[ply - 1].to;
+        ch = cont_hist[b->turn][pp][pt][piece][to];
+
+        if (m == counter_moves[b->turn ^ 1][pp][pt])
+            return PK_COUNTER_BASE + bf + ch;
+    }
+
+    return bf + ch;
 }
 
 static uint16_t pick_best(uint16_t *mv, int *sc, int i, int n)
