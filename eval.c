@@ -3,12 +3,15 @@
 #include "lmath.h"
 #include "play.h"
 #include "precomputed.h"
-#include "stdio.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
 
 #define ALIGN64 __attribute__((aligned(64)))
 
@@ -38,9 +41,11 @@ static float nnue_l2Biases[NNUE_L2];
 static float nnue_l3Weights[NNUE_L2];
 static float nnue_l3Bias;
 
-static int nnue_loaded = 0;
+static int8_t nnue_l1w[2][256][32] ALIGN64;
 
-// Converts internal engine piece encoding into nnue encoding
+static int nnue_loaded = 0;
+static int nnue_has_vnni = 0;
+
 static const int internal_to_nnue_encoding[6] = {
 	0,
 	2,
@@ -75,7 +80,6 @@ static inline bool mirror_or_not(Bitboard king_bitboard)
 	return (__builtin_ctzll(king_bitboard) & 7) > 3;
 }
 
-// Loads nnue from bin file
 static int nnue_load(void)
 {
 	const unsigned char *data = gEvalFileData;
@@ -100,30 +104,40 @@ static int nnue_load(void)
 
 	memcpy(nnue_featureWeights, data + offset, sizeof(nnue_featureWeights));
 	offset += sizeof(nnue_featureWeights);
-
 	memcpy(nnue_hiddenBiases, data + offset, sizeof(nnue_hiddenBiases));
 	offset += sizeof(nnue_hiddenBiases);
-
 	memcpy(nnue_l1Weights, data + offset, sizeof(nnue_l1Weights));
 	offset += sizeof(nnue_l1Weights);
-
 	memcpy(nnue_l1Biases, data + offset, sizeof(nnue_l1Biases));
 	offset += sizeof(nnue_l1Biases);
-
 	memcpy(nnue_l2Weights, data + offset, sizeof(nnue_l2Weights));
 	offset += sizeof(nnue_l2Weights);
-
 	memcpy(nnue_l2Biases, data + offset, sizeof(nnue_l2Biases));
 	offset += sizeof(nnue_l2Biases);
-
 	memcpy(nnue_l3Weights, data + offset, sizeof(nnue_l3Weights));
 	offset += sizeof(nnue_l3Weights);
-
 	memcpy(&nnue_l3Bias, data + offset, sizeof(nnue_l3Bias));
-	offset += sizeof(nnue_l3Bias);
 
 	nnue_loaded = 1;
 	return 0;
+}
+
+static void nnue_permute_l1_weights(void)
+{
+	for (int g = 0; g < 2; g++)
+		for (int cb = 0; cb < 256; cb++)
+			for (int r = 0; r < 8; r++)
+				for (int c = 0; c < 4; c++)
+					nnue_l1w[g][cb][r * 4 + c] =
+						nnue_l1Weights[g * 8 + r][cb * 4 + c];
+}
+
+static void nnue_detect_cpu(void)
+{
+#if defined(__AVX2__) && (defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12))
+	__builtin_cpu_init();
+	nnue_has_vnni = __builtin_cpu_supports("avxvnni");
+#endif
 }
 
 static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece,
@@ -189,8 +203,7 @@ static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL],
 	}
 }
 
-static void nnue_refreshPersp(Position *board, NnueAccumulator *acc,
-							  int persp)
+static void nnue_refreshPersp(Position *board, NnueAccumulator *acc, int persp)
 {
 	acc->mirror[persp] =
 		mirror_or_not(board->pieces[KINGNUMBER] & board->color[persp]);
@@ -256,7 +269,7 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 
 	int placed = piece;
 	switch (flag)
-	{ // Promotions
+	{
 	case 5:
 		placed = BISHOPNUMBER;
 		break;
@@ -273,7 +286,7 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 
 	int rookFrom = -1, rookTo = -1;
 	switch (flag)
-	{ // Castling
+	{
 	case 1:
 		rookFrom = H1;
 		rookTo = F1;
@@ -324,7 +337,8 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 		{
 			subIdx[ns++] =
 				nnue_inputIndex(persp, own, ROOKNUMBER, rookFrom, mir);
-			addIdx[na++] = nnue_inputIndex(persp, own, ROOKNUMBER, rookTo, mir);
+			addIdx[na++] =
+				nnue_inputIndex(persp, own, ROOKNUMBER, rookTo, mir);
 		}
 
 		int16_t *dst = child->vector[persp];
@@ -338,7 +352,8 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 						   nnue_featureWeights[subIdx[0]],
 						   nnue_featureWeights[subIdx[1]]);
 		else
-			nnue_addSubAddSub(dst, src, nnue_featureWeights[addIdx[0]],
+			nnue_addSubAddSub(dst, src,
+							  nnue_featureWeights[addIdx[0]],
 							  nnue_featureWeights[subIdx[0]],
 							  nnue_featureWeights[addIdx[1]],
 							  nnue_featureWeights[subIdx[1]]);
@@ -354,6 +369,89 @@ static inline float nnue_screluf(float x)
 	return x * x;
 }
 
+static inline void nnue_l1_finish(const int32_t *sums, float *l1out,
+								  float dequant)
+{
+	for (int o = 0; o < NNUE_L1; o++)
+		l1out[o] = nnue_screluf((float)sums[o] * dequant + nnue_l1Biases[o]);
+}
+
+static void nnue_l1_scalar(const uint8_t *ft, float *l1out, float dequant)
+{
+	for (int o = 0; o < NNUE_L1; o++)
+	{
+		const int8_t *w = nnue_l1Weights[o];
+		int32_t sum = 0;
+		for (int i = 0; i < 2 * NNUE_HL; i++)
+			sum += (int32_t)ft[i] * (int32_t)w[i];
+		l1out[o] = nnue_screluf((float)sum * dequant + nnue_l1Biases[o]);
+	}
+}
+
+#if defined(__AVX2__)
+
+__attribute__((target("avx2"))) static void nnue_l1_avx2(const uint8_t *ft, float *l1out, float dequant)
+{
+	__m256i acc0 = _mm256_setzero_si256(); /* rows  0..7  */
+	__m256i acc1 = _mm256_setzero_si256(); /* rows  8..15 */
+	const __m256i ones = _mm256_set1_epi16(1);
+
+	for (int cb = 0; cb < 256; cb++)
+	{
+		/* Broadcast 4 contiguous uint8 inputs across all lanes. */
+		uint32_t x4;
+		memcpy(&x4, &ft[cb * 4], 4);
+		const __m256i x = _mm256_set1_epi32((int32_t)x4);
+
+		__m256i w0 = _mm256_load_si256((const __m256i *)&nnue_l1w[0][cb][0]);
+		__m256i w1 = _mm256_load_si256((const __m256i *)&nnue_l1w[1][cb][0]);
+
+		__m256i p0 = _mm256_maddubs_epi16(x, w0); /* u8*i8 pairwise -> i16  */
+		p0 = _mm256_madd_epi16(p0, ones);		  /* adjacent i16   -> i32  */
+		acc0 = _mm256_add_epi32(acc0, p0);
+
+		__m256i p1 = _mm256_maddubs_epi16(x, w1);
+		p1 = _mm256_madd_epi16(p1, ones);
+		acc1 = _mm256_add_epi32(acc1, p1);
+	}
+
+	int32_t sums[16] ALIGN64;
+	_mm256_store_si256((__m256i *)&sums[0], acc0);
+	_mm256_store_si256((__m256i *)&sums[8], acc1);
+	nnue_l1_finish(sums, l1out, dequant);
+}
+
+#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12)
+#define NNUE_HAVE_VNNI_TARGET 1
+#endif
+
+#ifdef NNUE_HAVE_VNNI_TARGET
+__attribute__((target("avx2,avxvnni"))) static void nnue_l1_vnni(const uint8_t *ft, float *l1out, float dequant)
+{
+	__m256i acc0 = _mm256_setzero_si256();
+	__m256i acc1 = _mm256_setzero_si256();
+
+	for (int cb = 0; cb < 256; cb++)
+	{
+		uint32_t x4;
+		memcpy(&x4, &ft[cb * 4], 4);
+		const __m256i x = _mm256_set1_epi32((int32_t)x4);
+
+		__m256i w0 = _mm256_load_si256((const __m256i *)&nnue_l1w[0][cb][0]);
+		__m256i w1 = _mm256_load_si256((const __m256i *)&nnue_l1w[1][cb][0]);
+
+		acc0 = _mm256_dpbusd_epi32(acc0, x, w0);
+		acc1 = _mm256_dpbusd_epi32(acc1, x, w1);
+	}
+
+	int32_t sums[16] ALIGN64;
+	_mm256_store_si256((__m256i *)&sums[0], acc0);
+	_mm256_store_si256((__m256i *)&sums[8], acc1);
+	nnue_l1_finish(sums, l1out, dequant);
+}
+#endif /* NNUE_HAVE_VNNI_TARGET */
+
+#endif
 static int nnue_forward(Position *board, int ply)
 {
 	ply = nnue_clampPly(ply);
@@ -378,14 +476,17 @@ static int nnue_forward(Position *board, int ply)
 		1.0f / ((float)HIDDEN_QUANT_SCALE * (float)NNUE_OUTPUT_SCALE);
 
 	float l1out[NNUE_L1];
-	for (int o = 0; o < NNUE_L1; o++)
-	{
-		const int8_t *w = nnue_l1Weights[o];
-		int32_t sum = 0;
-		for (int i = 0; i < 2 * NNUE_HL; i++)
-			sum += (int32_t)ft[i] * (int32_t)w[i];
-		l1out[o] = nnue_screluf((float)sum * l1_dequant + nnue_l1Biases[o]);
-	}
+
+#if defined(__AVX2__)
+#ifdef NNUE_HAVE_VNNI_TARGET
+	if (nnue_has_vnni)
+		nnue_l1_vnni(ft, l1out, l1_dequant);
+	else
+#endif
+		nnue_l1_avx2(ft, l1out, l1_dequant);
+#else
+	nnue_l1_scalar(ft, l1out, l1_dequant);
+#endif
 
 	float l2out[NNUE_L2];
 	for (int o = 0; o < NNUE_L2; o++)
@@ -408,10 +509,13 @@ void init_tables(void)
 {
 	if (nnue_load() != 0)
 	{
-		fprintf(stderr, "FATAL: failed to load embedded NNUE network (built "
-						"with EVALFILE=" EVALFILE ")\n");
+		fprintf(stderr,
+				"FATAL: failed to load embedded NNUE network (built with "
+				"EVALFILE=" EVALFILE ")\n");
 		exit(1);
 	}
+	nnue_permute_l1_weights();
+	nnue_detect_cpu();
 }
 
 int material_phase(Position *board)
@@ -422,8 +526,7 @@ int material_phase(Position *board)
 	int rooks = __builtin_popcountll(board->pieces[ROOKNUMBER]);
 	int queens = __builtin_popcountll(board->pieces[QUEENNUMBER]);
 
-	return 100 * pawns + 300 * bishops + 300 * horses + 500 * rooks +
-		   900 * queens;
+	return 100 * pawns + 300 * bishops + 300 * horses + 500 * rooks + 900 * queens;
 }
 
 int eval(Position *board, int ply)
