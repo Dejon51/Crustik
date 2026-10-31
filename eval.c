@@ -25,20 +25,35 @@ INCBIN(EvalFile, EVALFILE);
 #define HIDDEN_QUANT_SCALE 255 /* QA */
 #define NNUE_OUTPUT_SCALE 64   /* QB */
 
-#define NNUE_SCALE (400.0 * 0.6306804414)
+#define NNUE_FINAL_MUL   16209
+#define NNUE_FINAL_SHIFT 20
+
+#define NNUE_ACT_DENOM  ((int32_t)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE)
+#define NNUE_ACT_SQ_DIV ((int32_t)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE * NNUE_OUTPUT_SCALE)
 
 #define NNUE_FLIP(sq) ((sq) ^ 56)
 
 static int16_t nnue_featureWeights[NNUE_INPUT][NNUE_HL] ALIGN64;
 static int16_t nnue_hiddenBiases[NNUE_HL] ALIGN64;
-static int8_t nnue_l1Weights[NNUE_L1][2 * NNUE_HL] ALIGN64;
-static float nnue_l1Biases[NNUE_L1];
-static float nnue_l2Weights[NNUE_L2][NNUE_L1];
-static float nnue_l2Biases[NNUE_L2];
-static float nnue_l3Weights[NNUE_L2];
-static float nnue_l3Bias;
+static int8_t  nnue_l1Weights[NNUE_L1][2 * NNUE_HL] ALIGN64;
+
+static int32_t nnue_l1Biases_q[NNUE_L1] ALIGN64;
+static int8_t  nnue_l2Weights_q[NNUE_L2][NNUE_L1] ALIGN64;
+static int32_t nnue_l2Biases_q[NNUE_L2] ALIGN64;
+static int8_t  nnue_l3Weights_q[NNUE_L2] ALIGN64;
+static int32_t nnue_l3Bias_q;
 
 static int nnue_loaded = 0;
+
+static inline int32_t round_f2i(float x) {
+	return (int32_t)(x < 0.0f ? x - 0.5f : x + 0.5f);
+}
+
+static inline int8_t clamp_i8(float v) {
+	if (v >  127.0f) v =  127.0f;
+	if (v < -128.0f) v = -128.0f;
+	return (int8_t)round_f2i(v);
+}
 
 // Converts internal engine piece encoding into nnue encoding
 static const int internal_to_nnue_encoding[6] = {
@@ -74,10 +89,14 @@ static int nnue_load(void) {
 	size_t offset = 0;
 
 	const size_t required_size =
-		sizeof(nnue_featureWeights) + sizeof(nnue_hiddenBiases) +
-		sizeof(nnue_l1Weights) + sizeof(nnue_l1Biases) +
-		sizeof(nnue_l2Weights) + sizeof(nnue_l2Biases) +
-		sizeof(nnue_l3Weights) + sizeof(nnue_l3Bias);
+		NNUE_INPUT * NNUE_HL * sizeof(int16_t) +
+		NNUE_HL * sizeof(int16_t) +
+		NNUE_L1 * (2 * NNUE_HL) * sizeof(int8_t) +
+		NNUE_L1 * sizeof(float) +
+		NNUE_L2 * NNUE_L1 * sizeof(float) +
+		NNUE_L2 * sizeof(float) +
+		NNUE_L2 * sizeof(float) +
+		sizeof(float);
 
 	if (size < required_size || size >= required_size + 64) {
 		fprintf(stderr,
@@ -97,20 +116,47 @@ static int nnue_load(void) {
 	memcpy(nnue_l1Weights, data + offset, sizeof(nnue_l1Weights));
 	offset += sizeof(nnue_l1Weights);
 
-	memcpy(nnue_l1Biases, data + offset, sizeof(nnue_l1Biases));
-	offset += sizeof(nnue_l1Biases);
+	{
+		float t[NNUE_L1];
+		memcpy(t, data + offset, sizeof(t));
+		offset += sizeof(t);
+		for (int i = 0; i < NNUE_L1; i++)
+			nnue_l1Biases_q[i] = round_f2i(t[i] * (float)NNUE_ACT_DENOM);
+	}
 
-	memcpy(nnue_l2Weights, data + offset, sizeof(nnue_l2Weights));
-	offset += sizeof(nnue_l2Weights);
+	{
+		float t[NNUE_L2][NNUE_L1];
+		memcpy(t, data + offset, sizeof(t));
+		offset += sizeof(t);
+		for (int o = 0; o < NNUE_L2; o++)
+			for (int i = 0; i < NNUE_L1; i++)
+				nnue_l2Weights_q[o][i] =
+					clamp_i8(t[o][i] * (float)NNUE_OUTPUT_SCALE);
+	}
 
-	memcpy(nnue_l2Biases, data + offset, sizeof(nnue_l2Biases));
-	offset += sizeof(nnue_l2Biases);
+	{
+		float t[NNUE_L2];
+		memcpy(t, data + offset, sizeof(t));
+		offset += sizeof(t);
+		for (int o = 0; o < NNUE_L2; o++)
+			nnue_l2Biases_q[o] = round_f2i(t[o] * (float)NNUE_ACT_DENOM);
+	}
 
-	memcpy(nnue_l3Weights, data + offset, sizeof(nnue_l3Weights));
-	offset += sizeof(nnue_l3Weights);
+	{
+		float t[NNUE_L2];
+		memcpy(t, data + offset, sizeof(t));
+		offset += sizeof(t);
+		for (int i = 0; i < NNUE_L2; i++)
+			nnue_l3Weights_q[i] =
+				clamp_i8(t[i] * (float)NNUE_OUTPUT_SCALE);
+	}
 
-	memcpy(&nnue_l3Bias, data + offset, sizeof(nnue_l3Bias));
-	offset += sizeof(nnue_l3Bias);
+	{
+		float t;
+		memcpy(&t, data + offset, sizeof(t));
+		offset += sizeof(t);
+		nnue_l3Bias_q = round_f2i(t * (float)NNUE_ACT_DENOM);
+	}
 
 	nnue_loaded = 1;
 	return 0;
@@ -287,7 +333,7 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 			nnue_addSubSub(dst, src, nnue_featureWeights[addIdx[0]],
 						   nnue_featureWeights[subIdx[0]],
 						   nnue_featureWeights[subIdx[1]]);
-		else 
+		else
 			nnue_addSubAddSub(dst, src, nnue_featureWeights[addIdx[0]],
 							  nnue_featureWeights[subIdx[0]],
 							  nnue_featureWeights[addIdx[1]],
@@ -295,12 +341,10 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 	}
 }
 
-static inline float nnue_screluf(float x) {
-	if (x < 0.0f)
-		x = 0.0f;
-	else if (x > 1.0f)
-		x = 1.0f;
-	return x * x;
+static inline uint8_t nnue_act(int32_t y) {
+	if (y < 0) y = 0;
+	else if (y > NNUE_ACT_DENOM) y = NNUE_ACT_DENOM;
+	return (uint8_t)((y * y) / NNUE_ACT_SQ_DIV);
 }
 
 static int nnue_forward(Position *board, int ply) {
@@ -321,32 +365,29 @@ static int nnue_forward(Position *board, int ply) {
 		ft[NNUE_HL + h] = (uint8_t)((c * c) / HIDDEN_QUANT_SCALE);
 	}
 
-	const float l1_dequant =
-		1.0f / ((float)HIDDEN_QUANT_SCALE * (float)NNUE_OUTPUT_SCALE);
-
-	float l1out[NNUE_L1];
+	uint8_t l1out[NNUE_L1] ALIGN64;
 	for (int o = 0; o < NNUE_L1; o++) {
 		const int8_t *w = nnue_l1Weights[o];
 		int32_t sum = 0;
 		for (int i = 0; i < 2 * NNUE_HL; i++)
 			sum += (int32_t)ft[i] * (int32_t)w[i];
-		l1out[o] = nnue_screluf((float)sum * l1_dequant + nnue_l1Biases[o]);
+		l1out[o] = nnue_act(sum + nnue_l1Biases_q[o]);
 	}
 
-	float l2out[NNUE_L2];
+	uint8_t l2out[NNUE_L2] ALIGN64;
 	for (int o = 0; o < NNUE_L2; o++) {
-		const float *w = nnue_l2Weights[o];
-		float y = nnue_l2Biases[o];
+		const int8_t *w = nnue_l2Weights_q[o];
+		int32_t sum = 0;
 		for (int i = 0; i < NNUE_L1; i++)
-			y += l1out[i] * w[i];
-		l2out[o] = nnue_screluf(y);
+			sum += (int32_t)l1out[i] * (int32_t)w[i];
+		l2out[o] = nnue_act(sum + nnue_l2Biases_q[o]);
 	}
 
-	float out = nnue_l3Bias;
+	int32_t out = nnue_l3Bias_q;
 	for (int i = 0; i < NNUE_L2; i++)
-		out += l2out[i] * nnue_l3Weights[i];
+		out += (int32_t)l2out[i] * (int32_t)nnue_l3Weights_q[i];
 
-	return (int)(out * NNUE_SCALE);
+	return (int)(((int64_t)out * NNUE_FINAL_MUL) >> NNUE_FINAL_SHIFT);
 }
 
 void init_tables(void) {
