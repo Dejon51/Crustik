@@ -311,8 +311,6 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
 
 int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
 {
-    stop->nodes++;
-
     if (ply > stop->seldepth)
         stop->seldepth = ply;
 
@@ -434,6 +432,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
             continue;
 
+        stop->nodes++;
         legal_moves_seen++;
 
         int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
@@ -484,8 +483,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         stack = &no_excl;
 
     bool excluded = stack->excluded_move != 0;
-
-    stop->nodes++;
 
     if (pv)
         pv->length = 0;
@@ -590,6 +587,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             Position copy = *board;
             make_null_move(&copy);
+            stop->nodes++;
             nnue_copy(ply, ply + 1);
 
             if (ply < MAX_SEARCH_PLY)
@@ -641,7 +639,6 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     continue;
 
                 stop->nodes++;
-
                 int probcut_value = -quiesce(&copy, -probcut_beta,
                                              -probcut_beta + 1, ply + 1, stop);
 
@@ -812,6 +809,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             squareAttacked(&copy, __builtin_ctzll(mover_king_bb), !board->turn))
             continue;
 
+        stop->nodes++;
         nnue_update(board, move, ply, ply + 1);
         searched_any = 1;
         if (best_move == 0)
