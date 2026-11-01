@@ -20,6 +20,8 @@
 #include <immintrin.h>
 #endif
 
+static int nnue_avx2_safe = 1;  
+
 INCBIN(EvalFile, EVALFILE);
 
 #define NNUE_INPUT 768
