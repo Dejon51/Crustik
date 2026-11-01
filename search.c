@@ -560,13 +560,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (ply < MAX_GAME_PLY)
         {
             if (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
-                improving = ceval > eval_stack[ply - 2];
+                improving = static_eval > eval_stack[ply - 2];
             else if (ply >= 4 && eval_stack[ply - 4] != NO_EVAL)
-                improving = ceval > eval_stack[ply - 4];
+                improving = static_eval > eval_stack[ply - 4];
             else
                 improving = true;
 
-            eval_stack[ply] = ceval;
+            eval_stack[ply] = static_eval;
         }
 
         if (!root_node && !pv_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
