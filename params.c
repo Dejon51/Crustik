@@ -16,7 +16,8 @@ int PVS_MIN_DEPTH = 3;
 
 /* ---------- Reverse futility pruning ---------- */
 int RFP_MAX_DEPTH = 6;
-int RFP_MARGIN = 100;
+int RFP_MARGIN = 100
+int RFP_IMPROVING_MARGIN = 50;
 
 /* ---------- Null move pruning ---------- */ 
 int NMP_MIN_DEPTH = 3;

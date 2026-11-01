@@ -60,7 +60,7 @@ void reset_history(void)
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(capture_history, 0, sizeof capture_history);
-    memset(counter_moves, 0, sizeof counter_moves); 
+    memset(counter_moves, 0, sizeof counter_moves);
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
@@ -559,18 +559,21 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (ply < MAX_GAME_PLY)
         {
-            improving = (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
-                            ? ceval > eval_stack[ply - 2]
-                            : true;
+            if (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
+                improving = ceval > eval_stack[ply - 2];
+            else if (ply >= 4 && eval_stack[ply - 4] != NO_EVAL)
+                improving = ceval > eval_stack[ply - 4];
+            else
+                improving = true;
 
             eval_stack[ply] = ceval;
         }
 
         if (!root_node && !pv_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
         {
-            int margin = RFP_MARGIN * depth;
+            int rfp_margin = (improving ? RFP_IMPROVING_MARGIN : RFP_MARGIN) * depth;
 
-            if (ceval - margin >= beta)
+            if (ceval - rfp_margin >= beta)
             {
                 return (searchOutput){
                     .score = (ceval + beta) / 2,

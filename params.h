@@ -17,7 +17,8 @@ extern int PVS_MIN_DEPTH;
 
 /* ---------- Reverse futility pruning ---------- */
 extern int RFP_MAX_DEPTH;
-extern int RFP_MARGIN;
+extern int RFP_MARGIN;            
+extern int RFP_IMPROVING_MARGIN;
 
 /* ---------- Null move pruning ---------- */
 extern int NMP_MIN_DEPTH;
