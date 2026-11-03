@@ -1,5 +1,4 @@
 #include "eval.h"
-#include "incbin.h"
 #include "lmath.h"
 #include "play.h"
 #include "precomputed.h"
@@ -10,313 +9,246 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ALIGN64 __attribute__((aligned(64)))
+#define FLIP(sq) ((sq) ^ 56)
 
-#ifndef EVALFILE
-#define EVALFILE "quant512hl.bin"
-#endif
+typedef enum {
+    PAWNVAL   = 1,
+    BISHOPVAL = 3,
+    KNIGHTVAL = 3,
+    ROOKVAL   = 5,
+    QUEENVAL  = 9,
+    KINGVAL   = 11,
+} pieceVal;
 
-INCBIN(EvalFile, EVALFILE);
 
-#define NNUE_INPUT 768
-#define NNUE_HL 512
-#define HIDDEN_QUANT_SCALE 255
-#define NNUE_OUTPUT_SCALE 64
-#define NNUE_SCALE (400.0 * 0.5485330048769478)
+static int mg_value[6] = { 82, 365, 337, 477, 1025, 0};
+static int eg_value[6] = { 94, 297, 281, 512,  936, 0};
 
-#define NNUE_FLIP(sq) ((sq) ^ 56)
-
-static int16_t nnue_featureWeights[NNUE_INPUT][NNUE_HL] ALIGN64;
-static int16_t nnue_hiddenBiases[NNUE_HL] ALIGN64;
-static int16_t nnue_outputWeights[2 * NNUE_HL] ALIGN64;
-static int32_t nnue_outputBias;
-
-static int nnue_loaded = 0;
-
-// Converts internal engine piece encoding into nnue encoding
-static const int internal_to_nnue_encoding[6] = {
-	0, 2, 1, 3, 4, 5,
+static int mg_pawn_table[64] = {
+      0,   0,   0,   0,   0,   0,  0,   0,
+     98, 134,  61,  95,  68, 126, 34, -11,
+     -6,   7,  26,  31,  65,  56, 25, -20,
+    -14,  13,   6,  21,  23,  12, 17, -23,
+    -27,  -2,  -5,  12,  17,   6, 10, -25,
+    -26,  -4,  -4, -10,   3,   3, 33, -12,
+    -35,  -1, -20, -23, -15,  24, 38, -22,
+      0,   0,   0,   0,   0,   0,  0,   0,
 };
 
-typedef struct {
-	int16_t vector[2][NNUE_HL] ALIGN64;
-	uint8_t mirror[2];
-	uint8_t needsRefresh[2];
-} NnueAccumulator;
+static int eg_pawn_table[64] = {
+      0,   0,   0,   0,   0,   0,   0,   0,
+    178, 173, 158, 134, 147, 132, 165, 187,
+     94, 100,  85,  67,  56,  53,  82,  84,
+     32,  24,  13,   5,  -2,   4,  17,  17,
+     13,   9,  -3,  -7,  -7,  -8,   3,  -1,
+      4,   7,  -6,   1,   0,  -5,  -1,  -8,
+     13,   8,   8,  10,  13,   0,   2,  -7,
+      0,   0,   0,   0,   0,   0,   0,   0,
+};
 
-static NnueAccumulator nnue_stack[NNUE_MAX_PLY] ALIGN64;
+static int mg_knight_table[64] = {
+    -167, -89, -34, -49,  61, -97, -15, -107,
+     -73, -41,  72,  36,  23,  62,   7,  -17,
+     -47,  60,  37,  65,  84, 129,  73,   44,
+      -9,  17,  19,  53,  37,  69,  18,   22,
+     -13,   4,  16,  13,  28,  19,  21,   -8,
+     -23,  -9,  12,  10,  19,  17,  25,  -16,
+     -29, -53, -12,  -3,  -1,  18, -14,  -19,
+    -105, -21, -58, -33, -17, -28, -19,  -23,
+};
 
-static inline int nnue_clampPly(int ply) {
-	if (ply < 0)
-		return 0;
-	if (ply >= NNUE_MAX_PLY)
-		return NNUE_MAX_PLY - 1;
-	return ply;
-}
+static int eg_knight_table[64] = {
+    -58, -38, -13, -28, -31, -27, -63, -99,
+    -25,  -8, -25,  -2,  -9, -25, -24, -52,
+    -24, -20,  10,   9,  -1,  -9, -19, -41,
+    -17,   3,  22,  22,  22,  11,   8, -18,
+    -18,  -6,  16,  25,  16,  17,   4, -18,
+    -23,  -3,  -1,  15,  10,  -3, -20, -22,
+    -42, -20, -10,  -5,  -2, -20, -23, -44,
+    -29, -51, -23, -15, -22, -18, -50, -64,
+};
 
-static inline bool mirror_or_not(Bitboard king_bitboard) {
-	if (!king_bitboard)
-		return 0;
-	return (__builtin_ctzll(king_bitboard) & 7) > 3;
-}
+static int mg_bishop_table[64] = {
+    -29,   4, -82, -37, -25, -42,   7,  -8,
+    -26,  16, -18, -13,  30,  59,  18, -47,
+    -16,  37,  43,  40,  35,  50,  37,  -2,
+     -4,   5,  19,  50,  37,  37,   7,  -2,
+     -6,  13,  13,  26,  34,  12,  10,   4,
+      0,  15,  15,  15,  14,  27,  18,  10,
+      4,  15,  16,   0,   7,  21,  33,   1,
+    -33,  -3, -14, -21, -13, -12, -39, -21,
+};
 
-// Loads nnue from bin file
-static int nnue_load(void) {
-	const unsigned char *data = gEvalFileData;
-	size_t size = (size_t)gEvalFileSize;
-	size_t offset = 0;
+static int eg_bishop_table[64] = {
+    -14, -21, -11,  -8, -7,  -9, -17, -24,
+     -8,  -4,   7, -12, -3, -13,  -4, -14,
+      2,  -8,   0,  -1, -2,   6,   0,   4,
+     -3,   9,  12,   9, 14,  10,   3,   2,
+     -6,   3,  13,  19,  7,  10,  -3,  -9,
+    -12,  -3,   8,  10, 13,   3,  -7, -15,
+    -14, -18,  -7,  -1,  4,  -9, -15, -27,
+    -23,  -9, -23,  -5, -9, -16,  -5, -17,
+};
 
-	size_t required_size = sizeof(nnue_featureWeights) +
-						   sizeof(nnue_hiddenBiases) +
-						   sizeof(nnue_outputWeights) + sizeof(int16_t);
+static int mg_rook_table[64] = {
+     32,  42,  32,  51, 63,  9,  31,  43,
+     27,  32,  58,  62, 80, 67,  26,  44,
+     -5,  19,  26,  36, 17, 45,  61,  16,
+    -24, -11,   7,  26, 24, 35,  -8, -20,
+    -36, -26, -12,  -1,  9, -7,   6, -23,
+    -45, -25, -16, -17,  3,  0,  -5, -33,
+    -44, -16, -20,  -9, -1, 11,  -6, -71,
+    -19, -13,   1,  17, 16,  7, -37, -26,
+};
 
-	if (size < required_size) {
-		fprintf(stderr,
-				"nnue_load: embedded network too small (%zu < %zu bytes)\n",
-				size, required_size);
-		return 1;
-	}
+static int eg_rook_table[64] = {
+    13, 10, 18, 15, 12,  12,   8,   5,
+    11, 13, 13, 11, -3,   3,   8,   3,
+     7,  7,  7,  5,  4,  -3,  -5,  -3,
+     4,  3, 13,  1,  2,   1,  -1,   2,
+     3,  5,  8,  4, -5,  -6,  -8, -11,
+    -4,  0, -5, -1, -7, -12,  -8, -16,
+    -6, -6,  0,  2, -9,  -9, -11,  -3,
+    -9,  2,  3, -1, -5, -13,   4, -20,
+};
 
-	memcpy(nnue_featureWeights, data + offset, sizeof(nnue_featureWeights));
-	offset += sizeof(nnue_featureWeights);
+static int mg_queen_table[64] = {
+    -28,   0,  29,  12,  59,  44,  43,  45,
+    -24, -39,  -5,   1, -16,  57,  28,  54,
+    -13, -17,   7,   8,  29,  56,  47,  57,
+    -27, -27, -16, -16,  -1,  17,  -2,   1,
+     -9, -26,  -9, -10,  -2,  -4,   3,  -3,
+    -14,   2, -11,  -2,  -5,   2,  14,   5,
+    -35,  -8,  11,   2,   8,  15,  -3,   1,
+     -1, -18,  -9,  10, -15, -25, -31, -50,
+};
 
-	memcpy(nnue_hiddenBiases, data + offset, sizeof(nnue_hiddenBiases));
-	offset += sizeof(nnue_hiddenBiases);
+static int eg_queen_table[64] = {
+     -9,  22,  22,  27,  27,  19,  10,  20,
+    -17,  20,  32,  41,  58,  25,  30,   0,
+    -20,   6,   9,  49,  47,  35,  19,   9,
+      3,  22,  24,  45,  57,  40,  57,  36,
+    -18,  28,  19,  47,  31,  34,  39,  23,
+    -16, -27,  15,   6,   9,  17,  10,   5,
+    -22, -23, -30, -16, -16, -23, -36, -32,
+    -33, -28, -22, -43,  -5, -32, -20, -41,
+};
 
-	memcpy(nnue_outputWeights, data + offset, sizeof(nnue_outputWeights));
-	offset += sizeof(nnue_outputWeights);
+static int mg_king_table[64] = {
+    -65,  23,  16, -15, -56, -34,   2,  13,
+     29,  -1, -20,  -7,  -8,  -4, -38, -29,
+     -9,  24,   2, -16, -20,   6,  22, -22,
+    -17, -20, -12, -27, -30, -25, -14, -36,
+    -49,  -1, -27, -39, -46, -44, -33, -51,
+    -14, -14, -22, -46, -44, -30, -15, -27,
+      1,   7,  -8, -64, -43, -16,   9,   8,
+    -15,  36,  12, -54,   8, -28,  24,  14,
+};
 
-	int16_t bias16 = 0;
-	memcpy(&bias16, data + offset, sizeof(bias16));
-	offset += sizeof(bias16);
-	nnue_outputBias = bias16;
+static int eg_king_table[64] = {
+    -74, -35, -18, -18, -11,  15,   4, -17,
+    -12,  17,  14,  17,  17,  38,  23,  11,
+     10,  17,  23,  15,  20,  45,  44,  13,
+     -8,  22,  24,  27,  26,  33,  26,   3,
+    -18,  -4,  21,  24,  27,  23,   9, -11,
+    -19,  -3,  11,  21,  23,  16,   7,  -9,
+    -27, -11,   4,  13,  14,   4,  -5, -17,
+    -53, -34, -21, -11, -28, -14, -24, -43,
+};
 
-	nnue_loaded = 1;
-	return 0;
-}
+static int* mg_pesto_table[6] = {
+    mg_pawn_table,
+    mg_bishop_table,
+    mg_knight_table,
+    mg_rook_table,
+    mg_queen_table,
+    mg_king_table
+};
 
-static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece,
-								  int sq, bool mirror) {
-	int nnue_piece = internal_to_nnue_encoding[internal_piece];
-	int relSq = (persp == 0) ? NNUE_FLIP(sq) : sq;
-	if (mirror)
-		relSq ^= 7;
-	return (pieceIsOwn ? nnue_piece : nnue_piece + 6) * 64 + relSq;
-}
+static int* eg_pesto_table[6] = {
+    eg_pawn_table,
+    eg_bishop_table,
+    eg_knight_table,
+    eg_rook_table,
+    eg_queen_table,
+    eg_king_table
+};
 
-static inline void nnue_addFeature(int16_t acc[NNUE_HL], int input_index) {
-	const int16_t *w = nnue_featureWeights[input_index];
-	for (int h = 0; h < NNUE_HL; h++)
-		acc[h] += w[h];
-}
-
-static inline void nnue_addSub(int16_t *dst, const int16_t *src,
-							   const int16_t *a, const int16_t *s) {
-	for (int i = 0; i < NNUE_HL; i++)
-		dst[i] = src[i] + a[i] - s[i];
-}
-
-static inline void nnue_addSubSub(int16_t *dst, const int16_t *src,
-								  const int16_t *a, const int16_t *s1,
-								  const int16_t *s2) {
-	for (int i = 0; i < NNUE_HL; i++)
-		dst[i] = src[i] + a[i] - s1[i] - s2[i];
-}
-
-static inline void nnue_addSubAddSub(int16_t *dst, const int16_t *src,
-									 const int16_t *a1, const int16_t *s1,
-									 const int16_t *a2, const int16_t *s2) {
-	for (int i = 0; i < NNUE_HL; i++)
-		dst[i] = src[i] + a1[i] - s1[i] + a2[i] - s2[i];
-}
-
-static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL],
-						   bool mirror) {
-	memcpy(acc, nnue_hiddenBiases, sizeof(nnue_hiddenBiases));
-	int otherSide = ownSide ^ 1;
-
-	for (int p = 0; p < 6; p++) {
-		uint64_t bb = board->pieces[p] & board->color[ownSide];
-		while (bb) {
-			int sq = pop_lsb(&bb);
-			nnue_addFeature(acc, nnue_inputIndex(ownSide, 1, p, sq, mirror));
-		}
-		bb = board->pieces[p] & board->color[otherSide];
-		while (bb) {
-			int sq = pop_lsb(&bb);
-			nnue_addFeature(acc, nnue_inputIndex(ownSide, 0, p, sq, mirror));
-		}
-	}
-}
-
-static void nnue_refreshPersp(Position *board, NnueAccumulator *acc,
-							  int persp) {
-	acc->mirror[persp] =
-		mirror_or_not(board->pieces[KINGNUMBER] & board->color[persp]);
-	nnue_buildSide(board, persp, acc->vector[persp], acc->mirror[persp]);
-	acc->needsRefresh[persp] = 0;
-}
-
-static inline void nnue_ensureReady(Position *board, int ply) {
-	NnueAccumulator *acc = &nnue_stack[ply];
-	if (acc->needsRefresh[0])
-		nnue_refreshPersp(board, acc, 0);
-	if (acc->needsRefresh[1])
-		nnue_refreshPersp(board, acc, 1);
-}
-
-void nnue_refresh(Position *board, int ply) {
-	ply = nnue_clampPly(ply);
-	NnueAccumulator *acc = &nnue_stack[ply];
-	nnue_refreshPersp(board, acc, WHITE);
-	nnue_refreshPersp(board, acc, BLACK);
-}
-
-void nnue_copy(int parent_ply, int child_ply) {
-	parent_ply = nnue_clampPly(parent_ply);
-	child_ply = nnue_clampPly(child_ply);
-	if (parent_ply == child_ply)
-		return;
-	memcpy(&nnue_stack[child_ply], &nnue_stack[parent_ply],
-		   sizeof(NnueAccumulator));
-}
-
-void nnue_update(Position *board, uint16_t move, int parent_ply,
-				 int child_ply) {
-	parent_ply = nnue_clampPly(parent_ply);
-	child_ply = nnue_clampPly(child_ply);
-
-	int to = move_to(move);
-	int from = move_from(move);
-	int flag = move_flag(move);
-	int color = board->turn;
-	int them = !color;
-	int piece = board->mailbox[from];
-	int victim = board->mailbox[to];
-
-	if (piece == EMPTYNUMBER) {
-		nnue_copy(parent_ply, child_ply);
-		return;
-	}
-
-	nnue_ensureReady(board, parent_ply);
-
-	NnueAccumulator *parent = &nnue_stack[parent_ply];
-	NnueAccumulator *child = &nnue_stack[child_ply];
-
-	bool isEp =
-		(piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1);
-	int capSq = to + (color == 0 ? 8 : -8);
-
-	int placed = piece;
-	switch (flag) { // Promotions
-	case 5: placed = BISHOPNUMBER; break;
-	case 6: placed = HORSENUMBER; break;
-	case 7: placed = ROOKNUMBER; break;
-	case 8: placed = QUEENNUMBER; break;
-	}
-
-	int rookFrom = -1, rookTo = -1;
-	switch (flag) { // Castling
-	case 1: rookFrom = H1; rookTo = F1; break;
-	case 2: rookFrom = A1; rookTo = D1; break;
-	case 4: rookFrom = H8; rookTo = F8; break;
-	case 3: rookFrom = A8; rookTo = D8; break;
-	}
-
-	bool kingMirrorFlip =
-		(piece == KINGNUMBER) && (((from & 7) > 3) != ((to & 7) > 3));
-
-	for (int persp = 0; persp < 2; persp++) {
-		if (kingMirrorFlip && persp == color) {
-			child->mirror[persp] = ((to & 7) > 3);
-			child->needsRefresh[persp] = 1;
-			continue;
-		}
-
-		bool mir = parent->mirror[persp];
-		child->mirror[persp] = parent->mirror[persp];
-		child->needsRefresh[persp] = 0;
-
-		int own = (color == persp);
-		int theirs = (them == persp);
-		int addIdx[2], subIdx[2], na = 0, ns = 0;
-
-		subIdx[ns++] = nnue_inputIndex(persp, own, piece, from, mir);
-		if (isEp)
-			subIdx[ns++] =
-				nnue_inputIndex(persp, theirs, PAWNNUMBER, capSq, mir);
-		else if (victim != EMPTYNUMBER)
-			subIdx[ns++] = nnue_inputIndex(persp, theirs, victim, to, mir);
-
-		addIdx[na++] = nnue_inputIndex(persp, own, placed, to, mir);
-		if (rookFrom >= 0) {
-			subIdx[ns++] =
-				nnue_inputIndex(persp, own, ROOKNUMBER, rookFrom, mir);
-			addIdx[na++] = nnue_inputIndex(persp, own, ROOKNUMBER, rookTo, mir);
-		}
-
-		int16_t *dst = child->vector[persp];
-		const int16_t *src = parent->vector[persp];
-
-		if (na == 1 && ns == 1)
-			nnue_addSub(dst, src, nnue_featureWeights[addIdx[0]],
-						nnue_featureWeights[subIdx[0]]);
-		else if (na == 1 && ns == 2)
-			nnue_addSubSub(dst, src, nnue_featureWeights[addIdx[0]],
-						   nnue_featureWeights[subIdx[0]],
-						   nnue_featureWeights[subIdx[1]]);
-		else 
-			nnue_addSubAddSub(dst, src, nnue_featureWeights[addIdx[0]],
-							  nnue_featureWeights[subIdx[0]],
-							  nnue_featureWeights[addIdx[1]],
-							  nnue_featureWeights[subIdx[1]]);
-	}
-}
-
-static int nnue_forward(Position *board, int ply) {
-	ply = nnue_clampPly(ply);
-	nnue_ensureReady(board, ply);
-
-	const int16_t *accUs = nnue_stack[ply].vector[board->turn];
-	const int16_t *accThem = nnue_stack[ply].vector[board->turn ^ 1];
-
-	int s = 0;
-	for (int h = 0; h < NNUE_HL; h++) {
-		int c = accUs[h];
-		c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
-		s += (int16_t)(c * nnue_outputWeights[h]) * c;
-
-		c = accThem[h];
-		c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
-		s += (int16_t)(c * nnue_outputWeights[NNUE_HL + h]) * c;
-	}
-
-	long long out = s / HIDDEN_QUANT_SCALE + nnue_outputBias;
-	out =
-		out * NNUE_SCALE / ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
-	return (int)out;
-}
+static int gamephaseInc[12] = {0,0,1,1,1,1,2,2,4,4,0,0};
+static int mg_table[12][64];
+static int eg_table[12][64];
 
 void init_tables(void) {
-	if (nnue_load() != 0) {
-		fprintf(stderr, "FATAL: failed to load embedded NNUE network (built "
-						"with EVALFILE=" EVALFILE ")\n");
-		exit(1);
-	}
+    int pc, p, sq;
+    for (p = 0, pc = 0; p <= 5; pc += 2, p++) {
+        for (sq = 0; sq < 64; sq++) {
+            mg_table[pc]    [sq] = mg_value[p] + mg_pesto_table[p][sq];
+            eg_table[pc]    [sq] = eg_value[p] + eg_pesto_table[p][sq];
+            mg_table[pc + 1][sq] = mg_value[p] + mg_pesto_table[p][FLIP(sq)];
+            eg_table[pc + 1][sq] = eg_value[p] + eg_pesto_table[p][FLIP(sq)];
+        }
+    }
 }
 
 int material_phase(Position *board) {
-	int pawns = __builtin_popcountll(board->pieces[PAWNNUMBER]);
-	int bishops = __builtin_popcountll(board->pieces[BISHOPNUMBER]);
-	int horses = __builtin_popcountll(board->pieces[HORSENUMBER]);
-	int rooks = __builtin_popcountll(board->pieces[ROOKNUMBER]);
-	int queens = __builtin_popcountll(board->pieces[QUEENNUMBER]);
+    int pawns   = __builtin_popcountll(board->pieces[PAWNNUMBER]);
+    int bishops = __builtin_popcountll(board->pieces[BISHOPNUMBER]);
+    int horses  = __builtin_popcountll(board->pieces[HORSENUMBER]);
+    int rooks   = __builtin_popcountll(board->pieces[ROOKNUMBER]);
+    int queens  = __builtin_popcountll(board->pieces[QUEENNUMBER]);
 
-	return 100 * pawns + 300 * bishops + 300 * horses + 500 * rooks +
-		   900 * queens;
+    return 100 * pawns + 300 * bishops + 300 * horses +
+           500 * rooks + 900 * queens;
 }
 
+void nnue_refresh(Position *board, int ply) {
+    (void)board; (void)ply;
+}
+
+void nnue_copy(int parent_ply, int child_ply) {
+    (void)parent_ply; (void)child_ply;
+}
+
+void nnue_update(Position *board, uint16_t move, int parent_ply, int child_ply) {
+    (void)board; (void)move; (void)parent_ply; (void)child_ply;
+}
+
+
 int eval(Position *board, int ply) {
-	return nnue_forward(board, ply) * (25000 + material_phase(board)) / 32768;
+    (void)ply;
+
+    int mg[2] = {0, 0};
+    int eg[2] = {0, 0};
+    int gamePhase = 0;
+
+    for (int piece = 0; piece < 6; piece++) {
+        uint64_t bb = board->pieces[piece] & board->color[0];
+        while (bb) {
+            int sq = __builtin_ctzll(bb);
+            bb &= bb - 1;
+
+            int pc = 2 * piece + 0;
+            mg[0] += mg_table[pc][sq];
+            eg[0] += eg_table[pc][sq];
+            gamePhase += gamephaseInc[pc];
+        }
+
+        bb = board->pieces[piece] & board->color[1];
+        while (bb) {
+            int sq = __builtin_ctzll(bb);
+            bb &= bb - 1;
+
+            int pc = 2 * piece + 1;
+            mg[1] += mg_table[pc][sq];
+            eg[1] += eg_table[pc][sq];
+            gamePhase += gamephaseInc[pc];
+        }
+    }
+
+    int mgScore = mg[board->turn]  - mg[!board->turn];
+    int egScore = eg[board->turn]  - eg[!board->turn];
+
+    if (gamePhase > 24) gamePhase = 24;
+    int egPhase = 24 - gamePhase;
+    return (mgScore * gamePhase + egScore * egPhase) / 24;
 }
