@@ -504,6 +504,7 @@ void uciStart()
         {
             printf("id name Crustik 0.4.0\nid author Dejon Eltahan\n");
             printf("option name Hash type spin default %d min %d max %d\n", TT_DEFAULT_MB, TT_MIN_MB, TT_MAX_MB);
+            printf("option name Threads type spin default 1 min 1 max 1");
             printf("option name SoftNodes type check default false\n");
             printf("uciok\n");
         }
