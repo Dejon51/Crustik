@@ -60,7 +60,7 @@ void reset_history(void)
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(capture_history, 0, sizeof capture_history);
-    memset(counter_moves, 0, sizeof counter_moves); 
+    memset(counter_moves, 0, sizeof counter_moves);
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
@@ -536,8 +536,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (in_check && ply < MAX_GAME_PLY)
         eval_stack[ply] = NO_EVAL;
 
+    int check_extension = 0;
     if (in_check && depth < MAX_DEPTH)
-        depth++;
+        check_extension = 1;
 
     if (depth >= IIR_MIN_DEPTH && tt_move == 0 && !in_check)
     {
@@ -753,7 +754,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
         }
 
-        int extension = 0;
+        int extension = check_extension;
 
         if (!root_node &&
             stack->excluded_move == 0 &&
@@ -780,7 +781,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (se_result.score < singular_beta)
             {
-                extension = SE_EXTENSION;
+                extension += SE_EXTENSION;
             }
             else if (se_result.score >= beta && (beta - alpha) == 1)
             {
@@ -788,7 +789,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             }
             else if (tt_score >= beta)
             {
-                extension = -SE_NEG_EXTENSION;
+                extension -= SE_NEG_EXTENSION;
             }
         }
 
