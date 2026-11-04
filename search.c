@@ -60,7 +60,7 @@ void reset_history(void)
     memset(killer_moves, 0, sizeof killer_moves);
     memset(cont_hist, 0, sizeof cont_hist);
     memset(capture_history, 0, sizeof capture_history);
-    memset(counter_moves, 0, sizeof counter_moves); 
+    memset(counter_moves, 0, sizeof counter_moves);
     memset(cont_stack, 0, sizeof cont_stack);
     memset(pawn_corrhist, 0, sizeof pawn_corrhist);
     memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
@@ -833,6 +833,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             score = -search(&copy, depth - 1 + extension, ply + 1,
                             -beta, -alpha, stop, &child_pv, &no_excl)
                          .score;
+            if (extension < 0 && score <= alpha && !stop->stop)
+            {
+                child_pv.length = 0;
+                score = -search(&copy, depth - 1, ply + 1,
+                                -beta, -alpha, stop, &child_pv, &no_excl)
+                             .score;
+            }
         }
         else
         {
