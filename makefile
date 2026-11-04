@@ -1,91 +1,96 @@
-# Engine name
-EXE := crustik
+EXE ?= crustik
 
-# Compiler
-CC := gcc
+CC ?= gcc
 
-# Sources
 SRCS := \
 	main.c \
-	bench.c \
-	eval.c \
-	fen.c \
-	lmath.c \
 	play.c \
-	search.c \
-	text.c \
-	tt.c \
+	lmath.c \
+	eval.c \
 	uci.c \
+	fen.c \
+	search.c \
 	zobrist.c \
+	tt.c \
+	bench.c \
+	text.c \
 	magics.c \
 	params.c \
 	ordermoves.c
 
 OBJS := $(SRCS:.c=.o)
 
-# Standard
-STD := -std=c2x
-
-EVALFILE := quant512hl.bin
+EVALFILE ?= quant512hl.bin
 EVALDEF  := -DEVALFILE=\"$(EVALFILE)\"
 
+TARGET_WINDOWS ?= 0
 ifeq ($(OS),Windows_NT)
-	DEFS :=
-	EXE_SUFFIX := .exe
-else
-	DEFS := -D_POSIX_C_SOURCE=200809L
-	EXE_SUFFIX :=
+	TARGET_WINDOWS := 1
 endif
 
-EXE := $(EXE)$(EXE_SUFFIX)
+ifeq ($(TARGET_WINDOWS),1)
+	EXE_SUFFIX  := .exe
+	# Win32 CreateThread is used directly - no winpthreads dependency.
+	THREADFLAGS :=
+else
+	EXE_SUFFIX  :=
+	# Required on BOTH the compile and the link line.
+	THREADFLAGS := -pthread
+endif
 
-# Warnings
-WARN := -Wall -Wextra -Wshadow -Wpedantic
+TARGET := $(EXE)$(EXE_SUFFIX)
 
-NATIVE ?= 0
+WARN := -Wall -Wextra -Wshadow
+
+NATIVE ?= 1
 ifeq ($(NATIVE),1)
-	ARCH := -march=native -mtune=native
+	ARCH := -march=native
 else
 	ARCH :=
 endif
 
-# Link-time optimization: "auto" lets GCC pick a parallel job count
-# (GCC 10+). For older GCC use e.g. LTO := -flto=4
 LTO ?= -flto=auto
 
-# Optimizations
-OPT := -O3 -DNDEBUG $(LTO) $(ARCH)
 
-CFLAGS := $(STD) $(DEFS) $(WARN) $(OPT) $(EVALDEF)
-LDFLAGS := $(LTO)
-LDLIBS := -lm
+BASEFLAGS := $(WARN) $(THREADFLAGS) $(EVALDEF)
 
-all: $(EXE)
+CFLAGS  ?= $(BASEFLAGS) -DNDEBUG -O3 $(LTO) $(ARCH)
+LDFLAGS ?= $(LTO) $(THREADFLAGS)
+LDLIBS  := -lm
 
-$(EXE): $(OBJS)
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-bench: $(EXE)
-	./$(EXE) bench
+bench: $(TARGET)
+	./$(TARGET) bench
 
 debug: clean
-	$(MAKE) CFLAGS="$(STD) $(DEFS) $(WARN) -O0 -g3 $(EVALDEF)" LDFLAGS="" LDLIBS="$(LDLIBS)"
+	$(MAKE) CFLAGS="$(BASEFLAGS) -O0 -g3" LDFLAGS="$(THREADFLAGS)"
 
 sanitize: clean
-	$(MAKE) CFLAGS="$(STD) $(DEFS) $(WARN) -O1 -g3 -fsanitize=address,undefined -fno-omit-frame-pointer $(EVALDEF)" \
-		LDFLAGS="-fsanitize=address,undefined" \
-		LDLIBS="$(LDLIBS)"
+	$(MAKE) CFLAGS="$(BASEFLAGS) -O1 -g3 -fsanitize=address,undefined -fno-omit-frame-pointer" \
+		LDFLAGS="$(THREADFLAGS) -fsanitize=address,undefined"
 
-pgo-build: clean
-	$(MAKE) CFLAGS="$(CFLAGS) -fprofile-generate" LDFLAGS="$(LDFLAGS) -fprofile-generate" LDLIBS="$(LDLIBS)"
-	./$(EXE) bench
+tsan: clean
+	$(MAKE) LTO="" NATIVE=0 \
+		CFLAGS="$(BASEFLAGS) -O1 -g3 -fsanitize=thread -fno-omit-frame-pointer" \
+		LDFLAGS="$(THREADFLAGS) -fsanitize=thread"
+
+pgo: clean
+	$(MAKE) CFLAGS="$(CFLAGS) -fprofile-generate" LDFLAGS="$(LDFLAGS) -fprofile-generate"
+	./$(TARGET) bench
 	$(MAKE) clean
-	$(MAKE) CFLAGS="$(CFLAGS) -fprofile-use -fprofile-correction" LDFLAGS="$(LDFLAGS) -fprofile-use" LDLIBS="$(LDLIBS)"
+	$(MAKE) CFLAGS="$(CFLAGS) -fprofile-use -fprofile-correction" LDFLAGS="$(LDFLAGS) -fprofile-use"
 
 clean:
-	rm -f $(OBJS) $(EXE)
+	rm -f $(OBJS) $(TARGET)
 
-.PHONY: all clean bench debug sanitize pgo-build
+distclean: clean
+	rm -f *.gcda *.gcno
+
+.PHONY: all clean distclean bench debug sanitize tsan pgo

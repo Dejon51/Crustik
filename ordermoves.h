@@ -4,8 +4,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "play.h"
+#include "search.h"
 
-MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move);
+MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int ply, uint16_t tt_move);
 
 typedef enum
 {
@@ -22,6 +23,7 @@ typedef enum
 
 typedef struct
 {
+	ThreadData *td;
 	Position *board;
 	int ply;
 	int stage;
@@ -41,7 +43,7 @@ typedef struct
 	int bad_i;
 } MovePicker;
 
-void movepicker_init(MovePicker *mp, Position *board, int ply, uint16_t tt_move, bool in_check);
+void movepicker_init(MovePicker *mp, ThreadData *td, Position *board, int ply, uint16_t tt_move, bool in_check);
 uint16_t movepicker_next(MovePicker *mp);
 bool move_is_pseudolegal(Position *b, uint16_t m);
 

@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <math.h>
 #include <inttypes.h>
 
@@ -10,31 +11,161 @@
 #include "lmath.h"
 #include "eval.h"
 #include "search.h"
+#include "threads.h"
 #include "tt.h"
 #include "zobrist.h"
 #include "params.h"
 #include "ordermoves.h"
 
+#ifdef _WIN32
+#include <malloc.h>
+#endif
+
+#define SMP_VOTING 0
+
 uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
 
-static uint64_t search_path_hash[MAX_SEARCH_PLY];
+int lmr_table[MAX_DEPTH + 1][MAX_LMR_MOVES + 1];
 
-int butterfly_hist[2][64][64];
-uint16_t killer_moves[MAX_GAME_PLY][2];
-int eval_stack[MAX_GAME_PLY];
-
-int cont_hist[2][6][64][6][64];
-int capture_history[2][6][64][6];
-
-uint16_t counter_moves[2][6][64];
-
-static int pawn_corrhist[2][CORRHIST_SIZE];
-static int nonpawn_corrhist[2][CORRHIST_SIZE];
 static uint64_t pawn_corrhist_keys[2][64];
 static bool corrhist_initialized = false;
 
-ContRecord cont_stack[MAX_SEARCH_PLY];
+static ThreadData *threads_data[MAX_THREADS];
+static Position thread_boards[MAX_THREADS];
+static ThreadPool pool;
+static int num_threads = DEFAULT_THREADS;
+
+void search_set_threads(int n)
+{
+    if (n < 1)
+        n = 1;
+    if (n > MAX_THREADS)
+        n = MAX_THREADS;
+    num_threads = n;
+}
+
+int search_get_threads(void)
+{
+    return num_threads;
+}
+
+static void td_clear_history(ThreadData *td)
+{
+    memset(td->butterfly_hist, 0, sizeof td->butterfly_hist);
+    memset(td->killer_moves, 0, sizeof td->killer_moves);
+    memset(td->cont_hist, 0, sizeof td->cont_hist);
+    memset(td->capture_history, 0, sizeof td->capture_history);
+    memset(td->counter_moves, 0, sizeof td->counter_moves);
+    memset(td->cont_stack, 0, sizeof td->cont_stack);
+    memset(td->pawn_corrhist, 0, sizeof td->pawn_corrhist);
+    memset(td->nonpawn_corrhist, 0, sizeof td->nonpawn_corrhist);
+
+    for (int i = 0; i < MAX_GAME_PLY; i++)
+        td->eval_stack[i] = NO_EVAL;
+}
+
+_Static_assert(_Alignof(ThreadData) <= 64,
+               "ThreadData needs stronger alignment than the allocator provides");
+
+static void *td_alloc_aligned(size_t size)
+{
+#ifdef _WIN32
+    return _aligned_malloc(size, 64);
+#else
+    void *p = NULL;
+    if (posix_memalign(&p, 64, size) != 0)
+        return NULL;
+    return p;
+#endif
+}
+
+static ThreadData *td_get(int index)
+{
+    if (threads_data[index])
+        return threads_data[index];
+
+    ThreadData *td = (ThreadData *)td_alloc_aligned(sizeof(ThreadData));
+    if (!td)
+        return NULL;
+
+    memset(td, 0, sizeof(ThreadData));
+
+    td->thread_id = index;
+    td_clear_history(td);
+
+    threads_data[index] = td;
+    return td;
+}
+
+void reset_history(void)
+{
+    for (int i = 0; i < MAX_THREADS; i++)
+        if (threads_data[i])
+            td_clear_history(threads_data[i]);
+}
+
+static inline uint64_t pool_nodes(const ThreadData *td)
+{
+    ThreadPool *p = td->pool;
+    if (!p || p->count <= 1)
+        return td->stop.nodes;
+
+    uint64_t total = 0;
+    for (int i = 0; i < p->count; i++)
+        if (p->threads[i])
+            total += p->threads[i]->stop.nodes;
+    return total;
+}
+
+static inline void pool_abort(ThreadData *td)
+{
+    if (td->pool)
+        td->pool->stop_flag = 1;
+}
+
+static inline void check_limits(ThreadData *td)
+{
+    stopConditions *stop = &td->stop;
+
+    if (stop->stop)
+        return;
+
+    bool solo = (!td->pool || td->pool->count <= 1);
+
+    if (solo)
+    {
+        if (stop->max_nodes && stop->nodes >= stop->max_nodes)
+        {
+            stop->stop = 1;
+            return;
+        }
+    }
+
+    if ((stop->nodes & 2047) != 0)
+        return;
+
+    if (td->pool && td->pool->stop_flag)
+    {
+        stop->stop = 1;
+        return;
+    }
+
+    if (stop->max_time && stop->start_time &&
+        get_time_ms() - stop->start_time >= stop->max_time)
+    {
+        stop->stop = 1;
+        pool_abort(td);
+        return;
+    }
+
+    if (!solo && stop->max_nodes && pool_nodes(td) >= stop->max_nodes)
+    {
+        stop->stop = 1;
+        pool_abort(td);
+    }
+}
+
 
 static void init_corrhist(void)
 {
@@ -54,26 +185,17 @@ static void init_corrhist(void)
     corrhist_initialized = true;
 }
 
-void reset_history(void)
-{
-    memset(butterfly_hist, 0, sizeof butterfly_hist);
-    memset(killer_moves, 0, sizeof killer_moves);
-    memset(cont_hist, 0, sizeof cont_hist);
-    memset(capture_history, 0, sizeof capture_history);
-    memset(counter_moves, 0, sizeof counter_moves); 
-    memset(cont_stack, 0, sizeof cont_stack);
-    memset(pawn_corrhist, 0, sizeof pawn_corrhist);
-    memset(nonpawn_corrhist, 0, sizeof nonpawn_corrhist);
-    if (!corrhist_initialized)
-        init_corrhist();
-    for (int i = 0; i < MAX_GAME_PLY; i++)
-        eval_stack[i] = NO_EVAL;
-}
-
-int lmr_table[MAX_DEPTH + 1][MAX_LMR_MOVES + 1];
-
 void init_lmr()
 {
+
+    static bool lmr_initialized = false;
+    if (lmr_initialized)
+        return;
+    lmr_initialized = true;
+
+    if (!corrhist_initialized)
+        init_corrhist();
+
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
         for (int move = 1; move <= MAX_LMR_MOVES; move++)
@@ -95,19 +217,19 @@ void init_lmr()
     }
 }
 
-static inline int quiet_history_score(Position *board, int ply, int move)
+static inline int quiet_history_score(ThreadData *td, Position *board, int ply, int move)
 {
     int from = move_from(move);
     int to = move_to(move);
     int piece = piece_on_square(board, from);
 
-    int score = butterfly_hist[board->turn][from][to];
+    int score = td->butterfly_hist[board->turn][from][to];
 
-    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid && piece != -1)
     {
-        int prev_piece = cont_stack[ply - 1].piece;
-        int prev_to = cont_stack[ply - 1].to;
-        score += cont_hist[board->turn][prev_piece][prev_to][piece][to];
+        int prev_piece = td->cont_stack[ply - 1].piece;
+        int prev_to = td->cont_stack[ply - 1].to;
+        score += td->cont_hist[board->turn][prev_piece][prev_to][piece][to];
     }
 
     return score;
@@ -190,7 +312,7 @@ static inline int lmr_reduction(int depth, int move_number)
     return lmr_table[depth][move_number];
 }
 
-static bool is_repetition_or_fifty(Position *board, int ply)
+static bool is_repetition_or_fifty(ThreadData *td, Position *board, int ply)
 {
     if (board->halfmoves >= 100)
         return true;
@@ -210,7 +332,7 @@ static bool is_repetition_or_fifty(Position *board, int ply)
             int local_idx = idx - base;
             if (local_idx < 0 || local_idx >= MAX_SEARCH_PLY)
                 continue;
-            past_hash = search_path_hash[local_idx];
+            past_hash = td->search_path_hash[local_idx];
         }
         else
         {
@@ -276,13 +398,13 @@ static int clamp_int_local(int v, int lo, int hi)
     return v;
 }
 
-static int corrected_eval(Position *board, int raw_eval)
+static int corrected_eval(ThreadData *td, Position *board, int raw_eval)
 {
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
     int mkey = compute_material_key(board);
 
-    int correction = pawn_corrhist[board->turn][pkey] +
-                     nonpawn_corrhist[board->turn][mkey];
+    int correction = td->pawn_corrhist[board->turn][pkey] +
+                     td->nonpawn_corrhist[board->turn][mkey];
 
     correction /= CORRHIST_GRAIN;
     correction = clamp_int_local(correction, -CORRHIST_MAX_APPLY, CORRHIST_MAX_APPLY);
@@ -290,7 +412,7 @@ static int corrected_eval(Position *board, int raw_eval)
     return raw_eval + correction;
 }
 
-static void update_corrhist(Position *board, int depth, int static_eval, int best_score)
+static void update_corrhist(ThreadData *td, Position *board, int depth, int static_eval, int best_score)
 {
     if (is_mate_score(best_score))
         return;
@@ -302,36 +424,35 @@ static void update_corrhist(Position *board, int depth, int static_eval, int bes
     int mkey = compute_material_key(board);
     int side = board->turn;
 
-    int *pc = &pawn_corrhist[side][pkey];
+    int *pc = &td->pawn_corrhist[side][pkey];
     *pc += bonus - *pc * abs(bonus) / CORRHIST_LIMIT;
 
-    int *npc = &nonpawn_corrhist[side][mkey];
+    int *npc = &td->nonpawn_corrhist[side][mkey];
     *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
 }
 
-int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
+int quiesce(ThreadData *td, Position *board, int alpha, int beta, int ply)
 {
+    stopConditions *stop = &td->stop;
+
     if (ply > stop->seldepth)
         stop->seldepth = ply;
 
-    if (stop->max_time && stop->start_time && (stop->nodes & 2047) == 0 &&
-        get_time_ms() - stop->start_time >= stop->max_time)
-        stop->stop = 1;
-
-    if (stop->max_nodes && stop->nodes >= stop->max_nodes)
-        stop->stop = 1;
+    check_limits(td);
 
     if (stop->stop)
-        return eval(board, ply);
+        return eval(td, board, ply);
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return eval(board, ply);
+        return eval(td, board, ply);
 
     int alpha_orig = alpha;
     uint16_t tt_move = 0;
     int in_check = king_in_check(board, board->turn);
 
-    TTEntry *entry = tt_probe(board->hash);
+    TTEntry tt_entry;
+    TTEntry *entry = tt_probe_into(board->hash, &tt_entry) ? &tt_entry : NULL;
+
     if (entry)
     {
         int tt_score = score_from_tt(entry->score, ply);
@@ -356,7 +477,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     }
     else
     {
-        static_eval = (entry && entry->eval != NO_EVAL) ? entry->eval : eval(board, ply);
+        static_eval = (entry && entry->eval != NO_EVAL) ? entry->eval : eval(td, board, ply);
 
         if (static_eval >= beta)
             return static_eval;
@@ -377,7 +498,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     else
         qsearchMoves(board, &move_list, board->turn);
 
-    move_list = ordermoves(board, &move_list, ply, tt_move);
+    move_list = ordermoves(td, board, &move_list, ply, tt_move);
 
     uint16_t best_move = 0;
     int legal_moves_seen = 0;
@@ -424,7 +545,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
                 continue;
         }
 
-        nnue_update(board, move, ply, ply + 1);
+        nnue_update(td, board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -435,7 +556,7 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
         stop->nodes++;
         legal_moves_seen++;
 
-        int score = -quiesce(&copy, -beta, -alpha, ply + 1, stop);
+        int score = -quiesce(td, &copy, -beta, -alpha, ply + 1);
 
         if (stop->stop)
             break;
@@ -470,9 +591,11 @@ int quiesce(Position *board, int alpha, int beta, int ply, stopConditions *stop)
     return best_score;
 }
 
-searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
-                    stopConditions *stop, PVLine *pv, SearchStack *stack)
+searchOutput search(ThreadData *td, Position *board, int depth, int ply,
+                    int alpha, int beta, PVLine *pv, SearchStack *stack)
 {
+    stopConditions *stop = &td->stop;
+
     searchOutput output = {0};
     int alpha_orig = alpha;
     uint16_t tt_move = 0;
@@ -490,26 +613,23 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     if (ply > stop->seldepth)
         stop->seldepth = ply;
 
-    if (stop->max_time && stop->start_time && (stop->nodes & 2047) == 0 &&
-        get_time_ms() - stop->start_time >= stop->max_time)
-        stop->stop = 1;
-
-    if (stop->max_nodes && stop->nodes >= stop->max_nodes)
-        stop->stop = 1;
+    check_limits(td);
 
     if (stop->stop)
         return output;
 
     if (ply >= MAX_SEARCH_PLY - 1)
-        return (searchOutput){.score = eval(board, ply), .move = 0};
+        return (searchOutput){.score = eval(td, board, ply), .move = 0};
 
     if (ply < MAX_SEARCH_PLY)
-        search_path_hash[ply] = board->hash;
+        td->search_path_hash[ply] = board->hash;
 
-    if (ply > 0 && is_repetition_or_fifty(board, ply))
+    if (ply > 0 && is_repetition_or_fifty(td, board, ply))
         return (searchOutput){.score = 0, .move = 0};
 
-    TTEntry *entry = tt_probe(board->hash);
+    TTEntry tt_entry;
+    TTEntry *entry = tt_probe_into(board->hash, &tt_entry) ? &tt_entry : NULL;
+
     if (entry && !entry->is_qsearch)
     {
         tt_move = entry->move;
@@ -528,13 +648,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     }
 
     if (depth <= 0)
-        return (searchOutput){.score = quiesce(board, alpha, beta, ply, stop), .move = 0};
+        return (searchOutput){.score = quiesce(td, board, alpha, beta, ply), .move = 0};
 
     int in_check = king_in_check(board, board->turn);
     bool root_node = (ply == 0);
 
     if (in_check && ply < MAX_GAME_PLY)
-        eval_stack[ply] = NO_EVAL;
+        td->eval_stack[ply] = NO_EVAL;
 
     if (in_check && depth < MAX_DEPTH)
         depth++;
@@ -553,17 +673,17 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (entry && entry->eval != NO_EVAL)
             static_eval = entry->eval;
         else
-            static_eval = eval(board, ply);
+            static_eval = eval(td, board, ply);
 
-        ceval = corrected_eval(board, static_eval);
+        ceval = corrected_eval(td, board, static_eval);
 
         if (ply < MAX_GAME_PLY)
         {
-            improving = (ply >= 2 && eval_stack[ply - 2] != NO_EVAL)
-                            ? ceval > eval_stack[ply - 2]
+            improving = (ply >= 2 && td->eval_stack[ply - 2] != NO_EVAL)
+                            ? ceval > td->eval_stack[ply - 2]
                             : true;
 
-            eval_stack[ply] = ceval;
+            td->eval_stack[ply] = ceval;
         }
 
         if (!root_node && !pv_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
@@ -588,14 +708,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             Position copy = *board;
             make_null_move(&copy);
             stop->nodes++;
-            nnue_copy(ply, ply + 1);
+            nnue_copy(td, ply, ply + 1);
 
             if (ply < MAX_SEARCH_PLY)
-                cont_stack[ply].valid = false;
+                td->cont_stack[ply].valid = false;
 
-            int score = -search(&copy, depth - R - 1,
+            int score = -search(td, &copy, depth - R - 1,
                                 ply + 1, -beta, -beta + 1,
-                                stop, NULL, &no_excl)
+                                NULL, &no_excl)
                              .score;
 
             if (stop->stop)
@@ -620,7 +740,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         {
             MoveList captures = {0};
             qsearchMoves(board, &captures, board->turn);
-            captures = ordermoves(board, &captures, ply, tt_move);
+            captures = ordermoves(td, board, &captures, ply, tt_move);
 
             for (unsigned int i = 0; i < captures.offset; i++)
             {
@@ -629,7 +749,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 if (!see_ge(board, move, PROBCUT_SEE_THRESHOLD))
                     continue;
 
-                nnue_update(board, move, ply, ply + 1);
+                nnue_update(td, board, move, ply, ply + 1);
                 Position copy = *board;
                 makeMove(&copy, &captures, i);
 
@@ -639,14 +759,14 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     continue;
 
                 stop->nodes++;
-                int probcut_value = -quiesce(&copy, -probcut_beta,
-                                             -probcut_beta + 1, ply + 1, stop);
+                int probcut_value = -quiesce(td, &copy, -probcut_beta,
+                                             -probcut_beta + 1, ply + 1);
 
                 if (!stop->stop && probcut_value >= probcut_beta)
                 {
-                    probcut_value = -search(&copy, probcut_depth, ply + 1,
+                    probcut_value = -search(td, &copy, probcut_depth, ply + 1,
                                             -probcut_beta, -probcut_beta + 1,
-                                            stop, NULL, &no_excl)
+                                            NULL, &no_excl)
                                          .score;
                 }
 
@@ -667,7 +787,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     }
 
     MovePicker mp;
-    movepicker_init(&mp, board, ply, tt_move, in_check);
+    movepicker_init(&mp, td, board, ply, tt_move, in_check);
 
     int best_score = -MATE_SCORE;
     uint16_t best_move = 0;
@@ -697,8 +817,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         bool is_capture = is_capture_move(board, move);
         bool is_killer =
-            move == killer_moves[ply][0] ||
-            move == killer_moves[ply][1];
+            move == td->killer_moves[ply][0] ||
+            move == td->killer_moves[ply][1];
         bool is_promotion = is_promotion_move(move);
 
         if (!root_node &&
@@ -734,7 +854,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             i >= HISTPRUNE_MIN_MOVES &&
             move != tt_move)
         {
-            int hist_score = quiet_history_score(board, ply, move);
+            int hist_score = quiet_history_score(td, board, ply, move);
             int history_threshold = -HISTPRUNE_MARGIN * depth;
             if (hist_score < history_threshold)
                 continue;
@@ -771,9 +891,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             SearchStack singular_stack = {.excluded_move = move};
 
-            searchOutput se_result = search(board, singular_depth, ply,
+            searchOutput se_result = search(td, board, singular_depth, ply,
                                             singular_beta - 1, singular_beta,
-                                            stop, NULL, &singular_stack);
+                                            NULL, &singular_stack);
 
             if (stop->stop)
                 return (searchOutput){0};
@@ -810,7 +930,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             continue;
 
         stop->nodes++;
-        nnue_update(board, move, ply, ply + 1);
+        nnue_update(td, board, move, ply, ply + 1);
         searched_any = 1;
         if (best_move == 0)
             best_move = move;
@@ -820,9 +940,9 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (ply < MAX_SEARCH_PLY)
         {
-            cont_stack[ply].piece = moved_piece;
-            cont_stack[ply].to = move_to(move);
-            cont_stack[ply].valid = true;
+            td->cont_stack[ply].piece = moved_piece;
+            td->cont_stack[ply].to = move_to(move);
+            td->cont_stack[ply].valid = true;
         }
 
         PVLine child_pv = {0};
@@ -830,8 +950,8 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
         if (i == 0 || depth < PVS_MIN_DEPTH)
         {
-            score = -search(&copy, depth - 1 + extension, ply + 1,
-                            -beta, -alpha, stop, &child_pv, &no_excl)
+            score = -search(td, &copy, depth - 1 + extension, ply + 1,
+                            -beta, -alpha, &child_pv, &no_excl)
                          .score;
         }
         else
@@ -843,7 +963,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                 int is_pv_node = (beta - alpha) > 1;
                 int from = move_from(move);
                 int to = move_to(move);
-                int hist = butterfly_hist[board->turn][from][to];
+                int hist = td->butterfly_hist[board->turn][from][to];
 
                 reduction = lmr_reduction(depth, i + 1) * 1024;
 
@@ -865,29 +985,29 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
 
             if (reduction > 0)
             {
-                score = -search(&copy, depth - 1 - reduction, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, &no_excl)
+                score = -search(td, &copy, depth - 1 - reduction, ply + 1,
+                                -alpha - 1, -alpha, NULL, &no_excl)
                              .score;
 
                 if (!stop->stop && score > alpha)
                 {
-                    score = -search(&copy, depth - 1 + extension, ply + 1,
-                                    -alpha - 1, -alpha, stop, NULL, &no_excl)
+                    score = -search(td, &copy, depth - 1 + extension, ply + 1,
+                                    -alpha - 1, -alpha, NULL, &no_excl)
                                  .score;
                 }
             }
             else
             {
-                score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -alpha - 1, -alpha, stop, NULL, &no_excl)
+                score = -search(td, &copy, depth - 1 + extension, ply + 1,
+                                -alpha - 1, -alpha, NULL, &no_excl)
                              .score;
             }
 
             if (!stop->stop && score > alpha && score < beta)
             {
                 child_pv.length = 0;
-                score = -search(&copy, depth - 1 + extension, ply + 1,
-                                -beta, -alpha, stop, &child_pv, &no_excl)
+                score = -search(td, &copy, depth - 1 + extension, ply + 1,
+                                -beta, -alpha, &child_pv, &no_excl)
                              .score;
             }
         }
@@ -922,23 +1042,23 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             {
                 int malus = -clamp_int(HIST_MALUS_MULT * depth - HIST_MALUS_BASE, 0, HIST_MAX);
 
-                butterfly_hist[board->turn][from][to] +=
+                td->butterfly_hist[board->turn][from][to] +=
                     malus -
-                    butterfly_hist[board->turn][from][to] *
+                    td->butterfly_hist[board->turn][from][to] *
                         abs(malus) / HIST_MAX;
 
-                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid)
                 {
-                    int pp = cont_stack[ply - 1].piece;
-                    int pt = cont_stack[ply - 1].to;
-                    int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
+                    int pp = td->cont_stack[ply - 1].piece;
+                    int pt = td->cont_stack[ply - 1].to;
+                    int *ch = &td->cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += malus - *ch * abs(malus) / HIST_MAX;
                 }
             }
             else if (is_capture && captured_piece != -1)
             {
                 int malus = -clamp_int(HIST_MALUS_MULT * depth - HIST_MALUS_BASE, 0, HIST_MAX);
-                int *history_entry = &capture_history[board->turn][moved_piece][to][captured_piece];
+                int *history_entry = &td->capture_history[board->turn][moved_piece][to][captured_piece];
                 *history_entry += malus - *history_entry * abs(malus) / HIST_MAX;
             }
         }
@@ -951,33 +1071,33 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
             if (!is_capture && !is_promotion)
             {
                 int clampedBonus = clamp_int(HIST_BONUS_MULT * depth - HIST_BONUS_BASE, 0, HIST_MAX);
-                butterfly_hist[board->turn][from][to] += clampedBonus - butterfly_hist[board->turn][from][to] * abs(clampedBonus) / HIST_MAX;
+                td->butterfly_hist[board->turn][from][to] += clampedBonus - td->butterfly_hist[board->turn][from][to] * abs(clampedBonus) / HIST_MAX;
 
-                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid)
                 {
-                    int pp = cont_stack[ply - 1].piece;
-                    int pt = cont_stack[ply - 1].to;
-                    int *ch = &cont_hist[board->turn][pp][pt][moved_piece][to];
+                    int pp = td->cont_stack[ply - 1].piece;
+                    int pt = td->cont_stack[ply - 1].to;
+                    int *ch = &td->cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += clampedBonus - *ch * abs(clampedBonus) / HIST_MAX;
                 }
 
-                if (ply < MAX_GAME_PLY && killer_moves[ply][0] != move)
+                if (ply < MAX_GAME_PLY && td->killer_moves[ply][0] != move)
                 {
-                    killer_moves[ply][1] = killer_moves[ply][0];
-                    killer_moves[ply][0] = move;
+                    td->killer_moves[ply][1] = td->killer_moves[ply][0];
+                    td->killer_moves[ply][0] = move;
                 }
-                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid)
+                if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid)
                 {
-                    int pp = cont_stack[ply - 1].piece;
-                    int pt = cont_stack[ply - 1].to;
-                    counter_moves[board->turn ^ 1][pp][pt] = move;
+                    int pp = td->cont_stack[ply - 1].piece;
+                    int pt = td->cont_stack[ply - 1].to;
+                    td->counter_moves[board->turn ^ 1][pp][pt] = move;
                 }
             }
             else if (is_capture && captured_piece != -1)
             {
                 int bonus = clamp_int(HIST_BONUS_MULT * depth - HIST_BONUS_BASE, 0, HIST_MAX);
 
-                int *cutoff_capture_entry = &capture_history[board->turn][moved_piece][to][captured_piece];
+                int *cutoff_capture_entry = &td->capture_history[board->turn][moved_piece][to][captured_piece];
                 *cutoff_capture_entry += bonus - *cutoff_capture_entry * abs(bonus) / HIST_MAX;
 
                 for (int k = 0; k < num_tried_captures; k++)
@@ -996,7 +1116,7 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
                     if (other_attacker < 0 || other_victim < 0)
                         continue;
 
-                    int *other_capture_entry = &capture_history[board->turn][other_attacker][tried_to][other_victim];
+                    int *other_capture_entry = &td->capture_history[board->turn][other_attacker][tried_to][other_victim];
                     int malus = -bonus;
                     *other_capture_entry += malus - *other_capture_entry * abs(malus) / HIST_MAX;
                 }
@@ -1022,11 +1142,11 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
         if (no_legal)
             return (searchOutput){.score = in_check ? -MATE_SCORE + ply : 0, .move = 0};
 
-        return (searchOutput){.score = in_check ? eval(board, ply) : static_eval, .move = 0};
+        return (searchOutput){.score = in_check ? eval(td, board, ply) : static_eval, .move = 0};
     }
 
     if (!stop->stop && stack->excluded_move == 0 && !in_check)
-        update_corrhist(board, depth, static_eval, best_score);
+        update_corrhist(td, board, depth, static_eval, best_score);
 
     if (!stop->stop && stack->excluded_move == 0)
     {
@@ -1052,8 +1172,13 @@ searchOutput search(Position *board, int depth, int ply, int alpha, int beta,
     return output;
 }
 
-uint16_t iterative_deepening(Position *board, stopConditions *stop)
+static void run_search_thread(ThreadData *td)
 {
+    Position *board = &thread_boards[td->thread_id];
+    stopConditions *stop = &td->stop;
+
+    const bool is_main = (td->thread_id == 0);
+
     uint16_t best_move_so_far = 0;
     PVLine best_pv = {0};
     long long search_start = get_time_ms();
@@ -1068,11 +1193,21 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
     double score_factor = 1.0;
 
     SearchStack no_excl = {0};
-    nnue_refresh(board, 0);
 
-    for (int depth = 1; depth <= MAX_DEPTH; depth++)
+    memset(td->cont_stack, 0, sizeof td->cont_stack);
+
+    nnue_refresh(td, board, 0);
+
+    int start_depth = 1 + (td->thread_id & 1);
+    if (stop->depth > 0 && start_depth > stop->depth)
+        start_depth = stop->depth;
+
+    for (int depth = start_depth; depth <= MAX_DEPTH; depth++)
     {
-        if (stop->soft_time > 0)
+        if (td->pool && td->pool->stop_flag)
+            break;
+
+        if (is_main && stop->soft_time > 0)
         {
             int iterations_stable = depth - last_best_move_change;
             double factor = TM_STABLE_BASE - TM_STABLE_STEP * (double)iterations_stable;
@@ -1091,7 +1226,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             if (elapsed >= effective_soft)
                 break;
         }
-        if (stop->soft_nodes > 0 && stop->nodes >= stop->soft_nodes)
+        if (is_main && stop->soft_nodes > 0 && pool_nodes(td) >= stop->soft_nodes)
             break;
 
         if (stop->depth > 0 && depth > stop->depth)
@@ -1127,7 +1262,7 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             if (search_depth < 1)
                 search_depth = 1;
 
-            out = search(board, search_depth, 0, alpha, beta, stop, &pv, &no_excl);
+            out = search(td, board, search_depth, 0, alpha, beta, &pv, &no_excl);
 
             if (stop->stop)
                 break;
@@ -1165,13 +1300,14 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
                 alpha = -MATE_SCORE;
                 beta = MATE_SCORE;
                 pv.length = 0;
-                out = search(board, depth, 0, alpha, beta, stop, &pv, &no_excl);
+                out = search(td, board, depth, 0, alpha, beta, &pv, &no_excl);
                 break;
             }
         }
 
         if (stop->stop)
             break;
+
         if (depth >= TM_SCORE_DROP_DEPTH)
         {
             double diff = (double)(prev_score - out.score);
@@ -1199,12 +1335,21 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
             prev_best_move = out.move;
             best_move_so_far = out.move;
             best_pv = pv;
+
+            td->best_move = out.move;
+            td->best_score = out.score;
+            td->completed_depth = depth;
+            td->pv = pv;
         }
 
         bm_changes *= TM_BM_DECAY;
 
+        if (!is_main)
+            continue;
+
         int64_t elapsed = get_time_ms() - search_start;
-        long long nps = elapsed > 0 ? (stop->nodes * 1000LL) / elapsed : 0;
+        uint64_t total_nodes = pool_nodes(td);
+        long long nps = elapsed > 0 ? (long long)((total_nodes * 1000ULL) / (uint64_t)elapsed) : 0;
 
         char score_str[32];
         if (out.score > 31000)
@@ -1218,12 +1363,12 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         char pv_str[1024] = {0};
         int pos = 0;
-        for (int i = 0; i < best_pv.length && i < depth &&
+        for (int k = 0; k < best_pv.length && k < depth &&
                         pos < (int)sizeof(pv_str) - 7;
-             i++)
+             k++)
         {
             char mv[6];
-            move_to_uci(best_pv.moves[i], mv);
+            move_to_uci(best_pv.moves[k], mv);
             pos += snprintf(pv_str + pos, sizeof(pv_str) - pos, "%s ", mv);
         }
 
@@ -1232,11 +1377,184 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 
         printf("info depth %d seldepth %d score %s nodes %" PRIu64 " nps %lld time %" PRId64 " pv %s\n",
                depth, stop->seldepth, score_str,
-               (uint64_t)stop->nodes,
+               total_nodes,
                nps, elapsed,
                pv_str);
         fflush(stdout);
     }
 
-    return best_move_so_far;
+    if (td->best_move == 0)
+        td->best_move = best_move_so_far;
+}
+
+searchOutput search_bench(Position *board, int depth, stopConditions *stop)
+{
+    ThreadData *td = td_get(0);
+    if (!td)
+        return (searchOutput){0};
+
+    td->thread_id = 0;
+
+    td->pool = NULL;
+
+    td->stop = *stop;
+    td->stop.nodes = 0;
+    td->stop.stop = 0;
+    td->stop.seldepth = 0;
+    td->stop.print_info = 0;
+
+    memset(td->cont_stack, 0, sizeof td->cont_stack);
+
+    nnue_refresh(td, board, 0);
+
+    SearchStack no_excl = {0};
+    searchOutput out = search(td, board, depth, 0,
+                              -MATE_SCORE, MATE_SCORE, NULL, &no_excl);
+
+    stop->nodes += td->stop.nodes;
+    stop->stop = td->stop.stop;
+    if (td->stop.seldepth > stop->seldepth)
+        stop->seldepth = td->stop.seldepth;
+
+    return out;
+}
+
+static THREAD_RET smp_thread_entry(void *arg)
+{
+    run_search_thread((ThreadData *)arg);
+    THREAD_RETURN;
+}
+
+#if SMP_VOTING
+static uint16_t vote_best_move(int n)
+{
+    if (n <= 1)
+        return threads_data[0]->best_move;
+
+    int min_score = INT_MAX;
+    for (int i = 0; i < n; i++)
+    {
+        ThreadData *td = threads_data[i];
+        if (td && td->best_move && td->completed_depth > 0 && td->best_score < min_score)
+            min_score = td->best_score;
+    }
+
+    if (min_score == INT_MAX)
+        return threads_data[0]->best_move;
+
+    uint16_t moves[MAX_THREADS];
+    long long votes[MAX_THREADS];
+    int nm = 0;
+
+    for (int i = 0; i < n; i++)
+    {
+        ThreadData *td = threads_data[i];
+        if (!td || !td->best_move || td->completed_depth <= 0)
+            continue;
+
+        long long w = (long long)(td->best_score - min_score + 10) * td->completed_depth;
+        if (w < 1)
+            w = 1;
+
+        int k;
+        for (k = 0; k < nm; k++)
+            if (moves[k] == td->best_move)
+                break;
+        if (k == nm)
+        {
+            moves[nm] = td->best_move;
+            votes[nm] = 0;
+            nm++;
+        }
+        votes[k] += w;
+    }
+
+    if (nm == 0)
+        return threads_data[0]->best_move;
+
+    int best = 0;
+    for (int k = 1; k < nm; k++)
+        if (votes[k] > votes[best])
+            best = k;
+
+    return moves[best];
+}
+#endif
+
+uint16_t iterative_deepening(Position *board, stopConditions *stop)
+{
+    int n = num_threads;
+    if (n < 1)
+        n = 1;
+    if (n > MAX_THREADS)
+        n = MAX_THREADS;
+
+    for (int i = 0; i < n; i++)
+    {
+        if (!td_get(i))
+        {
+            if (i == 0)
+                return 0;
+            n = i;
+            break;
+        }
+    }
+
+    pool.count = n;
+    pool.stop_flag = 0;
+
+    for (int i = 0; i < n; i++)
+    {
+        ThreadData *td = threads_data[i];
+
+        td->thread_id = i;
+        td->pool = &pool;
+
+        td->stop = *stop;
+        td->stop.nodes = 0;
+        td->stop.stop = 0;
+        td->stop.seldepth = 0;
+        td->stop.print_info = (i == 0) ? stop->print_info : 0;
+
+        td->pv.length = 0;
+        td->best_move = 0;
+        td->best_score = 0;
+        td->completed_depth = 0;
+
+        thread_boards[i] = *board;
+        pool.threads[i] = td;
+    }
+
+    thread_t handles[MAX_THREADS];
+    int spawned = 1;
+
+    for (int i = 1; i < n; i++)
+    {
+        if (thread_create(&handles[i], smp_thread_entry, threads_data[i]) != 0)
+            break;
+        spawned++;
+    }
+
+    pool.count = spawned;
+
+    run_search_thread(threads_data[0]);
+
+    pool.stop_flag = 1;
+
+    for (int i = 1; i < spawned; i++)
+        thread_join(handles[i]);
+
+    uint64_t total = 0;
+    for (int i = 0; i < spawned; i++)
+        total += threads_data[i]->stop.nodes;
+
+    stop->nodes = total;
+    stop->stop = threads_data[0]->stop.stop;
+    stop->seldepth = threads_data[0]->stop.seldepth;
+
+#if SMP_VOTING
+    return vote_best_move(spawned);
+#else
+    return threads_data[0]->best_move;
+#endif
 }

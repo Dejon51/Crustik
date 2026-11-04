@@ -41,6 +41,35 @@ static uint64_t tt_index(uint64_t key)
 #endif
 }
 
+static uint64_t tt_sig(int16_t score, uint16_t move, uint8_t depth,
+                       uint8_t flag, uint8_t is_qsearch, int16_t eval)
+{
+    uint64_t v = (uint64_t)(uint16_t)score
+               | ((uint64_t)move << 16)
+               | ((uint64_t)(uint16_t)eval << 32)
+               | ((uint64_t)depth << 48)
+               | ((uint64_t)flag << 56);
+
+    v ^= (uint64_t)is_qsearch * 0x9E3779B97F4A7C15ULL;
+
+    v ^= v >> 30;
+    v *= 0xBF58476D1CE4E5B9ULL;
+    v ^= v >> 27;
+    v *= 0x94D049BB133111EBULL;
+    v ^= v >> 31;
+    return v;
+}
+
+static uint64_t entry_sig(const TTEntry *e)
+{
+    return tt_sig(e->score, e->move, e->depth, e->flag, e->is_qsearch, e->eval);
+}
+
+static uint64_t entry_key(const TTEntry *e)
+{
+    return e->key ^ entry_sig(e);
+}
+
 void tt_init(size_t mb)
 {
     if (mb < TT_MIN_MB) mb = TT_MIN_MB;
@@ -49,7 +78,7 @@ void tt_init(size_t mb)
     uint64_t n = entries_for_mb(mb);
     TTEntry *new_tt = calloc(n, sizeof(TTEntry));
     if (!new_tt)
-        return; 
+        return;
 
     free(tt);
     tt = new_tt;
@@ -81,26 +110,47 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
 
     TTEntry *e = &tt[tt_index(key)];
 
-    if (e->valid && e->key != key && is_qsearch && !e->is_qsearch)
+    TTEntry cur = *e;
+    bool same_key = cur.valid && (entry_key(&cur) == key);
+
+    if (cur.valid && !same_key && is_qsearch && !cur.is_qsearch)
         return;
 
-    bool same_key = e->valid && e->key == key;
-
-    if (!e->valid || !same_key || depth >= e->depth)
+    if (!cur.valid || !same_key || depth >= cur.depth)
     {
-        e->key        = key;
         e->score      = (int16_t)score;
         e->move       = move;
         e->depth      = (uint8_t)depth;
         e->flag       = (uint8_t)flag;
         e->is_qsearch = (uint8_t)is_qsearch;
-        e->valid      = 1;
         e->eval       = (int16_t)eval;
+        e->valid      = 1;
+        e->key        = key ^ tt_sig((int16_t)score, move, (uint8_t)depth,
+                                     (uint8_t)flag, (uint8_t)is_qsearch,
+                                     (int16_t)eval);
     }
     else if (same_key)
     {
         e->eval = (int16_t)eval;
+        e->key  = key ^ tt_sig(cur.score, cur.move, cur.depth,
+                               cur.flag, cur.is_qsearch, (int16_t)eval);
     }
+}
+
+bool tt_probe_into(uint64_t key, TTEntry *out)
+{
+    if (!tt || !tt_num_entries) return false;
+
+    TTEntry e = tt[tt_index(key)];  
+
+    if (!e.valid)
+        return false;
+    if ((e.key ^ entry_sig(&e)) != key)
+        return false;
+
+    *out = e;
+    out->key = key;
+    return true;
 }
 
 TTEntry *tt_probe(uint64_t key)
@@ -108,5 +158,5 @@ TTEntry *tt_probe(uint64_t key)
     if (!tt || !tt_num_entries) return NULL;
 
     TTEntry *e = &tt[tt_index(key)];
-    return (e->valid && e->key == key) ? e : NULL;
+    return (e->valid && entry_key(e) == key) ? e : NULL;
 }

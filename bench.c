@@ -5,6 +5,7 @@
 #include "play.h"
 #include "fen.h"
 #include "search.h"
+#include "tt.h"
 #include "inttypes.h"
 
 
@@ -63,6 +64,8 @@ const char *fens[] = {
 
 #define FEN_COUNT (sizeof(fens) / sizeof(fens[0]))
 
+#define BENCH_HASH_MB 16
+
 int bench() {
     Position boards[FEN_COUNT];
     int depth = 14;
@@ -86,14 +89,20 @@ int bench() {
                 tokens[3], tokens[4], tokens[5]);
     }
 
+    init_lmr();
+    if (tt_size_mb() == 0)
+        tt_init(BENCH_HASH_MB);
+
     long long start = get_time_ms();
 
     for (uint64_t i = 0; i < FEN_COUNT; i++) {
+        tt_clear();
+        reset_history();
+
         stopConditions stop = {0};
-        SearchStack no_excl = {0};
 
+        search_bench(&boards[i], depth, &stop);
 
-        search(&boards[i], depth, 0, -32000, 32000, &stop, NULL,&no_excl);
         total_nodes += stop.nodes;
     }
 

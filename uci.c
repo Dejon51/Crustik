@@ -35,6 +35,31 @@ static int str_eq_ci(const char *a, const char *b)
     return *a == *b;
 }
 
+static int setoption_int_value(char **tokens, int from)
+{
+    char *value_tok = NULL;
+    for (int i = from; tokens[i] != NULL; i++)
+    {
+        if (str_eq_ci(tokens[i], "value") && tokens[i + 1])
+        {
+            value_tok = tokens[i + 1];
+            break;
+        }
+    }
+
+    if (!value_tok)
+        return -1;
+
+    int v = 0;
+    for (int i = 0; value_tok[i] != '\0'; i++)
+    {
+        if (value_tok[i] < '0' || value_tok[i] > '9')
+            return -1;
+        v = v * 10 + (value_tok[i] - '0');
+    }
+    return v;
+}
+
 void movestring(uint16_t move)
 {
     int from = (move >> 6) & 0x3F;
@@ -504,7 +529,7 @@ void uciStart()
         {
             printf("id name Crustik 0.4.0\nid author Dejon Eltahan\n");
             printf("option name Hash type spin default %d min %d max %d\n", TT_DEFAULT_MB, TT_MIN_MB, TT_MAX_MB);
-            printf("option name Threads type spin default 1 min 1 max 1");
+            printf("option name Threads type spin default %d min 1 max %d\n", DEFAULT_THREADS, MAX_THREADS);
             printf("option name SoftNodes type check default false\n");
             printf("uciok\n");
         }
@@ -517,37 +542,27 @@ void uciStart()
             if (tokens[1] && str_eq_ci(tokens[1], "name") && tokens[2] &&
                 str_eq_ci(tokens[2], "Hash"))
             {
-                char *value_tok = NULL;
-                for (int i = 3; tokens[i] != NULL; i++)
-                {
-                    if (str_eq_ci(tokens[i], "value") && tokens[i + 1])
-                    {
-                        value_tok = tokens[i + 1];
-                        break;
-                    }
-                }
+                int mb = setoption_int_value(tokens, 3);
 
-                if (value_tok)
-                {
-                    int mb = 0, valid = 1;
-                    for (int i = 0; value_tok[i] != '\0'; i++)
-                    {
-                        if (value_tok[i] < '0' || value_tok[i] > '9')
-                        {
-                            valid = 0;
-                            break;
-                        }
-                        mb = mb * 10 + (value_tok[i] - '0');
-                    }
+                if (mb > 0)
+                    tt_resize((size_t)mb);
+                else
+                    printf("setoption Hash: missing or invalid value\n");
+            }
+            else if (tokens[1] && str_eq_ci(tokens[1], "name") && tokens[2] &&
+                     str_eq_ci(tokens[2], "Threads"))
+            {
+                int n = setoption_int_value(tokens, 3);
 
-                    if (valid && mb > 0)
-                        tt_resize((size_t)mb);
-                    else
-                        printf("setoption Hash: invalid value '%s'\n", value_tok);
+                if (n > 0)
+                {
+                    if (n > MAX_THREADS)
+                        n = MAX_THREADS;
+                    search_set_threads(n);
                 }
                 else
                 {
-                    printf("setoption Hash: missing value\n");
+                    printf("setoption Threads: missing or invalid value\n");
                 }
             }
             else if (tokens[1] && str_eq_ci(tokens[1], "name") && tokens[2] &&
@@ -689,7 +704,7 @@ void uciStart()
                     if (max_nodes <= 0)
                         max_nodes = 1000;
 
-                    stopConditions stop = {};
+                    stopConditions stop = {0};
                     stop.start_time = get_time_ms();
                     stop.nodes = 0;
                     stop.stop = 0;
@@ -982,7 +997,7 @@ void uciStart()
                 if (hard <= 0)
                     hard = 50;
 
-                stopConditions stop = {};
+                stopConditions stop = {0};
                 stop.start_time = get_time_ms();
                 stop.soft_time = soft;
                 stop.max_time = hard;

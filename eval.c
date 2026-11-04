@@ -3,6 +3,7 @@
 #include "lmath.h"
 #include "play.h"
 #include "precomputed.h"
+#include "search.h"
 #include "stdio.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -19,7 +20,6 @@
 INCBIN(EvalFile, EVALFILE);
 
 #define NNUE_INPUT 768
-#define NNUE_HL 512
 #define HIDDEN_QUANT_SCALE 255
 #define NNUE_OUTPUT_SCALE 64
 #define NNUE_SCALE (400.0 * 0.5485330048769478)
@@ -33,18 +33,9 @@ static int32_t nnue_outputBias;
 
 static int nnue_loaded = 0;
 
-// Converts internal engine piece encoding into nnue encoding
 static const int internal_to_nnue_encoding[6] = {
 	0, 2, 1, 3, 4, 5,
 };
-
-typedef struct {
-	int16_t vector[2][NNUE_HL] ALIGN64;
-	uint8_t mirror[2];
-	uint8_t needsRefresh[2];
-} NnueAccumulator;
-
-static NnueAccumulator nnue_stack[NNUE_MAX_PLY] ALIGN64;
 
 static inline int nnue_clampPly(int ply) {
 	if (ply < 0)
@@ -157,31 +148,31 @@ static void nnue_refreshPersp(Position *board, NnueAccumulator *acc,
 	acc->needsRefresh[persp] = 0;
 }
 
-static inline void nnue_ensureReady(Position *board, int ply) {
-	NnueAccumulator *acc = &nnue_stack[ply];
+static inline void nnue_ensureReady(ThreadData *td, Position *board, int ply) {
+	NnueAccumulator *acc = &td->nnue_stack[ply];
 	if (acc->needsRefresh[0])
 		nnue_refreshPersp(board, acc, 0);
 	if (acc->needsRefresh[1])
 		nnue_refreshPersp(board, acc, 1);
 }
 
-void nnue_refresh(Position *board, int ply) {
+void nnue_refresh(ThreadData *td, Position *board, int ply) {
 	ply = nnue_clampPly(ply);
-	NnueAccumulator *acc = &nnue_stack[ply];
+	NnueAccumulator *acc = &td->nnue_stack[ply];
 	nnue_refreshPersp(board, acc, WHITE);
 	nnue_refreshPersp(board, acc, BLACK);
 }
 
-void nnue_copy(int parent_ply, int child_ply) {
+void nnue_copy(ThreadData *td, int parent_ply, int child_ply) {
 	parent_ply = nnue_clampPly(parent_ply);
 	child_ply = nnue_clampPly(child_ply);
 	if (parent_ply == child_ply)
 		return;
-	memcpy(&nnue_stack[child_ply], &nnue_stack[parent_ply],
+	memcpy(&td->nnue_stack[child_ply], &td->nnue_stack[parent_ply],
 		   sizeof(NnueAccumulator));
 }
 
-void nnue_update(Position *board, uint16_t move, int parent_ply,
+void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
 				 int child_ply) {
 	parent_ply = nnue_clampPly(parent_ply);
 	child_ply = nnue_clampPly(child_ply);
@@ -195,14 +186,14 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 	int victim = board->mailbox[to];
 
 	if (piece == EMPTYNUMBER) {
-		nnue_copy(parent_ply, child_ply);
+		nnue_copy(td, parent_ply, child_ply);
 		return;
 	}
 
-	nnue_ensureReady(board, parent_ply);
+	nnue_ensureReady(td, board, parent_ply);
 
-	NnueAccumulator *parent = &nnue_stack[parent_ply];
-	NnueAccumulator *child = &nnue_stack[child_ply];
+	NnueAccumulator *parent = &td->nnue_stack[parent_ply];
+	NnueAccumulator *child = &td->nnue_stack[child_ply];
 
 	bool isEp =
 		(piece == PAWNNUMBER && to == board->epsquare && board->epsquare != -1);
@@ -274,12 +265,12 @@ void nnue_update(Position *board, uint16_t move, int parent_ply,
 	}
 }
 
-static int nnue_forward(Position *board, int ply) {
+static int nnue_forward(ThreadData *td, Position *board, int ply) {
 	ply = nnue_clampPly(ply);
-	nnue_ensureReady(board, ply);
+	nnue_ensureReady(td, board, ply);
 
-	const int16_t *accUs = nnue_stack[ply].vector[board->turn];
-	const int16_t *accThem = nnue_stack[ply].vector[board->turn ^ 1];
+	const int16_t *accUs = td->nnue_stack[ply].vector[board->turn];
+	const int16_t *accThem = td->nnue_stack[ply].vector[board->turn ^ 1];
 
 	int s = 0;
 	for (int h = 0; h < NNUE_HL; h++) {
@@ -317,6 +308,6 @@ int material_phase(Position *board) {
 		   900 * queens;
 }
 
-int eval(Position *board, int ply) {
-	return nnue_forward(board, ply) * (25000 + material_phase(board)) / 32768;
+int eval(ThreadData *td, Position *board, int ply) {
+	return nnue_forward(td, board, ply) * (25000 + material_phase(board)) / 32768;
 }

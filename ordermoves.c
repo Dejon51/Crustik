@@ -16,8 +16,7 @@
 
 void quietMoves(Position *board, MoveList *list, bool color);
 
-
-MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_move)
+MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
     MoveList ordered = *move_list;
     int scores[256] = {0};
@@ -26,9 +25,9 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
     const int CAPTURE_BASE = 90000000;
     const int KILLER_BASE = 80000000;
 
-    bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid);
-    int cont_piece = have_cont ? cont_stack[ply - 1].piece : 0;
-    int cont_to = have_cont ? cont_stack[ply - 1].to : 0;
+    bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid);
+    int cont_piece = have_cont ? td->cont_stack[ply - 1].piece : 0;
+    int cont_to = have_cont ? td->cont_stack[ply - 1].to : 0;
 
     for (unsigned int i = 0; i < ordered.offset; i++)
     {
@@ -52,7 +51,7 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
                 victim = 0;
 
             int mvv_lva = piece_value_lva(victim) * MVV_LVA_VICTIM_MULT - piece_value_lva(attacker);
-            int history_score = capture_history[board->turn][attacker][to][victim];
+            int history_score = td->capture_history[board->turn][attacker][to][victim];
             scores[i] = CAPTURE_BASE + mvv_lva + history_score;
             continue;
         }
@@ -60,9 +59,9 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
         bool is_killer = false;
         if (ply < MAX_GAME_PLY)
         {
-            if (move == killer_moves[ply][0] || move == killer_moves[ply][1])
+            if (move == td->killer_moves[ply][0] || move == td->killer_moves[ply][1])
             {
-                int bonus = (move == killer_moves[ply][0]) ? 1 : 0;
+                int bonus = (move == td->killer_moves[ply][0]) ? 1 : 0;
                 scores[i] = KILLER_BASE + bonus;
                 is_killer = true;
             }
@@ -70,10 +69,10 @@ MoveList ordermoves(Position *board, MoveList *move_list, int ply, uint16_t tt_m
 
         if (!is_killer)
         {
-            int score = butterfly_hist[board->turn][from][to];
+            int score = td->butterfly_hist[board->turn][from][to];
 
             if (have_cont && attacker != -1)
-                score += cont_hist[board->turn][cont_piece][cont_to][attacker][to];
+                score += td->cont_hist[board->turn][cont_piece][cont_to][attacker][to];
 
             scores[i] = score;
         }
@@ -175,7 +174,7 @@ bool move_is_pseudolegal(Position *b, uint16_t m)
     return (att & to_bb) != 0;
 }
 
-static int score_noisy(Position *b, uint16_t m)
+static int score_noisy(ThreadData *td, Position *b, uint16_t m)
 {
     int from = move_from(m), to = move_to(m);
     int att = piece_on_square(b, from);
@@ -186,36 +185,35 @@ static int score_noisy(Position *b, uint16_t m)
     int s = 0;
     if (victim != -1 && att != -1)
         s = piece_value_lva(victim) * MVV_LVA_VICTIM_MULT - piece_value_lva(att) +
-            capture_history[b->turn][att][to][victim];
+            td->capture_history[b->turn][att][to][victim];
     if (is_promotion_move(m))
         s += 1000000;
     return s;
 }
 
-
-static int score_quiet(Position *b, int ply, uint16_t m)
+static int score_quiet(ThreadData *td, Position *b, int ply, uint16_t m)
 {
     int from = move_from(m), to = move_to(m);
     int piece = piece_on_square(b, from);
 
     if (ply < MAX_GAME_PLY)
     {
-        if (m == killer_moves[ply][0])
+        if (m == td->killer_moves[ply][0])
             return PK_KILLER_BASE + 1;
-        if (m == killer_moves[ply][1])
+        if (m == td->killer_moves[ply][1])
             return PK_KILLER_BASE;
     }
 
-    int bf = butterfly_hist[b->turn][from][to];
+    int bf = td->butterfly_hist[b->turn][from][to];
     int ch = 0;
 
-    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && cont_stack[ply - 1].valid && piece != -1)
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid && piece != -1)
     {
-        int pp = cont_stack[ply - 1].piece;
-        int pt = cont_stack[ply - 1].to;
-        ch = cont_hist[b->turn][pp][pt][piece][to];
+        int pp = td->cont_stack[ply - 1].piece;
+        int pt = td->cont_stack[ply - 1].to;
+        ch = td->cont_hist[b->turn][pp][pt][piece][to];
 
-        if (m == counter_moves[b->turn ^ 1][pp][pt])
+        if (m == td->counter_moves[b->turn ^ 1][pp][pt])
             return PK_COUNTER_BASE + bf + ch;
     }
 
@@ -237,8 +235,9 @@ static uint16_t pick_best(uint16_t *mv, int *sc, int i, int n)
     return m;
 }
 
-void movepicker_init(MovePicker *mp, Position *b, int ply, uint16_t tt_move, bool in_check)
+void movepicker_init(MovePicker *mp, ThreadData *td, Position *b, int ply, uint16_t tt_move, bool in_check)
 {
+    mp->td = td;
     mp->board = b;
     mp->ply = ply;
     mp->in_check = in_check;
@@ -256,6 +255,7 @@ void movepicker_init(MovePicker *mp, Position *b, int ply, uint16_t tt_move, boo
 uint16_t movepicker_next(MovePicker *mp)
 {
     Position *b = mp->board;
+    ThreadData *td = mp->td;
 
     switch (mp->stage)
     {
@@ -267,7 +267,7 @@ uint16_t movepicker_next(MovePicker *mp)
         mp->caps.offset = 0;
         qsearchMoves(b, &mp->caps, b->turn);
         for (unsigned i = 0; i < mp->caps.offset; i++)
-            mp->cap_scores[i] = score_noisy(b, mp->caps.movelist[i]);
+            mp->cap_scores[i] = score_noisy(td, b, mp->caps.movelist[i]);
         mp->stage = ST_GOOD_CAPS;
         FALLTHROUGH;
 
@@ -299,7 +299,7 @@ uint16_t movepicker_next(MovePicker *mp)
         mp->quiets.offset = 0;
         quietMoves(b, &mp->quiets, b->turn);
         for (unsigned i = 0; i < mp->quiets.offset; i++)
-            mp->quiet_scores[i] = score_quiet(b, mp->ply, mp->quiets.movelist[i]);
+            mp->quiet_scores[i] = score_quiet(td, b, mp->ply, mp->quiets.movelist[i]);
         mp->stage = ST_QUIETS;
         FALLTHROUGH;
 
@@ -330,8 +330,8 @@ uint16_t movepicker_next(MovePicker *mp)
         {
             uint16_t m = mp->caps.movelist[i];
             mp->cap_scores[i] = (is_capture_move(b, m) || is_promotion_move(m))
-                                    ? PK_CAPTURE_BASE + score_noisy(b, m)
-                                    : score_quiet(b, mp->ply, m);
+                                    ? PK_CAPTURE_BASE + score_noisy(td, b, m)
+                                    : score_quiet(td, b, mp->ply, m);
         }
         mp->stage = ST_EVASIONS;
         FALLTHROUGH;

@@ -2,6 +2,7 @@
 #define SEARCH_H
 
 #include "lmath.h"
+#include "eval.h"
 
 #define MAX_PV_LENGTH 200
 
@@ -17,15 +18,10 @@
 #define CORRHIST_SIZE 16384
 #define CORRHIST_MASK (CORRHIST_SIZE - 1)
 
-extern int butterfly_hist[2][64][64];
-extern uint16_t killer_moves[MAX_GAME_PLY][2];
-extern int eval_stack[MAX_GAME_PLY];
+#define MAX_THREADS 256
+#define DEFAULT_THREADS 1
 
-extern int cont_hist[2][6][64][6][64];
-extern int capture_history[2][6][64][6];
-
-extern uint16_t counter_moves[2][6][64];
-
+typedef struct ThreadPool ThreadPool;
 
 typedef struct
 {
@@ -34,15 +30,14 @@ typedef struct
     bool valid;
 } ContRecord;
 
-extern ContRecord cont_stack[MAX_SEARCH_PLY];
-
 typedef struct
 {
     int16_t score;
     uint16_t move;
 } searchOutput;
 
-typedef struct {
+typedef struct
+{
     bool stop;
     uint64_t nodes;
     uint64_t start_time;
@@ -52,24 +47,65 @@ typedef struct {
     int64_t soft_time;
     uint8_t depth;
     int seldepth;
-    int print_info; 
+    int print_info;
 } stopConditions;
 
-typedef struct {
+typedef struct
+{
     uint16_t moves[MAX_PV_LENGTH];
     int length;
 } PVLine;
 
-typedef struct {
+typedef struct
+{
     uint16_t excluded_move;
 } SearchStack;
 
+struct ThreadData
+{
+    int thread_id;
+    ThreadPool *pool;
+
+    stopConditions stop;
+
+    int butterfly_hist[2][64][64];
+    uint16_t killer_moves[MAX_GAME_PLY][2];
+    int eval_stack[MAX_GAME_PLY];
+    int cont_hist[2][6][64][6][64];
+    int capture_history[2][6][64][6];
+    uint16_t counter_moves[2][6][64];
+    int pawn_corrhist[2][CORRHIST_SIZE];
+    int nonpawn_corrhist[2][CORRHIST_SIZE];
+
+    ContRecord cont_stack[MAX_SEARCH_PLY];
+    uint64_t search_path_hash[MAX_SEARCH_PLY];
+
+    NnueAccumulator nnue_stack[NNUE_MAX_PLY];
+
+    PVLine pv;
+    uint16_t best_move;
+    int best_score;
+    int completed_depth;
+};
+
+struct ThreadPool
+{
+    int count;
+    volatile int stop_flag; 
+    ThreadData *threads[MAX_THREADS];
+};
 
 void init_lmr();
 
 void reset_history(void);
 
-searchOutput search(Position *board, int depth, int ply, int alpha, int beta, stopConditions *stop, PVLine *pv, SearchStack *stack);
+void search_set_threads(int n);
+int search_get_threads(void);
+
+searchOutput search(ThreadData *td, Position *board, int depth, int ply,
+                    int alpha, int beta, PVLine *pv, SearchStack *stack);
+
+searchOutput search_bench(Position *board, int depth, stopConditions *stop);
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 
