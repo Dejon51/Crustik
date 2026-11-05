@@ -166,7 +166,6 @@ static inline void check_limits(ThreadData *td)
     }
 }
 
-
 static void init_corrhist(void)
 {
     uint64_t seed = 0x9E3779B97F4A7C15ULL;
@@ -1172,6 +1171,13 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
     return output;
 }
 
+static inline double move_stability(uint8_t stability)
+{
+    return TM_MOVE_STABILITY_MIN +
+           TM_MOVE_STABILITY_HEAD /
+               (1.0 + TM_MOVE_STABILITY_DECAY * (double)stability);
+}
+
 static void run_search_thread(ThreadData *td)
 {
     Position *board = &thread_boards[td->thread_id];
@@ -1187,7 +1193,7 @@ static void run_search_thread(ThreadData *td)
     int aspiration_delta = ASP_DELTA;
 
     uint16_t prev_best_move = 0;
-    int last_best_move_change = 0;
+    uint8_t best_move_stability = 0;
 
     double bm_changes = 0;
     double score_factor = 1.0;
@@ -1209,17 +1215,14 @@ static void run_search_thread(ThreadData *td)
 
         if (is_main && stop->soft_time > 0)
         {
-            int iterations_stable = depth - last_best_move_change;
-            double factor = TM_STABLE_BASE - TM_STABLE_STEP * (double)iterations_stable;
-            if (factor < TM_STABLE_MIN)
-                factor = TM_STABLE_MIN;
-            if (factor > TM_STABLE_MAX)
-                factor = TM_STABLE_MAX;
+            double stability_factor = 1.0;
+            if (depth >= TM_MOVE_STABILITY_MIN_DEPTH)
+                stability_factor = move_stability(best_move_stability);
 
             double instability = 1.0 + TM_BM_INST_SCALE * bm_changes;
 
-            int64_t effective_soft = (int64_t)(stop->soft_time * factor * instability * score_factor);
-            if (effective_soft > (int64_t)stop->max_time)
+            int64_t effective_soft = (int64_t)(stop->soft_time * stability_factor * instability * score_factor);
+            if (stop->max_time > 0 && effective_soft > (int64_t)stop->max_time)
                 effective_soft = (int64_t)stop->max_time;
 
             int64_t elapsed = get_time_ms() - stop->start_time;
@@ -1328,8 +1331,12 @@ static void run_search_thread(ThreadData *td)
         {
             if (out.move != prev_best_move)
             {
-                last_best_move_change = depth;
+                best_move_stability = 0;
                 bm_changes += 1.0;
+            }
+            else
+            {
+                best_move_stability++;
             }
 
             prev_best_move = out.move;

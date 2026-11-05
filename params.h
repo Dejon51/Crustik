@@ -109,5 +109,9 @@ extern double TM_STABLE_BASE;
 extern double TM_STABLE_STEP;
 extern double TM_STABLE_MIN;
 extern double TM_STABLE_MAX;
+extern double TM_MOVE_STABILITY_HEAD;
+extern double TM_MOVE_STABILITY_DECAY;
+extern double TM_MOVE_STABILITY_MIN;
+extern double TM_MOVE_STABILITY_MIN_DEPTH;
 
 #endif

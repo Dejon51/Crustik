@@ -18,7 +18,7 @@ int PVS_MIN_DEPTH = 3;
 int RFP_MAX_DEPTH = 6;
 int RFP_MARGIN = 100;
 
-/* ---------- Null move pruning ---------- */ 
+/* ---------- Null move pruning ---------- */
 int NMP_MIN_DEPTH = 3;
 int NMP_BASE_R = 3;
 int NMP_DEPTH_DIV = 6;
@@ -108,3 +108,7 @@ double TM_STABLE_BASE = 1.2;
 double TM_STABLE_STEP = 0.05;
 double TM_STABLE_MIN = 0.8;
 double TM_STABLE_MAX = 1.2;
+double TM_MOVE_STABILITY_HEAD = 1.8;
+double TM_MOVE_STABILITY_DECAY = 1.5;
+double TM_MOVE_STABILITY_MIN = 0.6;
+double TM_MOVE_STABILITY_MIN_DEPTH = 5;
