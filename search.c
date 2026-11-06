@@ -67,7 +67,6 @@ int search_get_threads(void)
 static void td_clear_history(ThreadData *td)
 {
     memset(td->butterfly_hist, 0, sizeof td->butterfly_hist);
-    memset(td->killer_moves, 0, sizeof td->killer_moves);
     memset(td->cont_hist, 0, sizeof td->cont_hist);
     memset(td->capture_history, 0, sizeof td->capture_history);
     memset(td->counter_moves, 0, sizeof td->counter_moves);
@@ -851,9 +850,6 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
         }
 
         bool is_capture = is_capture_move(board, move);
-        bool is_killer =
-            move == td->killer_moves[ply][0] ||
-            move == td->killer_moves[ply][1];
         bool is_promotion = is_promotion_move(move);
 
         if (!root_node &&
@@ -861,7 +857,6 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
             !in_check &&
             depth <= LMP_MAX_DEPTH &&
             !is_capture &&
-            !is_killer &&
             i >= (improving ? LMP_IMPROVING_COUNT : LMP_NONIMPROVING_COUNT))
         {
             mp.skip_quiets = true;
@@ -883,7 +878,6 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
             !pv_node &&
             !in_check &&
             !is_capture &&
-            !is_killer &&
             !is_promotion &&
             depth <= HISTPRUNE_MAX_DEPTH &&
             i >= HISTPRUNE_MIN_MOVES &&
@@ -993,7 +987,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
         {
             int reduction = 0;
             if (!root_node && !in_check && depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVES &&
-                !is_capture && !is_promotion && move != tt_move && !is_killer)
+                !is_capture && !is_promotion && move != tt_move)
             {
                 int is_pv_node = (beta - alpha) > 1;
                 int from = move_from(move);
@@ -1114,12 +1108,6 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                     int pt = td->cont_stack[ply - 1].to;
                     int *ch = &td->cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += clampedBonus - *ch * abs(clampedBonus) / HIST_MAX;
-                }
-
-                if (ply < MAX_GAME_PLY && td->killer_moves[ply][0] != move)
-                {
-                    td->killer_moves[ply][1] = td->killer_moves[ply][0];
-                    td->killer_moves[ply][0] = move;
                 }
                 if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid)
                 {

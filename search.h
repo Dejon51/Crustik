@@ -75,7 +75,6 @@ struct ThreadData
     stopConditions stop;
 
     int butterfly_hist[2][64][64];
-    uint16_t killer_moves[MAX_GAME_PLY][2];
     int eval_stack[MAX_GAME_PLY];
     int cont_hist[2][6][64][6][64];
     int capture_history[2][6][64][6];

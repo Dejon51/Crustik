@@ -23,7 +23,6 @@ MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int pl
 
     const int TT_SCORE = 100000000;
     const int CAPTURE_BASE = 90000000;
-    const int KILLER_BASE = 80000000;
 
     bool have_cont = (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid);
     int cont_piece = have_cont ? td->cont_stack[ply - 1].piece : 0;
@@ -56,26 +55,12 @@ MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int pl
             continue;
         }
 
-        bool is_killer = false;
-        if (ply < MAX_GAME_PLY)
-        {
-            if (move == td->killer_moves[ply][0] || move == td->killer_moves[ply][1])
-            {
-                int bonus = (move == td->killer_moves[ply][0]) ? 1 : 0;
-                scores[i] = KILLER_BASE + bonus;
-                is_killer = true;
-            }
-        }
+        int score = td->butterfly_hist[board->turn][from][to];
 
-        if (!is_killer)
-        {
-            int score = td->butterfly_hist[board->turn][from][to];
+        if (have_cont && attacker != -1)
+            score += td->cont_hist[board->turn][cont_piece][cont_to][attacker][to];
 
-            if (have_cont && attacker != -1)
-                score += td->cont_hist[board->turn][cont_piece][cont_to][attacker][to];
-
-            scores[i] = score;
-        }
+        scores[i] = score;
     }
 
     for (unsigned int i = 0; i < ordered.offset; i++)
@@ -102,7 +87,6 @@ MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int pl
 }
 
 #define PK_CAPTURE_BASE 90000000
-#define PK_KILLER_BASE 80000000
 #define PK_COUNTER_BASE 70000000
 
 bool move_is_pseudolegal(Position *b, uint16_t m)
@@ -195,14 +179,6 @@ static int score_quiet(ThreadData *td, Position *b, int ply, uint16_t m)
 {
     int from = move_from(m), to = move_to(m);
     int piece = piece_on_square(b, from);
-
-    if (ply < MAX_GAME_PLY)
-    {
-        if (m == td->killer_moves[ply][0])
-            return PK_KILLER_BASE + 1;
-        if (m == td->killer_moves[ply][1])
-            return PK_KILLER_BASE;
-    }
 
     int bf = td->butterfly_hist[b->turn][from][to];
     int ch = 0;
