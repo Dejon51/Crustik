@@ -36,18 +36,24 @@ typedef struct
     uint16_t move;
 } searchOutput;
 
+#define MAX_SEARCHMOVES 256
+
 typedef struct
 {
-    bool stop;
-    uint64_t nodes;
-    uint64_t start_time;
-    uint64_t max_time;
-    uint64_t max_nodes;
+    long long start_time;
+    int depth;
+    int soft_time;
+    int max_time;
     uint64_t soft_nodes;
-    int64_t soft_time;
-    uint8_t depth;
+    uint64_t max_nodes;
+    uint64_t nodes;
     int seldepth;
-    int print_info;
+    volatile int stop;
+    volatile int print_info;
+
+    uint16_t searchmoves[MAX_SEARCHMOVES];
+    int num_searchmoves;  
+    int mate_target;      
 } stopConditions;
 
 typedef struct

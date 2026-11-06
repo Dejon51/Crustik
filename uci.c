@@ -502,6 +502,7 @@ static bool parse_go(char **tokens, Position *board, stopConditions *stop)
     long long movetime = 0;
     uint64_t max_nodes = 0;
     int depth = 0;
+    int mate = 0;
     bool infinite = false;
 
     memset(stop, 0, sizeof *stop);
@@ -541,15 +542,79 @@ static bool parse_go(char **tokens, Position *board, stopConditions *stop)
                 max_nodes = 1;
         }
         else if (strcmp(t, "mate") == 0 && tokens[i + 1])
-            i++;
+        {
+            mate = matoi(tokens[++i]);
+            if (mate < 1)
+                mate = 1;
+            if (mate > MAX_DEPTH / 2)
+                mate = MAX_DEPTH / 2;
+        }
         else if (strcmp(t, "searchmoves") == 0)
-            break;
+        {
+            MoveList legal = {0};
+            legalMoveGen(board, &legal);
+
+            while (tokens[i + 1] != NULL)
+            {
+                const char *mv_tok = tokens[i + 1];
+                size_t len = strlen(mv_tok);
+                if (len < 4 || len > 5)
+                    break;
+                if (mv_tok[0] < 'a' || mv_tok[0] > 'h')
+                    break;
+                if (mv_tok[1] < '1' || mv_tok[1] > '8')
+                    break;
+                if (mv_tok[2] < 'a' || mv_tok[2] > 'h')
+                    break;
+                if (mv_tok[3] < '1' || mv_tok[3] > '8')
+                    break;
+                if (len == 5 && mv_tok[4] != 'b' && mv_tok[4] != 'n' &&
+                    mv_tok[4] != 'r' && mv_tok[4] != 'q')
+                    break;
+
+                i++;
+                uint16_t mv = parsemove(board, tokens[i]);
+
+                bool legal_ok = false;
+                for (unsigned int k = 0; k < legal.offset; k++)
+                {
+                    if (legal.movelist[k] == mv)
+                    {
+                        legal_ok = true;
+                        break;
+                    }
+                }
+
+                if (!legal_ok)
+                {
+                    printf("info string go: illegal searchmove '%s', ignored\n",
+                           tokens[i]);
+                    continue;
+                }
+
+                if (stop->num_searchmoves < MAX_SEARCHMOVES)
+                    stop->searchmoves[stop->num_searchmoves++] = mv;
+            }
+
+            if (stop->num_searchmoves == 0)
+                printf("info string go: no valid searchmoves, searching all\n");
+        }
         else
             printf("info string go: ignoring '%s'\n", t);
     }
 
     stop->start_time = get_time_ms();
     stop->depth = depth;
+    stop->mate_target = mate;
+
+    if (mate > 0)
+    {
+        int mate_depth = mate * 2 - 1;
+        if (mate_depth > MAX_DEPTH)
+            mate_depth = MAX_DEPTH;
+        if (stop->depth == 0 || stop->depth > mate_depth)
+            stop->depth = mate_depth;
+    }
 
     if (infinite)
     {
@@ -572,9 +637,7 @@ static bool parse_go(char **tokens, Position *board, stopConditions *stop)
     }
     else if (wtime > 0 || btime > 0)
     {
-        int increment = 0;
-        int time_left = 0;
-
+        int increment = 0, time_left = 0;
         if (board->turn == 0)
         {
             increment = (int)(winc * 0.7);
@@ -587,10 +650,8 @@ static bool parse_go(char **tokens, Position *board, stopConditions *stop)
         }
 
         int overhead = 100;
-
         int soft = time_left / 30 + increment;
         int hard = time_left / 3 + increment;
-
         if (soft < 10)
             soft = 10;
         if (hard < soft)

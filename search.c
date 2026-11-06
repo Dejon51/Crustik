@@ -47,7 +47,7 @@ static int master_spawned = 0;
 void search_request_stop(void)
 {
     stop_requested = 1;
-    pool.stop_flag = 1; 
+    pool.stop_flag = 1;
 }
 
 void search_set_threads(int n)
@@ -173,7 +173,7 @@ static inline void check_limits(ThreadData *td)
     }
 
     if (stop->max_time && stop->start_time &&
-        get_time_ms() - stop->start_time >= stop->max_time)
+        (long long)get_time_ms() - stop->start_time >= (long long)stop->max_time)
     {
         stop->stop = 1;
         pool_abort(td);
@@ -824,6 +824,21 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
         if (move == stack->excluded_move)
             continue;
 
+        if (root_node && td->stop.num_searchmoves > 0)
+        {
+            bool allowed = false;
+            for (int k = 0; k < td->stop.num_searchmoves; k++)
+            {
+                if (td->stop.searchmoves[k] == move)
+                {
+                    allowed = true;
+                    break;
+                }
+            }
+            if (!allowed)
+                continue;
+        }
+
         moves_seen++;
 
         if (ply == 0 && stop->print_info)
@@ -1402,6 +1417,13 @@ static void run_search_thread(ThreadData *td)
                nps, tt_hashfull(), elapsed,
                pv_str);
         fflush(stdout);
+
+        if (is_main && stop->mate_target > 0 && out.move != 0 && out.score > 31000)
+        {
+            int mate_moves = (MATE_SCORE - out.score + 1) / 2;
+            if (mate_moves <= stop->mate_target)
+                break;
+        }
     }
 
     if (td->best_move == 0)
