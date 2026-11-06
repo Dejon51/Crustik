@@ -166,7 +166,6 @@ static inline void check_limits(ThreadData *td)
     }
 }
 
-
 static void init_corrhist(void)
 {
     uint64_t seed = 0x9E3779B97F4A7C15ULL;
@@ -1375,10 +1374,10 @@ static void run_search_thread(ThreadData *td)
         if (pos > 0 && pv_str[pos - 1] == ' ')
             pv_str[pos - 1] = '\0';
 
-        printf("info depth %d seldepth %d score %s nodes %" PRIu64 " nps %lld time %" PRId64 " pv %s\n",
+        printf("info depth %d seldepth %d score %s nodes %" PRIu64 " nps %lld hashfull %d time %" PRId64 " pv %s\n",
                depth, stop->seldepth, score_str,
                total_nodes,
-               nps, elapsed,
+               nps, tt_hashfull(), elapsed,
                pv_str);
         fflush(stdout);
     }
@@ -1393,6 +1392,7 @@ searchOutput search_bench(Position *board, int depth, stopConditions *stop)
     if (!td)
         return (searchOutput){0};
 
+    tt_new_search();
     td->thread_id = 0;
 
     td->pool = NULL;
@@ -1483,6 +1483,7 @@ static uint16_t vote_best_move(int n)
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
+    tt_new_search();
     int n = num_threads;
     if (n < 1)
         n = 1;

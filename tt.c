@@ -10,6 +10,7 @@
 static TTEntry *tt             = NULL;
 static uint64_t tt_num_entries = 0;
 static size_t   tt_mb          = 0;
+static uint8_t  tt_age         = 0;
 
 static uint64_t entries_for_mb(size_t mb)
 {
@@ -84,6 +85,7 @@ void tt_init(size_t mb)
     tt = new_tt;
     tt_num_entries = n;
     tt_mb = mb;
+    tt_age = 0;
 }
 
 void tt_resize(size_t mb) { tt_init(mb); }
@@ -94,6 +96,7 @@ void tt_free(void)
     tt = NULL;
     tt_num_entries = 0;
     tt_mb = 0;
+    tt_age = 0;
 }
 
 size_t tt_size_mb(void) { return tt_mb; }
@@ -102,6 +105,30 @@ void tt_clear(void)
 {
     if (!tt || !tt_num_entries) return;
     memset(tt, 0, tt_num_entries * sizeof(TTEntry));
+    tt_age = 0;
+}
+
+void tt_new_search(void)
+{
+    tt_age++;
+}
+
+int tt_hashfull(void)
+{
+    if (!tt || !tt_num_entries)
+        return 0;
+
+    const uint64_t samples = tt_num_entries < 1000 ? tt_num_entries : 1000;
+    uint64_t used = 0;
+
+    for (uint64_t i = 0; i < samples; i++)
+    {
+        const TTEntry *e = &tt[(i * tt_num_entries) / samples];
+        if (e->valid && e->age == tt_age)
+            used++;
+    }
+
+    return (int)((used * 1000ULL) / samples);
 }
 
 void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int is_qsearch, int eval)
@@ -125,6 +152,7 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
         e->is_qsearch = (uint8_t)is_qsearch;
         e->eval       = (int16_t)eval;
         e->valid      = 1;
+        e->age        = tt_age;
         e->key        = key ^ tt_sig((int16_t)score, move, (uint8_t)depth,
                                      (uint8_t)flag, (uint8_t)is_qsearch,
                                      (int16_t)eval);
@@ -132,6 +160,7 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
     else if (same_key)
     {
         e->eval = (int16_t)eval;
+        e->age  = tt_age;
         e->key  = key ^ tt_sig(cur.score, cur.move, cur.depth,
                                cur.flag, cur.is_qsearch, (int16_t)eval);
     }
@@ -141,7 +170,7 @@ bool tt_probe_into(uint64_t key, TTEntry *out)
 {
     if (!tt || !tt_num_entries) return false;
 
-    TTEntry e = tt[tt_index(key)];  
+    TTEntry e = tt[tt_index(key)];
 
     if (!e.valid)
         return false;
