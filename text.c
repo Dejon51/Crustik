@@ -3,6 +3,7 @@ const char *HELP_TEXT =
 "uci              -> init engine\n"
 "isready          -> ready check\n"
 "ucinewgame       -> reset game state\n"
+"stop             -> stop search, return bestmove\n"
 "quit             -> exit engine\n"
 "\n"
 "position startpos [moves ...]\n"
@@ -19,6 +20,7 @@ const char *HELP_TEXT =
 "go wtime/btime/winc/binc\n"
 "                 -> timed search\n"
 "go infinite      -> search indefinitely\n"
+"go               -> search indefinitely\n"
 "\n"
 "setoption name Hash value <mb>\n"
 "                 -> set transposition table size\n"
@@ -32,4 +34,5 @@ const char *HELP_TEXT =
 "\n"
 "d                -> display board\n"
 "pml <i>          -> test move list entry\n"
+"clear            -> clear the screen\n"
 "help             -> display this help menu\n";

@@ -484,6 +484,133 @@ void genfensRun(int argc, char **argv)
     fflush(stdout);
 }
 
+static uint64_t parse_u64(const char *s)
+{
+    uint64_t v = 0;
+    for (int i = 0; s[i] != '\0'; i++)
+    {
+        if (s[i] < '0' || s[i] > '9')
+            return 0;
+        v = v * 10ULL + (uint64_t)(s[i] - '0');
+    }
+    return v;
+}
+
+static bool parse_go(char **tokens, Position *board, stopConditions *stop)
+{
+    long long wtime = 0, btime = 0, winc = 0, binc = 0;
+    long long movetime = 0;
+    uint64_t max_nodes = 0;
+    int depth = 0;
+    bool infinite = false;
+
+    memset(stop, 0, sizeof *stop);
+
+    for (int i = 1; tokens[i] != NULL; i++)
+    {
+        const char *t = tokens[i];
+
+        if (strcmp(t, "infinite") == 0)
+            infinite = true;
+        else if (strcmp(t, "wtime") == 0 && tokens[i + 1])
+            wtime = matoi(tokens[++i]);
+        else if (strcmp(t, "btime") == 0 && tokens[i + 1])
+            btime = matoi(tokens[++i]);
+        else if (strcmp(t, "winc") == 0 && tokens[i + 1])
+            winc = matoi(tokens[++i]);
+        else if (strcmp(t, "binc") == 0 && tokens[i + 1])
+            binc = matoi(tokens[++i]);
+        else if (strcmp(t, "movetime") == 0 && tokens[i + 1])
+        {
+            movetime = matoi(tokens[++i]);
+            if (movetime < 1)
+                movetime = 1;
+        }
+        else if (strcmp(t, "depth") == 0 && tokens[i + 1])
+        {
+            depth = matoi(tokens[++i]);
+            if (depth < 1)
+                depth = 1;
+            if (depth > MAX_DEPTH)
+                depth = MAX_DEPTH;
+        }
+        else if (strcmp(t, "nodes") == 0 && tokens[i + 1])
+        {
+            max_nodes = parse_u64(tokens[++i]);
+            if (max_nodes < 1)
+                max_nodes = 1;
+        }
+        else if (strcmp(t, "movestogo") == 0 && tokens[i + 1])
+            i++;
+        else if (strcmp(t, "mate") == 0 && tokens[i + 1])
+            i++;
+        else if (strcmp(t, "searchmoves") == 0)
+            break;
+        else
+            printf("info string go: ignoring '%s'\n", t);
+    }
+
+    stop->start_time = get_time_ms();
+    stop->depth = depth;
+
+    if (infinite)
+    {
+    }
+    else if (movetime > 0)
+    {
+        stop->max_time = movetime;
+    }
+    else if (max_nodes > 0)
+    {
+        if (use_soft_nodes)
+        {
+            stop->soft_nodes = max_nodes;
+            stop->max_nodes = max_nodes * SOFT_NODES_HARD_MULTIPLIER;
+        }
+        else
+        {
+            stop->max_nodes = max_nodes;
+        }
+    }
+    else if (wtime > 0 || btime > 0)
+    {
+        int increment = 0;
+        int time_left = 0;
+
+        if (board->turn == 0)
+        {
+            increment = (int)(winc * 0.7);
+            time_left = (int)wtime;
+        }
+        else
+        {
+            increment = (int)(binc * 0.7);
+            time_left = (int)btime;
+        }
+
+        int overhead = 100;
+
+        int soft = time_left / 30 + increment;
+        int hard = time_left / 3 + increment;
+
+        if (soft < 10)
+            soft = 10;
+        if (hard < soft)
+            hard = soft;
+        if (hard > time_left - overhead)
+            hard = time_left - overhead;
+        if (soft > hard)
+            soft = hard;
+        if (hard <= 0)
+            hard = 50;
+
+        stop->soft_time = soft;
+        stop->max_time = hard;
+    }
+
+    return true;
+}
+
 void uciStart()
 {
     init_lmr();
@@ -505,7 +632,10 @@ void uciStart()
     {
         if (fgets(line, sizeof(line), stdin) == NULL)
         {
+            search_request_stop();
+            search_wait();
             printf("Bye\n");
+            tt_free();
             return;
         }
         line[strcspn(line, "\n")] = '\0';
@@ -521,6 +651,8 @@ void uciStart()
 
         if (strcmp(tokens[0], "quit") == 0)
         {
+            search_request_stop();
+            search_wait();
             printf("bye\n");
             tt_free();
             break;
@@ -537,8 +669,14 @@ void uciStart()
         {
             printf("readyok\n");
         }
+        else if (strcmp(tokens[0], "stop") == 0)
+        {
+            search_request_stop();
+        }
         else if (strcmp(tokens[0], "setoption") == 0)
         {
+            search_wait();
+
             if (tokens[1] && str_eq_ci(tokens[1], "name") && tokens[2] &&
                 str_eq_ci(tokens[2], "Hash"))
             {
@@ -595,6 +733,8 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "ucinewgame") == 0)
         {
+            search_wait();
+
             tt_clear();
             reset_history();
             fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w",
@@ -603,6 +743,8 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "position") == 0)
         {
+            search_wait();
+
             if (tokens[1] == NULL)
             {
                 printf("position: missing argument\n");
@@ -657,179 +799,7 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "go") == 0)
         {
-            if (tokens[1] == NULL || strcmp(tokens[1], "infinite") == 0)
-            {
-                stopConditions stop = {0};
-                stop.start_time = 0;
-                stop.max_time = 0;
-                stop.max_nodes = 0;
-                stop.depth = 0;
-                stop.nodes = 0;
-                stop.stop = 0;
-
-                uint16_t result = iterative_deepening(&board, &stop);
-
-                if (result == 0)
-                {
-                    uint64_t king_bb = board.pieces[5] & board.color[board.turn];
-                    if (!king_bb)
-                        break;
-                    int king_pos = __builtin_ctzll(king_bb);
-                    if (squareAttacked(&board, king_pos, !board.turn))
-                    {
-                        printf("%s is checkmated\n", board.turn ? "Black" : "White");
-                    }
-                    else
-                    {
-                        printf("Stalemate\n");
-                    }
-                }
-                else
-                {
-                    movestring(result);
-                }
-            }
-            else if (strcmp(tokens[1], "nodes") == 0)
-            {
-                if (tokens[2] == NULL)
-                {
-                    printf("go nodes: missing node count\n");
-                }
-                else
-                {
-                    uint64_t max_nodes = 0;
-                    for (int i = 0; tokens[2][i] != '\0'; i++)
-                        max_nodes = max_nodes * 10 + (tokens[2][i] - '0');
-
-                    if (max_nodes <= 0)
-                        max_nodes = 1000;
-
-                    stopConditions stop = {0};
-                    stop.start_time = get_time_ms();
-                    stop.nodes = 0;
-                    stop.stop = 0;
-
-                    if (use_soft_nodes)
-                    {
-                        stop.soft_nodes = max_nodes;
-                        stop.max_nodes = max_nodes * SOFT_NODES_HARD_MULTIPLIER;
-                        stop.max_time = 0;
-                    }
-                    else
-                    {
-                        stop.soft_nodes = 0;
-                        stop.max_nodes = max_nodes;
-                        stop.max_time = 0;
-                    }
-
-                    uint16_t result = iterative_deepening(&board, &stop);
-
-                    if (result == 0)
-                    {
-                        uint64_t king_bb = board.pieces[5] & board.color[board.turn];
-                        if (!king_bb)
-                            break;
-                        int king_pos = __builtin_ctzll(king_bb);
-                        if (squareAttacked(&board, king_pos, !board.turn))
-                        {
-                            printf("%s is checkmated\n", board.turn ? "Black" : "White");
-                        }
-                        else
-                        {
-                            printf("Stalemate\n");
-                        }
-                    }
-                    else
-                    {
-                        movestring(result);
-                    }
-                }
-            }
-            else if (strcmp(tokens[1], "movetime") == 0)
-            {
-                if (tokens[2] == NULL)
-                {
-                    printf("go movetime: missing move time\n");
-                }
-                else
-                {
-
-                    int movetime = 0;
-                    for (int i = 0; tokens[2][i] != '\0'; i++)
-                    {
-                        movetime = movetime * 10 + (tokens[2][i] - '0');
-                    }
-                    if (movetime <= 0)
-                        movetime = 100;
-
-                    stopConditions stop = {0};
-                    stop.start_time = get_time_ms();
-                    stop.max_time = movetime;
-
-                    uint16_t result = iterative_deepening(&board, &stop);
-
-                    if (result == 0)
-                    {
-                        uint64_t king_bb = board.pieces[5] & board.color[board.turn];
-                        if (!king_bb)
-                            break;
-                        int king_pos = __builtin_ctzll(king_bb);
-                        if (squareAttacked(&board, king_pos, !board.turn))
-                        {
-                            printf("%s is checkmated\n", board.turn ? "Black" : "White");
-                        }
-                        else
-                        {
-                            printf("Stalemate\n");
-                        }
-                    }
-                    else
-                    {
-                        movestring(result);
-                    }
-                }
-            }
-
-            else if (strcmp(tokens[1], "depth") == 0)
-            {
-
-                if (tokens[2] == NULL)
-                {
-                    printf("go depth: missing depth value\n");
-                }
-                else
-                {
-                    int depth = 0;
-                    for (int i = 0; tokens[2][i] != '\0'; i++)
-                        depth = depth * 10 + (tokens[2][i] - '0');
-
-                    stopConditions stop = {0};
-                    stop.depth = depth;
-
-                    uint16_t result = iterative_deepening(&board, &stop);
-
-                    if (result == 0)
-                    {
-                        uint64_t king_bb = board.pieces[5] & board.color[board.turn];
-                        if (!king_bb)
-                            break;
-                        int king_pos = __builtin_ctzll(king_bb);
-                        if (squareAttacked(&board, king_pos, !board.turn))
-                        {
-                            printf("%s is checkmated\n", board.turn ? "Black" : "White");
-                        }
-                        else
-                        {
-                            printf("Stalemate\n");
-                        }
-                    }
-                    else
-                    {
-                        movestring(result);
-                    }
-                }
-            }
-            else if (strcmp(tokens[1], "perft") == 0)
+            if (tokens[1] && strcmp(tokens[1], "perft") == 0)
             {
                 if (!tokens[2])
                 {
@@ -932,100 +902,15 @@ void uciStart()
                     }
                 }
             }
+            else if (search_is_running())
+            {
+                printf("info string go ignored: a search is already running\n");
+            }
             else
             {
-                int white_time = 0;
-                int black_time = 0;
-                int white_increment = 0;
-                int black_increment = 0;
-
-                for (int i = 1; tokens[i] != NULL; i++)
-                {
-                    if (strcmp(tokens[i], "wtime") == 0 && tokens[i + 1])
-                    {
-                        white_time = matoi(tokens[i + 1]);
-                        i++;
-                    }
-                    else if (strcmp(tokens[i], "btime") == 0 && tokens[i + 1])
-                    {
-                        black_time = matoi(tokens[i + 1]);
-                        i++;
-                    }
-                    else if (strcmp(tokens[i], "winc") == 0 && tokens[i + 1])
-                    {
-                        white_increment = matoi(tokens[i + 1]);
-                        i++;
-                    }
-                    else if (strcmp(tokens[i], "binc") == 0 && tokens[i + 1])
-                    {
-                        black_increment = matoi(tokens[i + 1]);
-                        i++;
-                    }
-                    else
-                    {
-                        printf("go: unknown argument: %s\n", tokens[1]);
-                    }
-                }
-
-                int increment = 0;
-                int time_left = 0;
-
-                if (board.turn == 0)
-                {
-                    increment = (int)(white_increment * 0.7);
-                    time_left = white_time;
-                }
-                else if (board.turn == 1)
-                {
-                    increment = (int)(black_increment * 0.7);
-                    time_left = black_time;
-                }
-
-                int overhead = 100;
-
-                int soft = time_left / 30 + increment;
-                int hard = time_left / 3 + increment;
-
-                if (soft < 10)
-                    soft = 10;
-                if (hard < soft)
-                    hard = soft;
-                if (hard > time_left - overhead)
-                    hard = time_left - overhead;
-                if (soft > hard)
-                    soft = hard;
-                if (hard <= 0)
-                    hard = 50;
-
                 stopConditions stop = {0};
-                stop.start_time = get_time_ms();
-                stop.soft_time = soft;
-                stop.max_time = hard;
-                stop.max_nodes = 0;
-                stop.nodes = 0;
-                stop.stop = 0;
-
-                uint16_t result = iterative_deepening(&board, &stop);
-
-                if (result == 0)
-                {
-                    uint64_t king_bb = board.pieces[5] & board.color[board.turn];
-                    if (!king_bb)
-                        break;
-                    int king_pos = __builtin_ctzll(king_bb);
-                    if (squareAttacked(&board, king_pos, !board.turn))
-                    {
-                        printf("%s is checkmated\n", board.turn ? "Black" : "White");
-                    }
-                    else
-                    {
-                        printf("Stalemate\n");
-                    }
-                }
-                else
-                {
-                    movestring(result);
-                }
+                if (parse_go(tokens, &board, &stop))
+                    search_start_async(&board, &stop);
             }
         }
         else if (strcmp(tokens[0], "d") == 0)
@@ -1035,6 +920,10 @@ void uciStart()
         else if (strcmp(tokens[0], "help") == 0)
         {
             printf("%s", HELP_TEXT);
+        }
+        else if (strcmp(tokens[0], "clear") == 0)
+        {
+            printf("\e[1;1H\e[2J"); // Clear screen
         }
         else if (strcmp(tokens[0], "pml") == 0)
         {

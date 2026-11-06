@@ -36,6 +36,20 @@ static Position thread_boards[MAX_THREADS];
 static ThreadPool pool;
 static int num_threads = DEFAULT_THREADS;
 
+static volatile int stop_requested = 0;
+
+static thread_t master_handle;
+static Position master_board;
+static stopConditions master_stop;
+static volatile int search_running = 0;
+static int master_spawned = 0;
+
+void search_request_stop(void)
+{
+    stop_requested = 1;
+    pool.stop_flag = 1; 
+}
+
 void search_set_threads(int n)
 {
     if (n < 1)
@@ -148,6 +162,13 @@ static inline void check_limits(ThreadData *td)
     if (td->pool && td->pool->stop_flag)
     {
         stop->stop = 1;
+        return;
+    }
+
+    if (stop_requested)
+    {
+        stop->stop = 1;
+        pool_abort(td);
         return;
     }
 
@@ -1203,7 +1224,7 @@ static void run_search_thread(ThreadData *td)
 
     for (int depth = start_depth; depth <= MAX_DEPTH; depth++)
     {
-        if (td->pool && td->pool->stop_flag)
+        if (stop_requested || (td->pool && td->pool->stop_flag))
             break;
 
         if (is_main && stop->soft_time > 0)
@@ -1348,7 +1369,8 @@ static void run_search_thread(ThreadData *td)
 
         int64_t elapsed = get_time_ms() - search_start;
         uint64_t total_nodes = pool_nodes(td);
-        long long nps = elapsed > 0 ? (long long)((total_nodes * 1000ULL) / (uint64_t)elapsed) : 0;
+        long long nps = (long long)((total_nodes * 1000ULL) /
+                                    (uint64_t)(elapsed > 0 ? elapsed : 1));
 
         char score_str[32];
         if (out.score > 31000)
@@ -1393,6 +1415,8 @@ searchOutput search_bench(Position *board, int depth, stopConditions *stop)
         return (searchOutput){0};
 
     tt_new_search();
+    stop_requested = 0;
+
     td->thread_id = 0;
 
     td->pool = NULL;
@@ -1558,4 +1582,85 @@ uint16_t iterative_deepening(Position *board, stopConditions *stop)
 #else
     return threads_data[0]->best_move;
 #endif
+}
+
+static uint16_t first_legal_move(Position *board)
+{
+    MoveList ml = {0};
+    legalMoveGen(board, &ml);
+
+    for (unsigned int i = 0; i < ml.offset; i++)
+    {
+        Position copy = *board;
+        moveint(&copy, ml.movelist[i]);
+
+        uint64_t king_bb = copy.pieces[5] & copy.color[board->turn];
+        if (king_bb &&
+            !squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
+            return ml.movelist[i];
+    }
+
+    return 0;
+}
+
+static THREAD_RET search_master_entry(void *arg)
+{
+    (void)arg;
+
+    uint16_t best = iterative_deepening(&master_board, &master_stop);
+
+    if (best == 0)
+        best = first_legal_move(&master_board);
+
+    if (best != 0)
+    {
+        char mv[6];
+        move_to_uci(best, mv);
+        printf("bestmove %s\n", mv);
+    }
+    else
+    {
+        printf("bestmove 0000\n");
+    }
+    fflush(stdout);
+
+    search_running = 0;
+    THREAD_RETURN;
+}
+
+void search_wait(void)
+{
+    if (!master_spawned)
+        return;
+
+    thread_join(master_handle);
+    master_spawned = 0;
+    search_running = 0;
+}
+
+bool search_is_running(void)
+{
+    return search_running != 0;
+}
+
+void search_start_async(const Position *board, const stopConditions *stop)
+{
+    search_wait();
+
+    master_board = *board;
+    master_stop = *stop;
+    if (master_stop.start_time == 0)
+        master_stop.start_time = get_time_ms();
+
+    stop_requested = 0;
+    pool.stop_flag = 0;
+    search_running = 1;
+
+    if (thread_create(&master_handle, search_master_entry, NULL) != 0)
+    {
+        search_master_entry(NULL);
+        return;
+    }
+
+    master_spawned = 1;
 }

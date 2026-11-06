@@ -109,4 +109,9 @@ searchOutput search_bench(Position *board, int depth, stopConditions *stop);
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop);
 
+void search_request_stop(void);
+void search_start_async(const Position *board, const stopConditions *stop);
+void search_wait(void);
+bool search_is_running(void);
+
 #endif
