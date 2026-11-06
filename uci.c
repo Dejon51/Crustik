@@ -540,8 +540,6 @@ static bool parse_go(char **tokens, Position *board, stopConditions *stop)
             if (max_nodes < 1)
                 max_nodes = 1;
         }
-        else if (strcmp(t, "movestogo") == 0 && tokens[i + 1])
-            i++;
         else if (strcmp(t, "mate") == 0 && tokens[i + 1])
             i++;
         else if (strcmp(t, "searchmoves") == 0)
