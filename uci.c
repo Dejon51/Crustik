@@ -511,62 +511,41 @@ static bool parse_go(char **tokens, Position *board, stopConditions *stop)
         const char *t = tokens[i];
 
         if (strcmp(t, "infinite") == 0)
-        {
             infinite = true;
-            continue;
-        }
-
-        if (strcmp(t, "mate") == 0 || strcmp(t, "searchmoves") == 0)
+        else if (strcmp(t, "wtime") == 0 && tokens[i + 1])
+            wtime = matoi(tokens[++i]);
+        else if (strcmp(t, "btime") == 0 && tokens[i + 1])
+            btime = matoi(tokens[++i]);
+        else if (strcmp(t, "winc") == 0 && tokens[i + 1])
+            winc = matoi(tokens[++i]);
+        else if (strcmp(t, "binc") == 0 && tokens[i + 1])
+            binc = matoi(tokens[++i]);
+        else if (strcmp(t, "movetime") == 0 && tokens[i + 1])
         {
-            printf("info string ignoring command\n");
-            return false;
-        }
-
-        if (strcmp(t, "wtime") != 0 && strcmp(t, "btime") != 0 &&
-            strcmp(t, "winc") != 0 && strcmp(t, "binc") != 0 &&
-            strcmp(t, "movetime") != 0 && strcmp(t, "depth") != 0 &&
-            strcmp(t, "nodes") != 0)
-        {
-            printf("info string ignoring command\n");
-            return false;
-        }
-
-        if (tokens[i + 1] == NULL)
-        {
-            printf("info string ignoring command\n");
-            return false;
-        }
-
-        const char *value = tokens[++i];
-
-        if (strcmp(t, "wtime") == 0)
-            wtime = matoi(value);
-        else if (strcmp(t, "btime") == 0)
-            btime = matoi(value);
-        else if (strcmp(t, "winc") == 0)
-            winc = matoi(value);
-        else if (strcmp(t, "binc") == 0)
-            binc = matoi(value);
-        else if (strcmp(t, "movetime") == 0)
-        {
-            movetime = matoi(value);
+            movetime = matoi(tokens[++i]);
             if (movetime < 1)
                 movetime = 1;
         }
-        else if (strcmp(t, "depth") == 0)
+        else if (strcmp(t, "depth") == 0 && tokens[i + 1])
         {
-            depth = matoi(value);
+            depth = matoi(tokens[++i]);
             if (depth < 1)
                 depth = 1;
             if (depth > MAX_DEPTH)
                 depth = MAX_DEPTH;
         }
-        else if (strcmp(t, "nodes") == 0)
+        else if (strcmp(t, "nodes") == 0 && tokens[i + 1])
         {
-            max_nodes = parse_u64(value);
+            max_nodes = parse_u64(tokens[++i]);
             if (max_nodes < 1)
                 max_nodes = 1;
         }
+        else if (strcmp(t, "mate") == 0 && tokens[i + 1])
+            i++;
+        else if (strcmp(t, "searchmoves") == 0)
+            break;
+        else
+            printf("info string go: ignoring '%s'\n", t);
     }
 
     stop->start_time = get_time_ms();
@@ -923,7 +902,7 @@ void uciStart()
             }
             else if (search_is_running())
             {
-                printf("info string ignoring command\n");
+                printf("info string go ignored: a search is already running\n");
             }
             else
             {
