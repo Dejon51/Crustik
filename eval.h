@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #define NNUE_MAX_PLY 256
-#define NNUE_HL 512
+#define NNUE_HL 768
 
 #define NNUE_ALIGN64 __attribute__((aligned(64)))
 
