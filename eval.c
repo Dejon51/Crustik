@@ -14,7 +14,7 @@
 #define ALIGN64 __attribute__((aligned(64)))
 
 #ifndef EVALFILE
-#define EVALFILE "quant768hl.bin"
+#define EVALFILE "quant1024hl.bin"
 #endif
 
 INCBIN(EvalFile, EVALFILE);
