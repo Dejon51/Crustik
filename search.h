@@ -94,6 +94,7 @@ struct ThreadData
     int completed_depth;
 };
 
+
 struct ThreadPool
 {
     int count;
