@@ -980,8 +980,10 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
             td->cont_stack[ply].valid = true;
         }
 
-        PVLine child_pv = {0};
+        PVLine child_pv;
         int score;
+
+        child_pv.length = 0;
 
         if (i == 0 || depth < PVS_MIN_DEPTH)
         {
