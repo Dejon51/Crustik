@@ -48,6 +48,7 @@ int SEE_PRUNE_QUIET_MARGIN = 50;
 int HISTPRUNE_MAX_DEPTH = 3;
 int HISTPRUNE_MIN_MOVES = 4;
 int HISTPRUNE_MARGIN = 6000;
+int COUNTERMOVE_HISTORY_BONUS = 4096;  
 
 /* ---------- Futility pruning ---------- */
 int FUTILITY_MAX_DEPTH = 3;

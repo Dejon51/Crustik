@@ -250,6 +250,9 @@ static inline int quiet_history_score(ThreadData *td, Position *board, int ply, 
         int prev_piece = td->cont_stack[ply - 1].piece;
         int prev_to = td->cont_stack[ply - 1].to;
         score += td->cont_hist[board->turn][prev_piece][prev_to][piece][to];
+
+        if (td->counter_moves[board->turn ^ 1][prev_piece][prev_to] == move)
+            score += COUNTERMOVE_HISTORY_BONUS;
     }
 
     return score;

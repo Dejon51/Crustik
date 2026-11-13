@@ -70,6 +70,7 @@ extern int HIST_BONUS_MULT;
 extern int HIST_BONUS_BASE;
 extern int HIST_MALUS_MULT;
 extern int HIST_MALUS_BASE;
+extern int COUNTERMOVE_HISTORY_BONUS; 
 
 /* ---------- Correction history ---------- */
 extern int CORRHIST_GRAIN;
