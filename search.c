@@ -747,7 +747,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
     }
 
     if (!pv_node && !in_check && depth >= PROBCUT_MIN_DEPTH &&
-        abs(beta) < MATE_SCORE && stack->excluded_move == 0)
+        !is_mate_score(beta) && stack->excluded_move == 0)
     {
         int probcut_beta = beta + PROBCUT_MARGIN;
         int probcut_depth = depth - PROBCUT_DEPTH_REDUCTION;
@@ -797,8 +797,8 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                 {
                     tt_store(board->hash,
                              score_to_tt(probcut_value, ply),
-                             move, probcut_depth, TT_ALPHA, 0,
-                             in_check ? NO_EVAL : static_eval);
+                             move, probcut_depth + 1, TT_BETA, 0,
+                             static_eval);
 
                     return (searchOutput){.score = probcut_value, .move = move};
                 }
