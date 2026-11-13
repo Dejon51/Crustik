@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <immintrin.h>
 
 #define ALIGN64 __attribute__((aligned(64)))
 
@@ -34,10 +35,16 @@ static int32_t nnue_outputBias;
 static int nnue_loaded = 0;
 
 static const int internal_to_nnue_encoding[6] = {
-	0, 2, 1, 3, 4, 5,
+	0,
+	2,
+	1,
+	3,
+	4,
+	5,
 };
 
-static inline int nnue_clampPly(int ply) {
+static inline int nnue_clampPly(int ply)
+{
 	if (ply < 0)
 		return 0;
 	if (ply >= NNUE_MAX_PLY)
@@ -45,14 +52,16 @@ static inline int nnue_clampPly(int ply) {
 	return ply;
 }
 
-static inline bool mirror_or_not(Bitboard king_bitboard) {
+static inline bool mirror_or_not(Bitboard king_bitboard)
+{
 	if (!king_bitboard)
 		return 0;
 	return (__builtin_ctzll(king_bitboard) & 7) > 3;
 }
 
 // Loads nnue from bin file
-static int nnue_load(void) {
+static int nnue_load(void)
+{
 	const unsigned char *data = gEvalFileData;
 	size_t size = (size_t)gEvalFileSize;
 	size_t offset = 0;
@@ -61,7 +70,8 @@ static int nnue_load(void) {
 						   sizeof(nnue_hiddenBiases) +
 						   sizeof(nnue_outputWeights) + sizeof(int16_t);
 
-	if (size < required_size) {
+	if (size < required_size)
+	{
 		fprintf(stderr,
 				"nnue_load: embedded network too small (%zu < %zu bytes)\n",
 				size, required_size);
@@ -87,7 +97,8 @@ static int nnue_load(void) {
 }
 
 static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece,
-								  int sq, bool mirror) {
+								  int sq, bool mirror)
+{
 	int nnue_piece = internal_to_nnue_encoding[internal_piece];
 	int relSq = (persp == 0) ? NNUE_FLIP(sq) : sq;
 	if (mirror)
@@ -95,45 +106,53 @@ static inline int nnue_inputIndex(int persp, int pieceIsOwn, int internal_piece,
 	return (pieceIsOwn ? nnue_piece : nnue_piece + 6) * 64 + relSq;
 }
 
-static inline void nnue_addFeature(int16_t acc[NNUE_HL], int input_index) {
+static inline void nnue_addFeature(int16_t acc[NNUE_HL], int input_index)
+{
 	const int16_t *w = nnue_featureWeights[input_index];
 	for (int h = 0; h < NNUE_HL; h++)
 		acc[h] += w[h];
 }
 
 static inline void nnue_addSub(int16_t *dst, const int16_t *src,
-							   const int16_t *a, const int16_t *s) {
+							   const int16_t *a, const int16_t *s)
+{
 	for (int i = 0; i < NNUE_HL; i++)
 		dst[i] = src[i] + a[i] - s[i];
 }
 
 static inline void nnue_addSubSub(int16_t *dst, const int16_t *src,
 								  const int16_t *a, const int16_t *s1,
-								  const int16_t *s2) {
+								  const int16_t *s2)
+{
 	for (int i = 0; i < NNUE_HL; i++)
 		dst[i] = src[i] + a[i] - s1[i] - s2[i];
 }
 
 static inline void nnue_addSubAddSub(int16_t *dst, const int16_t *src,
 									 const int16_t *a1, const int16_t *s1,
-									 const int16_t *a2, const int16_t *s2) {
+									 const int16_t *a2, const int16_t *s2)
+{
 	for (int i = 0; i < NNUE_HL; i++)
 		dst[i] = src[i] + a1[i] - s1[i] + a2[i] - s2[i];
 }
 
 static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL],
-						   bool mirror) {
+						   bool mirror)
+{
 	memcpy(acc, nnue_hiddenBiases, sizeof(nnue_hiddenBiases));
 	int otherSide = ownSide ^ 1;
 
-	for (int p = 0; p < 6; p++) {
+	for (int p = 0; p < 6; p++)
+	{
 		uint64_t bb = board->pieces[p] & board->color[ownSide];
-		while (bb) {
+		while (bb)
+		{
 			int sq = pop_lsb(&bb);
 			nnue_addFeature(acc, nnue_inputIndex(ownSide, 1, p, sq, mirror));
 		}
 		bb = board->pieces[p] & board->color[otherSide];
-		while (bb) {
+		while (bb)
+		{
 			int sq = pop_lsb(&bb);
 			nnue_addFeature(acc, nnue_inputIndex(ownSide, 0, p, sq, mirror));
 		}
@@ -141,14 +160,16 @@ static void nnue_buildSide(Position *board, int ownSide, int16_t acc[NNUE_HL],
 }
 
 static void nnue_refreshPersp(Position *board, NnueAccumulator *acc,
-							  int persp) {
+							  int persp)
+{
 	acc->mirror[persp] =
 		mirror_or_not(board->pieces[KINGNUMBER] & board->color[persp]);
 	nnue_buildSide(board, persp, acc->vector[persp], acc->mirror[persp]);
 	acc->needsRefresh[persp] = 0;
 }
 
-static inline void nnue_ensureReady(ThreadData *td, Position *board, int ply) {
+static inline void nnue_ensureReady(ThreadData *td, Position *board, int ply)
+{
 	NnueAccumulator *acc = &td->nnue_stack[ply];
 	if (acc->needsRefresh[0])
 		nnue_refreshPersp(board, acc, 0);
@@ -156,14 +177,16 @@ static inline void nnue_ensureReady(ThreadData *td, Position *board, int ply) {
 		nnue_refreshPersp(board, acc, 1);
 }
 
-void nnue_refresh(ThreadData *td, Position *board, int ply) {
+void nnue_refresh(ThreadData *td, Position *board, int ply)
+{
 	ply = nnue_clampPly(ply);
 	NnueAccumulator *acc = &td->nnue_stack[ply];
 	nnue_refreshPersp(board, acc, WHITE);
 	nnue_refreshPersp(board, acc, BLACK);
 }
 
-void nnue_copy(ThreadData *td, int parent_ply, int child_ply) {
+void nnue_copy(ThreadData *td, int parent_ply, int child_ply)
+{
 	parent_ply = nnue_clampPly(parent_ply);
 	child_ply = nnue_clampPly(child_ply);
 	if (parent_ply == child_ply)
@@ -173,7 +196,8 @@ void nnue_copy(ThreadData *td, int parent_ply, int child_ply) {
 }
 
 void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
-				 int child_ply) {
+				 int child_ply)
+{
 	parent_ply = nnue_clampPly(parent_ply);
 	child_ply = nnue_clampPly(child_ply);
 
@@ -185,7 +209,8 @@ void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
 	int piece = board->mailbox[from];
 	int victim = board->mailbox[to];
 
-	if (piece == EMPTYNUMBER) {
+	if (piece == EMPTYNUMBER)
+	{
 		nnue_copy(td, parent_ply, child_ply);
 		return;
 	}
@@ -200,26 +225,50 @@ void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
 	int capSq = to + (color == 0 ? 8 : -8);
 
 	int placed = piece;
-	switch (flag) { // Promotions
-	case 5: placed = BISHOPNUMBER; break;
-	case 6: placed = HORSENUMBER; break;
-	case 7: placed = ROOKNUMBER; break;
-	case 8: placed = QUEENNUMBER; break;
+	switch (flag)
+	{ // Promotions
+	case 5:
+		placed = BISHOPNUMBER;
+		break;
+	case 6:
+		placed = HORSENUMBER;
+		break;
+	case 7:
+		placed = ROOKNUMBER;
+		break;
+	case 8:
+		placed = QUEENNUMBER;
+		break;
 	}
 
 	int rookFrom = -1, rookTo = -1;
-	switch (flag) { // Castling
-	case 1: rookFrom = H1; rookTo = F1; break;
-	case 2: rookFrom = A1; rookTo = D1; break;
-	case 4: rookFrom = H8; rookTo = F8; break;
-	case 3: rookFrom = A8; rookTo = D8; break;
+	switch (flag)
+	{ // Castling
+	case 1:
+		rookFrom = H1;
+		rookTo = F1;
+		break;
+	case 2:
+		rookFrom = A1;
+		rookTo = D1;
+		break;
+	case 4:
+		rookFrom = H8;
+		rookTo = F8;
+		break;
+	case 3:
+		rookFrom = A8;
+		rookTo = D8;
+		break;
 	}
 
 	bool kingMirrorFlip =
 		(piece == KINGNUMBER) && (((from & 7) > 3) != ((to & 7) > 3));
 
-	for (int persp = 0; persp < 2; persp++) {
-		if (kingMirrorFlip && persp == color) {
+	for (int persp = 0; persp < 2; persp++)
+	{
+		if (kingMirrorFlip && persp == color)
+		{
 			child->mirror[persp] = ((to & 7) > 3);
 			child->needsRefresh[persp] = 1;
 			continue;
@@ -241,7 +290,8 @@ void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
 			subIdx[ns++] = nnue_inputIndex(persp, theirs, victim, to, mir);
 
 		addIdx[na++] = nnue_inputIndex(persp, own, placed, to, mir);
-		if (rookFrom >= 0) {
+		if (rookFrom >= 0)
+		{
 			subIdx[ns++] =
 				nnue_inputIndex(persp, own, ROOKNUMBER, rookFrom, mir);
 			addIdx[na++] = nnue_inputIndex(persp, own, ROOKNUMBER, rookTo, mir);
@@ -257,7 +307,7 @@ void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
 			nnue_addSubSub(dst, src, nnue_featureWeights[addIdx[0]],
 						   nnue_featureWeights[subIdx[0]],
 						   nnue_featureWeights[subIdx[1]]);
-		else 
+		else
 			nnue_addSubAddSub(dst, src, nnue_featureWeights[addIdx[0]],
 							  nnue_featureWeights[subIdx[0]],
 							  nnue_featureWeights[addIdx[1]],
@@ -265,39 +315,66 @@ void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
 	}
 }
 
-static int nnue_forward(ThreadData *td, Position *board, int ply) {
+static inline int32_t hsum_epi32(__m256i v)
+{
+	__m128i lo = _mm256_castsi256_si128(v);
+	__m128i hi = _mm256_extracti128_si256(v, 1);
+	__m128i s = _mm_add_epi32(lo, hi);
+	s = _mm_hadd_epi32(s, s);
+	s = _mm_hadd_epi32(s, s);
+	return _mm_cvtsi128_si32(s);
+}
+
+static int nnue_forward(ThreadData *td, Position *board, int ply)
+{
 	ply = nnue_clampPly(ply);
 	nnue_ensureReady(td, board, ply);
 
 	const int16_t *accUs = td->nnue_stack[ply].vector[board->turn];
 	const int16_t *accThem = td->nnue_stack[ply].vector[board->turn ^ 1];
 
-	int s = 0;
-	for (int h = 0; h < NNUE_HL; h++) {
-		int c = accUs[h];
-		c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
-		s += (int16_t)(c * nnue_outputWeights[h]) * c;
+	const __m256i vlo = _mm256_setzero_si256();
+	const __m256i vhi = _mm256_set1_epi32(HIDDEN_QUANT_SCALE);
+	__m256i vsum = _mm256_setzero_si256();
 
-		c = accThem[h];
-		c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
-		s += (int16_t)(c * nnue_outputWeights[NNUE_HL + h]) * c;
+	for (int h = 0; h < NNUE_HL; h += 8)
+	{
+		__m128i a16 = _mm_loadu_si128((const __m128i *)(accUs + h));
+		__m256i a = _mm256_cvtepi16_epi32(a16);
+		a = _mm256_min_epi32(_mm256_max_epi32(a, vlo), vhi);
+
+		__m128i wa16 = _mm_loadu_si128((const __m128i *)(nnue_outputWeights + h));
+		__m256i wa = _mm256_cvtepi16_epi32(wa16);
+		vsum = _mm256_add_epi32(vsum, _mm256_mullo_epi32(_mm256_mullo_epi32(a, wa), a));
+
+		__m128i b16 = _mm_loadu_si128((const __m128i *)(accThem + h));
+		__m256i b = _mm256_cvtepi16_epi32(b16);
+		b = _mm256_min_epi32(_mm256_max_epi32(b, vlo), vhi);
+
+		__m128i wb16 = _mm_loadu_si128((const __m128i *)(nnue_outputWeights + NNUE_HL + h));
+		__m256i wb = _mm256_cvtepi16_epi32(wb16);
+		vsum = _mm256_add_epi32(vsum, _mm256_mullo_epi32(_mm256_mullo_epi32(b, wb), b));
 	}
 
+	int32_t s = hsum_epi32(vsum);
+
 	long long out = s / HIDDEN_QUANT_SCALE + nnue_outputBias;
-	out =
-		out * NNUE_SCALE / ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
+	out = out * NNUE_SCALE / ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
 	return (int)out;
 }
 
-void init_tables(void) {
-	if (nnue_load() != 0) {
+void init_tables(void)
+{
+	if (nnue_load() != 0)
+	{
 		fprintf(stderr, "FATAL: failed to load embedded NNUE network (built "
 						"with EVALFILE=" EVALFILE ")\n");
 		exit(1);
 	}
 }
 
-int material_phase(Position *board) {
+int material_phase(Position *board)
+{
 	int pawns = __builtin_popcountll(board->pieces[PAWNNUMBER]);
 	int bishops = __builtin_popcountll(board->pieces[BISHOPNUMBER]);
 	int horses = __builtin_popcountll(board->pieces[HORSENUMBER]);
@@ -308,6 +385,7 @@ int material_phase(Position *board) {
 		   900 * queens;
 }
 
-int eval(ThreadData *td, Position *board, int ply) {
+int eval(ThreadData *td, Position *board, int ply)
+{
 	return nnue_forward(td, board, ply) * (25000 + material_phase(board)) / 32768;
 }
