@@ -265,29 +265,72 @@ void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
 	}
 }
 
+#if defined(__AVX2__)
+#include <immintrin.h>
+
 static int nnue_forward(ThreadData *td, Position *board, int ply) {
-	ply = nnue_clampPly(ply);
-	nnue_ensureReady(td, board, ply);
+    ply = nnue_clampPly(ply);
+    nnue_ensureReady(td, board, ply);
 
-	const int16_t *accUs = td->nnue_stack[ply].vector[board->turn];
-	const int16_t *accThem = td->nnue_stack[ply].vector[board->turn ^ 1];
+    const int16_t *accUs   = td->nnue_stack[ply].vector[board->turn];
+    const int16_t *accThem = td->nnue_stack[ply].vector[board->turn ^ 1];
 
-	int s = 0;
-	for (int h = 0; h < NNUE_HL; h++) {
-		int c = accUs[h];
-		c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
-		s += (int16_t)(c * nnue_outputWeights[h]) * c;
+    const __m256i vqa   = _mm256_set1_epi16(HIDDEN_QUANT_SCALE);
+    const __m256i vzero = _mm256_setzero_si256();
+    __m256i acc = _mm256_setzero_si256();
 
-		c = accThem[h];
-		c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
-		s += (int16_t)(c * nnue_outputWeights[NNUE_HL + h]) * c;
-	}
+    for (int h = 0; h < NNUE_HL; h += 16) {
+        __m256i us   = _mm256_loadu_si256((const __m256i*)(accUs   + h));
+        __m256i them = _mm256_loadu_si256((const __m256i*)(accThem + h));
+        __m256i wU   = _mm256_load_si256((const __m256i*)(nnue_outputWeights + h));
+        __m256i wT   = _mm256_load_si256((const __m256i*)(nnue_outputWeights + NNUE_HL + h));
 
-	long long out = s / HIDDEN_QUANT_SCALE + nnue_outputBias;
-	out =
-		out * NNUE_SCALE / ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
-	return (int)out;
+        us   = _mm256_max_epi16(_mm256_min_epi16(us,   vqa), vzero);
+        them = _mm256_max_epi16(_mm256_min_epi16(them, vqa), vzero);
+
+        __m256i pU = _mm256_madd_epi16(us,   _mm256_mullo_epi16(us,   wU));
+        __m256i pT = _mm256_madd_epi16(them, _mm256_mullo_epi16(them, wT));
+        acc = _mm256_add_epi32(acc, _mm256_add_epi32(pU, pT));
+    }
+
+    __m128i lo = _mm256_castsi256_si128(acc);
+    __m128i hi = _mm256_extracti128_si256(acc, 1);
+    __m128i s  = _mm_add_epi32(lo, hi);
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, 0xEE));
+    s = _mm_add_epi32(s, _mm_shuffle_epi32(s, 0x55));
+    int total = _mm_cvtsi128_si32(s);
+
+    long long out = total / HIDDEN_QUANT_SCALE + nnue_outputBias;
+    out = out * NNUE_SCALE / ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
+    return (int)out;
 }
+
+#else
+
+static int nnue_forward(ThreadData *td, Position *board, int ply) {
+    ply = nnue_clampPly(ply);
+    nnue_ensureReady(td, board, ply);
+
+    const int16_t *accUs   = td->nnue_stack[ply].vector[board->turn];
+    const int16_t *accThem = td->nnue_stack[ply].vector[board->turn ^ 1];
+
+    int s = 0;
+    for (int h = 0; h < NNUE_HL; h++) {
+        int c = accUs[h];
+        c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
+        s += (int16_t)(c * nnue_outputWeights[h]) * c;
+
+        c = accThem[h];
+        c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
+        s += (int16_t)(c * nnue_outputWeights[NNUE_HL + h]) * c;
+    }
+
+    long long out = s / HIDDEN_QUANT_SCALE + nnue_outputBias;
+    out = out * NNUE_SCALE / ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
+    return (int)out;
+}
+
+#endif
 
 void init_tables(void) {
 	if (nnue_load() != 0) {
