@@ -74,6 +74,10 @@ MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int pl
             if (have_cont && attacker != -1)
                 score += td->cont_hist[board->turn][cont_piece][cont_to][attacker][to];
 
+            int from_attacked = squareAttacked(board, from, !board->turn);
+            int to_attacked = squareAttacked(board, to, !board->turn);
+            score += td->threat_hist[board->turn][from][to][from_attacked][to_attacked];
+
             scores[i] = score;
         }
     }
@@ -217,7 +221,9 @@ static int score_quiet(ThreadData *td, Position *b, int ply, uint16_t m)
             return PK_COUNTER_BASE + bf + ch;
     }
 
-    return bf + ch;
+    int from_attacked = squareAttacked(b, from, !b->turn);
+    int to_attacked = squareAttacked(b, to, !b->turn);
+    return bf + ch + td->threat_hist[b->turn][from][to][from_attacked][to_attacked];
 }
 
 static uint16_t pick_best(uint16_t *mv, int *sc, int i, int n)

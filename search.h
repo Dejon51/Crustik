@@ -79,6 +79,7 @@ struct ThreadData
     int eval_stack[MAX_GAME_PLY];
     int cont_hist[2][6][64][6][64];
     int capture_history[2][6][64][6];
+    int threat_hist[2][64][64][2][2];
     uint16_t counter_moves[2][6][64];
     int pawn_corrhist[2][CORRHIST_SIZE];
     int nonpawn_corrhist[2][CORRHIST_SIZE];

@@ -70,6 +70,7 @@ static void td_clear_history(ThreadData *td)
     memset(td->killer_moves, 0, sizeof td->killer_moves);
     memset(td->cont_hist, 0, sizeof td->cont_hist);
     memset(td->capture_history, 0, sizeof td->capture_history);
+    memset(td->threat_hist, 0, sizeof td->threat_hist);
     memset(td->counter_moves, 0, sizeof td->counter_moves);
     memset(td->cont_stack, 0, sizeof td->cont_stack);
     memset(td->pawn_corrhist, 0, sizeof td->pawn_corrhist);
@@ -1091,6 +1092,11 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                     int *ch = &td->cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += malus - *ch * abs(malus) / HIST_MAX;
                 }
+
+                int from_attacked = squareAttacked(board, from, !board->turn);
+                int to_attacked = squareAttacked(board, to, !board->turn);
+                int *th = &td->threat_hist[board->turn][from][to][from_attacked][to_attacked];
+                *th += malus - *th * abs(malus) / HIST_MAX;
             }
             else if (is_capture && captured_piece != -1)
             {
@@ -1117,6 +1123,10 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                     int *ch = &td->cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += clampedBonus - *ch * abs(clampedBonus) / HIST_MAX;
                 }
+                int from_attacked = squareAttacked(board, from, !board->turn);
+                int to_attacked = squareAttacked(board, to, !board->turn);
+                int *th = &td->threat_hist[board->turn][from][to][from_attacked][to_attacked];
+                *th += clampedBonus - *th * abs(clampedBonus) / HIST_MAX;
 
                 if (ply < MAX_GAME_PLY && td->killer_moves[ply][0] != move)
                 {
