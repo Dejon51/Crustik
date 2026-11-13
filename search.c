@@ -994,32 +994,54 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
         else
         {
             int reduction = 0;
-            if (!root_node && !in_check && depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVES &&
-                !is_capture && !is_promotion && move != tt_move && !is_killer)
+
+            if (!root_node && !in_check && depth >= LMR_MIN_DEPTH &&
+                i >= LMR_MIN_MOVES && !is_mate_score(alpha) && !is_mate_score(beta))
             {
-                int is_pv_node = (beta - alpha) > 1;
                 int from = move_from(move);
                 int to = move_to(move);
                 int hist = td->butterfly_hist[board->turn][from][to];
 
                 reduction = lmr_reduction(depth, i + 1) * 1024;
 
-                if (is_pv_node)
-                {
+                if (pv_node)
                     reduction -= LMR_PV_NODE_SCALAR;
-                }
+
                 if (hist > LMR_BFHIST_THRESHOLD_PENALTY_SCALAR)
-                {
                     reduction -= LMR_BFHIST_PENALTY_SCALAR;
-                }
                 else if (hist < -LMR_BFHIST_THRESHOLD_BONUS_SCALAR)
-                {
                     reduction += LMR_BFHIST_BONUS_SCALAR;
+
+                if (!improving)
+                    reduction += LMR_NON_IMPROVING_ADJUST;
+
+                if (is_killer)
+                    reduction -= LMR_KILLER_ADJUST;
+
+                if (move == tt_move)
+                    reduction -= LMR_TT_ADJUST;
+
+                if (is_promotion)
+                    reduction -= LMR_PROMOTION_ADJUST;
+
+                if (is_capture)
+                {
+                    if (see_ge(board, move, 0))
+                        reduction -= LMR_GOOD_CAPTURE_ADJUST;
+                    else
+                        reduction += LMR_BAD_CAPTURE_ADJUST;
                 }
+
+                {
+                    uint64_t opp_king_bb = copy.pieces[5] & copy.color[!board->turn];
+                    if (opp_king_bb &&
+                        squareAttacked(&copy, __builtin_ctzll(opp_king_bb), board->turn))
+                        reduction -= LMR_CHECK_ADJUST;
+                }
+
                 reduction /= 1024;
                 reduction = clamp_int(reduction, 0, depth - 1);
             }
-
             if (reduction > 0)
             {
                 score = -search(td, &copy, depth - 1 - reduction, ply + 1,

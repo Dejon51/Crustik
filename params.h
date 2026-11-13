@@ -12,6 +12,14 @@ extern int LMR_BFHIST_PENALTY_SCALAR;
 extern int LMR_BFHIST_THRESHOLD_BONUS_SCALAR;
 extern int LMR_BFHIST_THRESHOLD_PENALTY_SCALAR;
 
+extern int LMR_NON_IMPROVING_ADJUST;
+extern int LMR_KILLER_ADJUST;
+extern int LMR_TT_ADJUST;
+extern int LMR_PROMOTION_ADJUST;
+extern int LMR_GOOD_CAPTURE_ADJUST;
+extern int LMR_BAD_CAPTURE_ADJUST;
+extern int LMR_CHECK_ADJUST;
+
 /* ---------- PVS ---------- */
 extern int PVS_MIN_DEPTH;
 
