@@ -20,7 +20,7 @@ SRCS := \
 
 OBJS := $(SRCS:.c=.o)
 
-EVALFILE ?= quant1024hl.bin
+EVALFILE ?= quant1024hl-8.bin
 EVALDEF  := -DEVALFILE=\"$(EVALFILE)\"
 
 TARGET_WINDOWS ?= 0

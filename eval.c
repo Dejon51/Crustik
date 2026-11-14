@@ -14,7 +14,7 @@
 #define ALIGN64 __attribute__((aligned(64)))
 
 #ifndef EVALFILE
-#define EVALFILE "quant1024hl.bin"
+#define EVALFILE "quant1024hl-8.bin"
 #endif
 
 INCBIN(EvalFile, EVALFILE);
@@ -24,12 +24,15 @@ INCBIN(EvalFile, EVALFILE);
 #define NNUE_OUTPUT_SCALE 64
 #define NNUE_SCALE (400.0 * 0.5485330048769478)
 
+#define NNUE_OUTPUT_BUCKETS 8
+#define NNUE_BUCKET_DIVISOR ((32 + NNUE_OUTPUT_BUCKETS - 1) / NNUE_OUTPUT_BUCKETS)
+
 #define NNUE_FLIP(sq) ((sq) ^ 56)
 
 static int16_t nnue_featureWeights[NNUE_INPUT][NNUE_HL] ALIGN64;
 static int16_t nnue_hiddenBiases[NNUE_HL] ALIGN64;
-static int16_t nnue_outputWeights[2 * NNUE_HL] ALIGN64;
-static int32_t nnue_outputBias;
+static int16_t nnue_outputWeights[NNUE_OUTPUT_BUCKETS][2 * NNUE_HL] ALIGN64;
+static int16_t nnue_outputBiases[NNUE_OUTPUT_BUCKETS];
 
 static int nnue_loaded = 0;
 
@@ -51,6 +54,16 @@ static inline bool mirror_or_not(Bitboard king_bitboard) {
 	return (__builtin_ctzll(king_bitboard) & 7) > 3;
 }
 
+static inline int nnue_outputBucket(const Position *board) {
+	int count = __builtin_popcountll(board->color[0] | board->color[1]);
+	int bucket = (count - 2) / NNUE_BUCKET_DIVISOR;
+	if (bucket < 0)
+		return 0;
+	if (bucket >= NNUE_OUTPUT_BUCKETS)
+		return NNUE_OUTPUT_BUCKETS - 1;
+	return bucket;
+}
+
 // Loads nnue from bin file
 static int nnue_load(void) {
 	const unsigned char *data = gEvalFileData;
@@ -59,12 +72,14 @@ static int nnue_load(void) {
 
 	size_t required_size = sizeof(nnue_featureWeights) +
 						   sizeof(nnue_hiddenBiases) +
-						   sizeof(nnue_outputWeights) + sizeof(int16_t);
+						   sizeof(nnue_outputWeights) +
+						   sizeof(nnue_outputBiases);
 
 	if (size < required_size) {
 		fprintf(stderr,
-				"nnue_load: embedded network too small (%zu < %zu bytes)\n",
-				size, required_size);
+				"nnue_load: embedded network too small (%zu < %zu bytes); "
+				"was it trained with %d output buckets?\n",
+				size, required_size, NNUE_OUTPUT_BUCKETS);
 		return 1;
 	}
 
@@ -77,10 +92,8 @@ static int nnue_load(void) {
 	memcpy(nnue_outputWeights, data + offset, sizeof(nnue_outputWeights));
 	offset += sizeof(nnue_outputWeights);
 
-	int16_t bias16 = 0;
-	memcpy(&bias16, data + offset, sizeof(bias16));
-	offset += sizeof(bias16);
-	nnue_outputBias = bias16;
+	memcpy(nnue_outputBiases, data + offset, sizeof(nnue_outputBiases));
+	offset += sizeof(nnue_outputBiases);
 
 	nnue_loaded = 1;
 	return 0;
@@ -257,7 +270,7 @@ void nnue_update(ThreadData *td, Position *board, uint16_t move, int parent_ply,
 			nnue_addSubSub(dst, src, nnue_featureWeights[addIdx[0]],
 						   nnue_featureWeights[subIdx[0]],
 						   nnue_featureWeights[subIdx[1]]);
-		else 
+		else
 			nnue_addSubAddSub(dst, src, nnue_featureWeights[addIdx[0]],
 							  nnue_featureWeights[subIdx[0]],
 							  nnue_featureWeights[addIdx[1]],
@@ -272,18 +285,22 @@ static int nnue_forward(ThreadData *td, Position *board, int ply) {
 	const int16_t *accUs = td->nnue_stack[ply].vector[board->turn];
 	const int16_t *accThem = td->nnue_stack[ply].vector[board->turn ^ 1];
 
+	int bucket = nnue_outputBucket(board);
+	const int16_t *wUs = nnue_outputWeights[bucket];
+	const int16_t *wThem = nnue_outputWeights[bucket] + NNUE_HL;
+
 	int s = 0;
 	for (int h = 0; h < NNUE_HL; h++) {
 		int c = accUs[h];
 		c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
-		s += (int16_t)(c * nnue_outputWeights[h]) * c;
+		s += (int16_t)(c * wUs[h]) * c;
 
 		c = accThem[h];
 		c = c < 0 ? 0 : (c > HIDDEN_QUANT_SCALE ? HIDDEN_QUANT_SCALE : c);
-		s += (int16_t)(c * nnue_outputWeights[NNUE_HL + h]) * c;
+		s += (int16_t)(c * wThem[h]) * c;
 	}
 
-	long long out = s / HIDDEN_QUANT_SCALE + nnue_outputBias;
+	long long out = s / HIDDEN_QUANT_SCALE + nnue_outputBiases[bucket];
 	out =
 		out * NNUE_SCALE / ((long long)HIDDEN_QUANT_SCALE * NNUE_OUTPUT_SCALE);
 	return (int)out;

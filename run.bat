@@ -2,7 +2,7 @@
 setlocal
 
 if "%~1"=="" (
-    set EVALFILE=quant1024hl.bin
+    set EVALFILE=quant1024hl-8.bin
 ) else (
     set EVALFILE=%~1
 )
