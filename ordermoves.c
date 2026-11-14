@@ -16,11 +16,8 @@
 
 void quietMoves(Position *board, MoveList *list, bool color);
 
-MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int ply, uint16_t tt_move)
+void score_moves(ThreadData *td, Position *board, MoveList *list, int ply, uint16_t tt_move, int *scores)
 {
-    MoveList ordered = *move_list;
-    int scores[256] = {0};
-
     const int TT_SCORE = 100000000;
     const int CAPTURE_BASE = 90000000;
     const int KILLER_BASE = 80000000;
@@ -29,9 +26,9 @@ MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int pl
     int cont_piece = have_cont ? td->cont_stack[ply - 1].piece : 0;
     int cont_to = have_cont ? td->cont_stack[ply - 1].to : 0;
 
-    for (unsigned int i = 0; i < ordered.offset; i++)
+    for (unsigned int i = 0; i < list->offset; i++)
     {
-        uint16_t move = ordered.movelist[i];
+        uint16_t move = list->movelist[i];
 
         if (move == tt_move)
         {
@@ -77,28 +74,6 @@ MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int pl
             scores[i] = score;
         }
     }
-
-    for (unsigned int i = 0; i < ordered.offset; i++)
-    {
-        unsigned int best = i;
-        for (unsigned int j = i + 1; j < ordered.offset; j++)
-        {
-            if (scores[j] > scores[best])
-                best = j;
-        }
-        if (best != i)
-        {
-            uint16_t tmp_move = ordered.movelist[i];
-            ordered.movelist[i] = ordered.movelist[best];
-            ordered.movelist[best] = tmp_move;
-
-            int tmp_score = scores[i];
-            scores[i] = scores[best];
-            scores[best] = tmp_score;
-        }
-    }
-
-    return ordered;
 }
 
 #define PK_CAPTURE_BASE 90000000
@@ -233,6 +208,23 @@ static uint16_t pick_best(uint16_t *mv, int *sc, int i, int n)
     mv[i] = m;
     sc[i] = s;
     return m;
+}
+
+uint16_t pick_move(MoveList *list, int *scores, unsigned int i)
+{
+    return pick_best(list->movelist, scores, (int)i, (int)list->offset);
+}
+
+MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int ply, uint16_t tt_move)
+{
+    MoveList ordered = *move_list;
+    int scores[256];
+
+    score_moves(td, board, &ordered, ply, tt_move, scores);
+    for (unsigned int i = 0; i < ordered.offset; i++)
+        pick_move(&ordered, scores, i);
+
+    return ordered;
 }
 
 void movepicker_init(MovePicker *mp, ThreadData *td, Position *b, int ply, uint16_t tt_move, bool in_check)

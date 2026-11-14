@@ -47,4 +47,7 @@ void movepicker_init(MovePicker *mp, ThreadData *td, Position *board, int ply, u
 uint16_t movepicker_next(MovePicker *mp);
 bool move_is_pseudolegal(Position *b, uint16_t m);
 
+void score_moves(ThreadData *td, Position *board, MoveList *list, int ply, uint16_t tt_move, int *scores);
+uint16_t pick_move(MoveList *list, int *scores, unsigned int i);
+
 #endif

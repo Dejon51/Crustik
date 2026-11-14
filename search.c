@@ -511,14 +511,16 @@ int quiesce(ThreadData *td, Position *board, int alpha, int beta, int ply)
     const int futility_margin = QS_FUTILITY_MARGIN;
     int futility_base = in_check ? 0 : static_eval + futility_margin;
 
-    MoveList move_list = {0};
+    MoveList move_list;
+    move_list.offset = 0;
 
     if (in_check)
         legalMoveGen(board, &move_list);
     else
         qsearchMoves(board, &move_list, board->turn);
 
-    move_list = ordermoves(td, board, &move_list, ply, tt_move);
+    int move_scores[256];
+    score_moves(td, board, &move_list, ply, tt_move, move_scores);
 
     uint16_t best_move = 0;
     int legal_moves_seen = 0;
@@ -528,7 +530,7 @@ int quiesce(ThreadData *td, Position *board, int alpha, int beta, int ply)
         if (stop->stop)
             break;
 
-        uint16_t move = move_list.movelist[i];
+        uint16_t move = pick_move(&move_list, move_scores, i);
 
         if (!in_check)
         {
@@ -565,7 +567,6 @@ int quiesce(ThreadData *td, Position *board, int alpha, int beta, int ply)
                 continue;
         }
 
-        nnue_update(td, board, move, ply, ply + 1);
         Position copy = *board;
         makeMove(&copy, &move_list, i);
 
@@ -573,6 +574,7 @@ int quiesce(ThreadData *td, Position *board, int alpha, int beta, int ply)
         if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
             continue;
 
+        nnue_update(td, board, move, ply, ply + 1);
         stop->nodes++;
         legal_moves_seen++;
 
@@ -758,18 +760,20 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
 
         if (!tt_hit || tt_depth + PROBCUT_TT_DEPTH_MARGIN < depth || tt_score >= probcut_beta)
         {
-            MoveList captures = {0};
+            MoveList captures;
+            captures.offset = 0;
             qsearchMoves(board, &captures, board->turn);
-            captures = ordermoves(td, board, &captures, ply, tt_move);
+
+            int capture_scores[256];
+            score_moves(td, board, &captures, ply, tt_move, capture_scores);
 
             for (unsigned int i = 0; i < captures.offset; i++)
             {
-                uint16_t move = captures.movelist[i];
+                uint16_t move = pick_move(&captures, capture_scores, i);
 
                 if (!see_ge(board, move, PROBCUT_SEE_THRESHOLD))
                     continue;
 
-                nnue_update(td, board, move, ply, ply + 1);
                 Position copy = *board;
                 makeMove(&copy, &captures, i);
 
@@ -778,6 +782,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                     squareAttacked(&copy, __builtin_ctzll(king_bb), !board->turn))
                     continue;
 
+                nnue_update(td, board, move, ply, ply + 1);
                 stop->nodes++;
                 int probcut_value = -quiesce(td, &copy, -probcut_beta,
                                              -probcut_beta + 1, ply + 1);
