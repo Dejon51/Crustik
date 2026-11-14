@@ -68,7 +68,7 @@ const char *fens[] = {
 
 int bench() {
     Position boards[FEN_COUNT];
-    int depth = 12;
+    int depth = 10;
     uint64_t total_nodes = 0;
 
     // Parse all FENs before timing
