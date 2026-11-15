@@ -21,7 +21,7 @@
 #include <malloc.h>
 #endif
 
-#define SMP_VOTING 0
+#define SMP_VOTING 1
 
 uint64_t game_history[MAX_GAME_PLY];
 int game_history_count = 0;
