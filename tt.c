@@ -110,7 +110,7 @@ void tt_clear(void)
 
 void tt_new_search(void)
 {
-    tt_age++;
+    tt_age = (uint8_t)((tt_age + 1) & 0x3F);
 }
 
 int tt_hashfull(void)
@@ -134,6 +134,9 @@ int tt_hashfull(void)
 void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int is_qsearch, int eval)
 {
     if (!tt || !tt_num_entries) return;
+
+    if (depth > 63) depth = 63;
+    if (depth < 0)  depth = 0;
 
     TTEntry *e = &tt[tt_index(key)];
 
