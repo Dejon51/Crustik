@@ -718,7 +718,7 @@ void uciStart()
         }
         else if (strcmp(tokens[0], "uci") == 0)
         {
-            printf("id name Crustik 0.4.0\nid author Dejon Eltahan\n");
+            printf("id name Crustik 0.5.0\nid author Dejon Eltahan\n");
             printf("option name Hash type spin default %d min %d max %d\n", TT_DEFAULT_MB, TT_MIN_MB, TT_MAX_MB);
             printf("option name Threads type spin default %d min 1 max %d\n", DEFAULT_THREADS, MAX_THREADS);
             printf("option name SoftNodes type check default false\n");
