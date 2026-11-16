@@ -24,9 +24,7 @@ jobs:
         run: |
           make NATIVE=0 \
                CC=gcc \
-               CFLAGS="-Wall -Wextra -Wshadow -DNDEBUG -O3 -flto=auto \
-                       -static -pthread -march=${{ matrix.march }} \
-                       -DEVALFILE=\"quant1024hl.bin\"" \
+               ARCH="-march=${{ matrix.march }} -static" \
                LDFLAGS="-flto=auto -static -pthread"
 
       - name: Verify static
@@ -79,9 +77,7 @@ jobs:
         run: |
           make NATIVE=0 \
                CC=gcc \
-               CFLAGS="-Wall -Wextra -Wshadow -DNDEBUG -O3 -flto=auto \
-                       -static -march=${{ matrix.march }} \
-                       -DEVALFILE=\"quant1024hl.bin\"" \
+               ARCH="-march=${{ matrix.march }} -static" \
                LDFLAGS="-flto=auto -static"
 
       - name: Verify no runtime DLLs
