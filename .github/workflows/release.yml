@@ -105,10 +105,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Stage eval file
+        run: cp quant1024hl.bin dist/
 
       - name: Generate checksums
         run: |
