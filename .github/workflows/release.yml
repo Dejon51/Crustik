@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: baseline
+            march: x86-64
+            suffix: ""
+          - arch: avx2
+            march: x86-64-v3
+            suffix: "-avx2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          make NATIVE=0 \
+               CC=gcc \
+               CFLAGS="-Wall -Wextra -Wshadow -DNDEBUG -O3 -flto=auto \
+                       -static -pthread -march=${{ matrix.march }} \
+                       -DEVALFILE=\"quant1024hl.bin\"" \
+               LDFLAGS="-flto=auto -static -pthread"
+
+      - name: Verify static
+        run: |
+          file crustik
+          ldd crustik 2>&1 | grep -q "not a dynamic executable" \
+            && echo "Static ✓" \
+            || (echo "NOT static"; ldd crustik; exit 1)
+
+      - name: Rename with version
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          mv crustik "crustik-${VER}-linux64${{ matrix.suffix }}"
+          ls -la crustik-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crustik-linux64-${{ matrix.arch }}
+          path: crustik-*-linux64*
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: baseline
+            march: x86-64
+            suffix: ""
+          - arch: avx2
+            march: x86-64-v3
+            suffix: "-avx2"
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 (MinGW64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make
+            mingw-w64-x86_64-gcc
+
+      - name: Build
+        run: |
+          make NATIVE=0 \
+               CC=gcc \
+               CFLAGS="-Wall -Wextra -Wshadow -DNDEBUG -O3 -flto=auto \
+                       -static -march=${{ matrix.march }} \
+                       -DEVALFILE=\"quant1024hl.bin\"" \
+               LDFLAGS="-flto=auto -static"
+
+      - name: Verify no runtime DLLs
+        run: objdump -p crustik.exe | grep "DLL Name" || true
+
+      - name: Rename with version
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          mv crustik.exe "crustik-${VER}-win64${{ matrix.suffix }}.exe"
+          ls -la crustik-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crustik-win64-${{ matrix.arch }}
+          path: crustik-*-win64*.exe
+          if-no-files-found: error
+
+  release:
+    needs: [ build-linux, build-windows ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * | tee SHA256SUMS
+          cd ..
+
+      - name: Show contents
+        run: ls -la dist/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
