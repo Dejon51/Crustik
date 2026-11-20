@@ -896,15 +896,22 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
         }
 
         if (!root_node && !pv_node && depth <= FUTILITY_MAX_DEPTH && !in_check &&
-            !is_mate_score(alpha) && !is_mate_score(beta))
+            !is_mate_score(alpha) && !is_mate_score(beta) &&
+            !is_mate_score(ceval) && !is_capture && !is_promotion && move != tt_move)
         {
+            const double ebf = 2.2;
+            int d = depth > 0 ? depth : 1;
+            double bonus = (double)stop->nodes / pow(ebf, (double)d);
+
+            if (bonus > 100.0)
+                bonus = 100.0;
+
+            double adjusted_eval = (double)ceval + bonus;
             int futility_margin = FUTILITY_BASE + FUTILITY_DEPTH_MARGIN * depth;
-            if (ceval + futility_margin <= alpha)
+
+            if (adjusted_eval + (double)futility_margin <= (double)alpha)
             {
-                if (!is_capture && !is_promotion)
-                {
-                    continue;
-                }
+                continue;
             }
         }
 
