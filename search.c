@@ -906,7 +906,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
             if (bonus > 100.0)
                 bonus = 100.0;
 
-            double adjusted_eval = (double)ceval + bonus;
+            double adjusted_eval = (double)ceval - bonus;
             int futility_margin = FUTILITY_BASE + FUTILITY_DEPTH_MARGIN * depth;
 
             if (adjusted_eval + (double)futility_margin <= (double)alpha)
