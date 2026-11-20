@@ -1019,8 +1019,8 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                 double l10 = log10((double)stop->nodes);
 
                 int node_adj = (int)llround((l10 - 5.0) * 512.0);
-                if (node_adj < -256)
-                    node_adj = -256;
+                if (node_adj < 0)
+                    node_adj = 0;
                 if (node_adj > 256)
                     node_adj = 256;
 
