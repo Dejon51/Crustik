@@ -1016,6 +1016,15 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                 {
                     reduction += LMR_BFHIST_BONUS_SCALAR;
                 }
+                double l10 = log10((double)stop->nodes);
+
+                int node_adj = (int)llround((l10 - 5.0) * 128.0);
+                if (node_adj < -256)
+                    node_adj = -256;
+                if (node_adj > 256)
+                    node_adj = 256;
+
+                reduction += node_adj;
                 reduction /= 1024;
                 reduction = clamp_int(reduction, 0, depth - 1);
             }
