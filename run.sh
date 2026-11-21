@@ -2,4 +2,4 @@
 
 EVALFILE="${EVALFILE:-quant1024hl.bin}"
 
-gcc main.c play.c lmath.c eval.c uci.c fen.c search.c zobrist.c tt.c bench.c text.c magics.c params.c ordermoves.c -lm -pthread -DNDEBUG -O1 -flto=auto -march=native -Wall -Wextra -Wshadow -DEVALFILE=\"$EVALFILE\" "$@" -o crustik
+clang main.c play.c lmath.c eval.c uci.c fen.c search.c zobrist.c tt.c bench.c text.c magics.c params.c ordermoves.c -lm -pthread -DNDEBUG -O3 -flto=auto -march=native -Wall -Wextra -Wshadow -DEVALFILE=\"$EVALFILE\" "$@" -o crustik
