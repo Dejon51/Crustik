@@ -1440,7 +1440,6 @@ searchOutput search_bench(Position *board, int depth, stopConditions *stop)
     if (!td)
         return (searchOutput){0};
 
-    tt_new_search();
     stop_requested = 0;
 
     td->thread_id = 0;
@@ -1533,7 +1532,6 @@ static uint16_t vote_best_move(int n)
 
 uint16_t iterative_deepening(Position *board, stopConditions *stop)
 {
-    tt_new_search();
     int n = num_threads;
     if (n < 1)
         n = 1;
