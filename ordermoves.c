@@ -16,8 +16,96 @@
 
 void quietMoves(Position *board, MoveList *list, bool color);
 
+static int score_root_nnue(ThreadData *td, Position *b, uint16_t m, uint16_t tt_move,
+                           NnueAccumulator *saved_ply1, bool have_saved_ply1)
+{
+    const int ROOT_TT_SCORE = 100000000;
+    const int ROOT_NNUE_BASE = 50000000;
+    const int ROOT_CAPTURE_BONUS = 10000;
+    const int ROOT_PROMO_BONUS = 20000;
+
+    if (m == tt_move)
+        return ROOT_TT_SCORE;
+
+    Position copy = *b;
+    moveint(&copy, m);
+
+    uint64_t king_bb = copy.pieces[5] & copy.color[b->turn];
+    if (!king_bb || squareAttacked(&copy, __builtin_ctzll(king_bb), !b->turn))
+        return -MATE_SCORE * 10;
+
+    int next_ply = (NNUE_MAX_PLY > 1) ? 1 : 0;
+    nnue_update(td, b, m, 0, next_ply);
+    int nnue_score = -eval(td, &copy, next_ply);
+
+    if (next_ply == 1 && have_saved_ply1 && saved_ply1)
+        td->nnue_stack[1] = *saved_ply1;
+
+    int bonus = 0;
+    if (is_capture_move(b, m))
+        bonus += ROOT_CAPTURE_BONUS;
+    if (is_promotion_move(m))
+        bonus += ROOT_PROMO_BONUS;
+
+    return ROOT_NNUE_BASE + nnue_score + bonus;
+}
+
+static void score_list_root_nnue(ThreadData *td, Position *b, MoveList *list, int *scores, uint16_t tt_move)
+{
+    nnue_refresh(td, b, 0);
+
+    NnueAccumulator saved_ply1;
+    bool have_saved_ply1 = (NNUE_MAX_PLY > 1);
+    if (have_saved_ply1)
+        saved_ply1 = td->nnue_stack[1];
+
+    for (unsigned i = 0; i < list->offset; i++)
+        scores[i] = score_root_nnue(td, b, list->movelist[i], tt_move, &saved_ply1, have_saved_ply1);
+
+    if (have_saved_ply1)
+        td->nnue_stack[1] = saved_ply1;
+
+    nnue_refresh(td, b, 0);
+}
+
+static void sort_moves_by_score(MoveList *list, int *scores)
+{
+    for (unsigned int i = 0; i < list->offset; i++)
+    {
+        unsigned int best = i;
+        for (unsigned int j = i + 1; j < list->offset; j++)
+        {
+            if (scores[j] > scores[best])
+                best = j;
+        }
+        if (best != i)
+        {
+            uint16_t tmp_move = list->movelist[i];
+            list->movelist[i] = list->movelist[best];
+            list->movelist[best] = tmp_move;
+
+            int tmp_score = scores[i];
+            scores[i] = scores[best];
+            scores[best] = tmp_score;
+        }
+    }
+}
+
+MoveList order_root_moves(ThreadData *td, Position *board, MoveList *move_list, uint16_t tt_move)
+{
+    MoveList ordered = *move_list;
+    int scores[256] = {0};
+
+    score_list_root_nnue(td, board, &ordered, scores, tt_move);
+    sort_moves_by_score(&ordered, scores);
+    return ordered;
+}
+
 MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int ply, uint16_t tt_move)
 {
+    if (ply == 0 && td != NULL)
+        return order_root_moves(td, board, move_list, tt_move);
+
     MoveList ordered = *move_list;
     int scores[256] = {0};
 
@@ -78,25 +166,7 @@ MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int pl
         }
     }
 
-    for (unsigned int i = 0; i < ordered.offset; i++)
-    {
-        unsigned int best = i;
-        for (unsigned int j = i + 1; j < ordered.offset; j++)
-        {
-            if (scores[j] > scores[best])
-                best = j;
-        }
-        if (best != i)
-        {
-            uint16_t tmp_move = ordered.movelist[i];
-            ordered.movelist[i] = ordered.movelist[best];
-            ordered.movelist[best] = tmp_move;
-
-            int tmp_score = scores[i];
-            scores[i] = scores[best];
-            scores[best] = tmp_score;
-        }
-    }
+    sort_moves_by_score(&ordered, scores);
 
     return ordered;
 }
@@ -256,6 +326,7 @@ uint16_t movepicker_next(MovePicker *mp)
 {
     Position *b = mp->board;
     ThreadData *td = mp->td;
+    bool is_root = (mp->ply == 0 && td != NULL);
 
     switch (mp->stage)
     {
@@ -266,8 +337,11 @@ uint16_t movepicker_next(MovePicker *mp)
     case ST_GEN_CAPS:
         mp->caps.offset = 0;
         qsearchMoves(b, &mp->caps, b->turn);
-        for (unsigned i = 0; i < mp->caps.offset; i++)
-            mp->cap_scores[i] = score_noisy(td, b, mp->caps.movelist[i]);
+        if (is_root)
+            score_list_root_nnue(td, b, &mp->caps, mp->cap_scores, mp->tt_move);
+        else
+            for (unsigned i = 0; i < mp->caps.offset; i++)
+                mp->cap_scores[i] = score_noisy(td, b, mp->caps.movelist[i]);
         mp->stage = ST_GOOD_CAPS;
         FALLTHROUGH;
 
@@ -298,8 +372,11 @@ uint16_t movepicker_next(MovePicker *mp)
         }
         mp->quiets.offset = 0;
         quietMoves(b, &mp->quiets, b->turn);
-        for (unsigned i = 0; i < mp->quiets.offset; i++)
-            mp->quiet_scores[i] = score_quiet(td, b, mp->ply, mp->quiets.movelist[i]);
+        if (is_root)
+            score_list_root_nnue(td, b, &mp->quiets, mp->quiet_scores, mp->tt_move);
+        else
+            for (unsigned i = 0; i < mp->quiets.offset; i++)
+                mp->quiet_scores[i] = score_quiet(td, b, mp->ply, mp->quiets.movelist[i]);
         mp->stage = ST_QUIETS;
         FALLTHROUGH;
 
@@ -326,13 +403,16 @@ uint16_t movepicker_next(MovePicker *mp)
     case ST_GEN_EVASIONS:
         mp->caps.offset = 0;
         legalMoveGen(b, &mp->caps);
-        for (unsigned i = 0; i < mp->caps.offset; i++)
-        {
-            uint16_t m = mp->caps.movelist[i];
-            mp->cap_scores[i] = (is_capture_move(b, m) || is_promotion_move(m))
-                                    ? PK_CAPTURE_BASE + score_noisy(td, b, m)
-                                    : score_quiet(td, b, mp->ply, m);
-        }
+        if (is_root)
+            score_list_root_nnue(td, b, &mp->caps, mp->cap_scores, mp->tt_move);
+        else
+            for (unsigned i = 0; i < mp->caps.offset; i++)
+            {
+                uint16_t m = mp->caps.movelist[i];
+                mp->cap_scores[i] = (is_capture_move(b, m) || is_promotion_move(m))
+                                        ? PK_CAPTURE_BASE + score_noisy(td, b, m)
+                                        : score_quiet(td, b, mp->ply, m);
+            }
         mp->stage = ST_EVASIONS;
         FALLTHROUGH;
 
