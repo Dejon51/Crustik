@@ -1016,6 +1016,8 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                 {
                     reduction += LMR_BFHIST_BONUS_SCALAR;
                 }
+                if (!improving)
+                    reduction += LMR_NON_IMPROVING_ADJUST;
                 reduction /= 1024;
                 reduction = clamp_int(reduction, 0, depth - 1);
             }

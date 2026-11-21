@@ -11,6 +11,7 @@ extern int LMR_BFHIST_BONUS_SCALAR;
 extern int LMR_BFHIST_PENALTY_SCALAR;
 extern int LMR_BFHIST_THRESHOLD_BONUS_SCALAR;
 extern int LMR_BFHIST_THRESHOLD_PENALTY_SCALAR;
+extern int LMR_NON_IMPROVING_ADJUST;
 
 /* ---------- PVS ---------- */
 extern int PVS_MIN_DEPTH;
