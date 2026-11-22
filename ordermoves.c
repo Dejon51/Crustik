@@ -71,6 +71,9 @@ MoveList ordermoves(ThreadData *td, Position *board, MoveList *move_list, int pl
         {
             int score = td->butterfly_hist[board->turn][from][to];
 
+            if (attacker != -1)
+                score += pawn_history_score(td, board, attacker, to);
+
             if (have_cont && attacker != -1)
                 score += td->cont_hist[board->turn][cont_piece][cont_to][attacker][to];
 
@@ -205,21 +208,23 @@ static int score_quiet(ThreadData *td, Position *b, int ply, uint16_t m)
     }
 
     int bf = td->butterfly_hist[b->turn][from][to];
+    int ph = pawn_history_score(td, b, piece, to);
     int ch = 0;
 
-    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY && td->cont_stack[ply - 1].valid && piece != -1)
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY &&
+        td->cont_stack[ply - 1].valid && piece != -1)
     {
         int pp = td->cont_stack[ply - 1].piece;
         int pt = td->cont_stack[ply - 1].to;
+
         ch = td->cont_hist[b->turn][pp][pt][piece][to];
 
         if (m == td->counter_moves[b->turn ^ 1][pp][pt])
-            return PK_COUNTER_BASE + bf + ch;
+            return PK_COUNTER_BASE + bf + ph + ch;
     }
 
-    return bf + ch;
+    return bf + ph + ch;
 }
-
 static uint16_t pick_best(uint16_t *mv, int *sc, int i, int n)
 {
     int best = i;

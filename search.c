@@ -74,7 +74,7 @@ static void td_clear_history(ThreadData *td)
     memset(td->cont_stack, 0, sizeof td->cont_stack);
     memset(td->pawn_corrhist, 0, sizeof td->pawn_corrhist);
     memset(td->nonpawn_corrhist, 0, sizeof td->nonpawn_corrhist);
-
+    memset(td->pawn_hist, 0, sizeof td->pawn_hist);
     for (int i = 0; i < MAX_GAME_PLY; i++)
         td->eval_stack[i] = NO_EVAL;
 }
@@ -390,6 +390,36 @@ static uint64_t compute_pawn_key(Position *board)
     return key;
 }
 
+int pawn_history_score(
+    ThreadData *td,
+    Position *board,
+    int piece,
+    int to)
+{
+    uint64_t key = compute_pawn_key(board);
+    int index = key & PAWN_HIST_MASK;
+
+    return td->pawn_hist[board->turn][index][piece][to];
+}
+
+static inline void update_pawn_history(
+    ThreadData *td,
+    Position *board,
+    int piece,
+    int to,
+    int bonus)
+{
+    if (piece < 0 || piece >= 6)
+        return;
+
+    uint64_t key = compute_pawn_key(board);
+    int index = key & PAWN_HIST_MASK;
+
+    int32_t *entry =
+        &td->pawn_hist[board->turn][index][piece][to];
+
+    *entry += bonus - (*entry * abs(bonus)) / HIST_MAX;
+}
 static int compute_material_key(Position *board)
 {
     int key = 0;
@@ -1093,6 +1123,8 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                     int *ch = &td->cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += malus - *ch * abs(malus) / HIST_MAX;
                 }
+
+                update_pawn_history(td, board, moved_piece, to, malus);
             }
             else if (is_capture && captured_piece != -1)
             {
@@ -1101,7 +1133,6 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                 *history_entry += malus - *history_entry * abs(malus) / HIST_MAX;
             }
         }
-
         if (alpha >= beta)
         {
             int from = move_from(move);
@@ -1119,6 +1150,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                     int *ch = &td->cont_hist[board->turn][pp][pt][moved_piece][to];
                     *ch += clampedBonus - *ch * abs(clampedBonus) / HIST_MAX;
                 }
+                update_pawn_history(td, board, moved_piece, to, clampedBonus);
 
                 if (ply < MAX_GAME_PLY && td->killer_moves[ply][0] != move)
                 {

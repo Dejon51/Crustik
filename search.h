@@ -18,6 +18,9 @@
 #define CORRHIST_SIZE 16384
 #define CORRHIST_MASK (CORRHIST_SIZE - 1)
 
+#define PAWN_HIST_SIZE 1024
+#define PAWN_HIST_MASK (PAWN_HIST_SIZE - 1)
+
 #define MAX_THREADS 256
 #define DEFAULT_THREADS 1
 
@@ -79,6 +82,7 @@ struct ThreadData
     int eval_stack[MAX_GAME_PLY];
     int cont_hist[2][6][64][6][64];
     int capture_history[2][6][64][6];
+    int pawn_hist[2][PAWN_HIST_SIZE][6][64];
     uint16_t counter_moves[2][6][64];
     int pawn_corrhist[2][CORRHIST_SIZE];
     int nonpawn_corrhist[2][CORRHIST_SIZE];
@@ -105,6 +109,8 @@ struct ThreadPool
 void init_lmr();
 
 void reset_history(void);
+
+int pawn_history_score(ThreadData *td, Position *board, int piece, int to);
 
 void search_set_threads(int n);
 int search_get_threads(void);
