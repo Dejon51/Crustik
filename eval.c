@@ -515,5 +515,15 @@ int material_phase(Position *board)
 
 int eval(ThreadData *td, Position *board, int ply)
 {
-	return nnue_forward(td, board, ply) * (25000 + material_phase(board)) / 32768;
+    int score = nnue_forward(td, board, ply) *
+                (25000 + material_phase(board)) / 32768;
+
+    int halfmove = board->halfmoves;
+
+    if (halfmove > 100)
+        halfmove = 100;
+
+    score = score * (200 - halfmove) / 200;
+
+    return score;
 }
