@@ -718,7 +718,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
             }
         }
         bool has_non_pawn_material = (board->color[board->turn] & ~(board->pieces[0] | board->pieces[5])) != 0;
-        if (!excluded && depth >= NMP_MIN_DEPTH && !root_node && !pv_node &&
+        if (!excluded && depth >= NMP_MIN_DEPTH && !root_node && !pv_node && !improving &&
             ceval >= beta && has_non_pawn_material)
         {
             int R = NMP_BASE_R + depth / NMP_DEPTH_DIV + (ceval - beta > NMP_EVAL_MARGIN ? 1 : 0);
