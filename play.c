@@ -4,8 +4,6 @@
 #include "magics.h"
 #include "precomputed.h"
 #include "uci.h"
-#include "params.h"
-#include "zobrist.h"
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -1296,6 +1294,7 @@ void legalMoveGen(Position *board, MoveList *list)
         legalMoveGenBlack(board, list);
 }
 
+
 #define DEFINE_MAKEMOVE(COLOR, c)                                              \
     static inline void makeMove##COLOR(Position *restrict board,               \
                                        MoveList *restrict list, int move)      \
@@ -1308,7 +1307,6 @@ void legalMoveGen(Position *board, MoveList *list)
         uint64_t tobb = 1ULL << to;                                            \
                                                                                \
         int old_epsquare = board->epsquare;                                    \
-        int old_castling = board->castling;                                    \
                                                                                \
         int piece = board->mailbox[from];                                      \
         int moving_piece = piece;                                              \
@@ -1322,18 +1320,7 @@ void legalMoveGen(Position *board, MoveList *list)
             !(moving_piece == 0 && to == old_epsquare &&                       \
               old_epsquare != -1))                                             \
         {                                                                      \
-            board->hash ^= zobrist_table[769 + old_castling];                  \
-            if (old_epsquare != -1)                                            \
-                board->hash ^= zobrist_table[785 + (old_epsquare & 7)];        \
             board->epsquare = -1;                                              \
-                                                                               \
-            board->hash ^=                                                     \
-                zobrist_table[(c * 384) + (moving_piece * 64) + from];         \
-                                                                               \
-            if (moving_piece == 0)                                             \
-                board->halfmoves = 0;                                          \
-            else                                                               \
-                board->halfmoves++;                                            \
                                                                                \
             board->castling &= castling_mask[from] & castling_mask[to];        \
             board->pieces[moving_piece] &= ~frombb;                            \
@@ -1344,8 +1331,6 @@ void legalMoveGen(Position *board, MoveList *list)
             board->color[c] |= tobb;                                           \
             board->mailbox[to] = piece;                                        \
                                                                                \
-            board->hash ^=                                                     \
-                zobrist_table[(c * 384) + (moving_piece * 64) + to];           \
             if (moving_piece == 0)                                             \
             {                                                                  \
                 int from_rank = from >> 3;                                     \
@@ -1354,36 +1339,12 @@ void legalMoveGen(Position *board, MoveList *list)
                     board->epsquare = from + ((c == 0) ? -8 : 8);              \
             }                                                                  \
                                                                                \
-            if (board->epsquare != -1)                                         \
-                board->hash ^= zobrist_table[785 + (board->epsquare & 7)];     \
-            board->hash ^= zobrist_table[769 + board->castling];               \
-                                                                               \
-            board->hash ^= zobrist_table[768];                                 \
-            if (c == 1)                                                        \
-                board->fullmoves++;                                            \
             board->turn = !c;                                                  \
             return;                                                            \
         }                                                                      \
                                                                                \
         /* general move (captures, promotions, castling, ep) */                \
-        board->hash ^= zobrist_table[769 + old_castling];                      \
-        if (old_epsquare != -1)                                                \
-            board->hash ^= zobrist_table[785 + (old_epsquare & 7)];            \
         board->epsquare = -1;                                                  \
-                                                                               \
-        board->hash ^= zobrist_table[(c * 384) + (moving_piece * 64) + from];  \
-                                                                               \
-        if (victim != 6)                                                       \
-            board->hash ^= zobrist_table[(!c * 384) + (victim * 64) + to];     \
-                                                                               \
-        bool is_capture = (victim != 6);                                       \
-        bool is_pawn_move = (moving_piece == 0);                               \
-        bool is_ep_capture =                                                   \
-            (moving_piece == 0 && to == old_epsquare && old_epsquare != -1);   \
-                                                                               \
-        board->halfmoves = (is_pawn_move || is_capture || is_ep_capture)       \
-                               ? 0                                             \
-                               : board->halfmoves + 1;                         \
                                                                                \
         board->castling &= castling_mask[from] & castling_mask[to];            \
                                                                                \
@@ -1397,8 +1358,6 @@ void legalMoveGen(Position *board, MoveList *list)
             board->color[c] |= (1ULL << F1);                                   \
             board->mailbox[F1] = 3;                                            \
             board->castling &= ~(1U << WHITE_KINGSIDE);                        \
-            board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + H1];           \
-            board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + F1];           \
             break;                                                             \
         case 2: /* white queen side */                                         \
             board->pieces[3] &= ~(1ULL << A1);                                 \
@@ -1408,8 +1367,6 @@ void legalMoveGen(Position *board, MoveList *list)
             board->color[c] |= (1ULL << D1);                                   \
             board->mailbox[D1] = 3;                                            \
             board->castling &= ~(1U << WHITE_QUEENSIDE);                       \
-            board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + A1];           \
-            board->hash ^= zobrist_table[(0 * 384) + (3 * 64) + D1];           \
             break;                                                             \
         case 4: /* black king side */                                          \
             board->pieces[3] &= ~(1ULL << H8);                                 \
@@ -1419,8 +1376,6 @@ void legalMoveGen(Position *board, MoveList *list)
             board->color[c] |= (1ULL << F8);                                   \
             board->mailbox[F8] = 3;                                            \
             board->castling &= ~(1U << BLACK_KINGSIDE);                        \
-            board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + H8];           \
-            board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + F8];           \
             break;                                                             \
         case 3: /* black queen side */                                         \
             board->pieces[3] &= ~(1ULL << A8);                                 \
@@ -1430,8 +1385,6 @@ void legalMoveGen(Position *board, MoveList *list)
             board->color[c] |= (1ULL << D8);                                   \
             board->mailbox[D8] = 3;                                            \
             board->castling &= ~(1U << BLACK_QUEENSIDE);                       \
-            board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + A8];           \
-            board->hash ^= zobrist_table[(1 * 384) + (3 * 64) + D8];           \
             break;                                                             \
         case 5:                                                                \
             piece = 1;                                                         \
@@ -1458,7 +1411,6 @@ void legalMoveGen(Position *board, MoveList *list)
             board->pieces[PAWNNUMBER] &= ~capBB;                               \
             board->color[!c] &= ~capBB;                                        \
             board->mailbox[captured_sq] = 6;                                   \
-            board->hash ^= zobrist_table[(!c * 384) + (0 * 64) + captured_sq]; \
         }                                                                      \
                                                                                \
         if (victim != 6)                                                       \
@@ -1469,8 +1421,6 @@ void legalMoveGen(Position *board, MoveList *list)
         board->color[c] |= tobb;                                               \
         board->mailbox[to] = piece;                                            \
                                                                                \
-        board->hash ^= zobrist_table[(c * 384) + (piece * 64) + to];           \
-                                                                               \
         if (moving_piece == 0)                                                 \
         {                                                                      \
             int from_y = from >> 3;                                            \
@@ -1479,18 +1429,12 @@ void legalMoveGen(Position *board, MoveList *list)
                 board->epsquare = from + ((c == 0) ? -8 : 8);                  \
         }                                                                      \
                                                                                \
-        if (board->epsquare != -1)                                             \
-            board->hash ^= zobrist_table[785 + (board->epsquare & 7)];         \
-        board->hash ^= zobrist_table[769 + board->castling];                   \
-                                                                               \
-        board->hash ^= zobrist_table[768];                                     \
-        if (c == 1)                                                            \
-            board->fullmoves++;                                                \
         board->turn = !c;                                                      \
     }
 
 DEFINE_MAKEMOVE(White, 0)
 DEFINE_MAKEMOVE(Black, 1)
+
 
 void makeMove(Position *board, MoveList *list, int move)
 {
@@ -1508,400 +1452,6 @@ void moveint(Position *board, uint16_t move)
         makeMoveWhite(board, &tmp, 0);
     else
         makeMoveBlack(board, &tmp, 0);
-}
-
-void quietMoves(Position *board, MoveList *list, bool color)
-{
-    board->color[OCCUPANCY] = board->color[WHITE] | board->color[BLACK];
-
-    uint64_t own = board->color[color];
-    uint64_t enemies = board->color[!color];
-    uint64_t occ = board->color[OCCUPANCY];
-    uint64_t empty = ~occ;
-
-    const uint64_t FILE_A = 0x0101010101010101ULL;
-    const uint64_t FILE_H = 0x8080808080808080ULL;
-    const uint64_t RANK_7 = 0x000000000000FF00ULL;
-    const uint64_t RANK_3 = 0x0000FF0000000000ULL;
-    const uint64_t RANK_2 = 0x00FF000000000000ULL;
-    const uint64_t RANK_6 = 0x0000000000FF0000ULL;
-
-    uint64_t pawns = board->pieces[PAWNNUMBER] & own;
-
-    if (color == 0)
-    { // White
-        uint64_t norm = pawns & ~RANK_7;
-        uint64_t single = (norm >> 8) & empty;
-        uint64_t dbl = ((single & RANK_3) >> 8) & empty;
-
-        while (single)
-        {
-            int to = pop_lsb(&single);
-            ADD_MOVE(list, to + 8, to);
-        }
-        while (dbl)
-        {
-            int to = pop_lsb(&dbl);
-            ADD_MOVE(list, to + 16, to);
-        }
-
-        uint64_t prom_pawns = pawns & RANK_7;
-
-        // underpromotion pushes (queen push is in qsearchMoves)
-        uint64_t prom = (prom_pawns >> 8) & empty;
-        while (prom)
-        {
-            int to = pop_lsb(&prom);
-            int from = to + 8;
-            ADD_FLAG_MOVE(list, 5, from, to);
-            ADD_FLAG_MOVE(list, 6, from, to);
-            ADD_FLAG_MOVE(list, 7, from, to);
-        }
-
-        // underpromotion captures (queen capture is in captureMoves)
-        uint64_t pcl = ((prom_pawns & ~FILE_A) >> 9) & enemies;
-        uint64_t pcr = ((prom_pawns & ~FILE_H) >> 7) & enemies;
-        while (pcl)
-        {
-            int to = pop_lsb(&pcl);
-            int from = to + 9;
-            ADD_FLAG_MOVE(list, 5, from, to);
-            ADD_FLAG_MOVE(list, 6, from, to);
-            ADD_FLAG_MOVE(list, 7, from, to);
-        }
-        while (pcr)
-        {
-            int to = pop_lsb(&pcr);
-            int from = to + 7;
-            ADD_FLAG_MOVE(list, 5, from, to);
-            ADD_FLAG_MOVE(list, 6, from, to);
-            ADD_FLAG_MOVE(list, 7, from, to);
-        }
-    }
-    else
-    { // Black
-        uint64_t norm = pawns & ~RANK_2;
-        uint64_t single = (norm << 8) & empty;
-        uint64_t dbl = ((single & RANK_6) << 8) & empty;
-
-        while (single)
-        {
-            int to = pop_lsb(&single);
-            ADD_MOVE(list, to - 8, to);
-        }
-        while (dbl)
-        {
-            int to = pop_lsb(&dbl);
-            ADD_MOVE(list, to - 16, to);
-        }
-
-        uint64_t prom_pawns = pawns & RANK_2;
-
-        uint64_t prom = (prom_pawns << 8) & empty;
-        while (prom)
-        {
-            int to = pop_lsb(&prom);
-            int from = to - 8;
-            ADD_FLAG_MOVE(list, 5, from, to);
-            ADD_FLAG_MOVE(list, 6, from, to);
-            ADD_FLAG_MOVE(list, 7, from, to);
-        }
-
-        uint64_t pcl = ((prom_pawns & ~FILE_A) << 7) & enemies;
-        uint64_t pcr = ((prom_pawns & ~FILE_H) << 9) & enemies;
-        while (pcl)
-        {
-            int to = pop_lsb(&pcl);
-            int from = to - 7;
-            ADD_FLAG_MOVE(list, 5, from, to);
-            ADD_FLAG_MOVE(list, 6, from, to);
-            ADD_FLAG_MOVE(list, 7, from, to);
-        }
-        while (pcr)
-        {
-            int to = pop_lsb(&pcr);
-            int from = to - 9;
-            ADD_FLAG_MOVE(list, 5, from, to);
-            ADD_FLAG_MOVE(list, 6, from, to);
-            ADD_FLAG_MOVE(list, 7, from, to);
-        }
-    }
-
-    uint64_t knights = board->pieces[HORSENUMBER] & own;
-    while (knights)
-    {
-        int from = pop_lsb(&knights);
-        uint64_t m = knighttable[from] & empty;
-        while (m)
-        {
-            int to = pop_lsb(&m);
-            ADD_MOVE(list, from, to);
-        }
-    }
-
-    uint64_t bishops =
-        (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & own;
-    while (bishops)
-    {
-        int from = pop_lsb(&bishops);
-        uint64_t m = getBishopAttacks(from, occ) & empty;
-        while (m)
-        {
-            int to = pop_lsb(&m);
-            ADD_MOVE(list, from, to);
-        }
-    }
-
-    uint64_t rooks =
-        (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & own;
-    while (rooks)
-    {
-        int from = pop_lsb(&rooks);
-        uint64_t m = getRookAttacks(from, occ) & empty;
-        while (m)
-        {
-            int to = pop_lsb(&m);
-            ADD_MOVE(list, from, to);
-        }
-    }
-
-    uint64_t kings = board->pieces[KINGNUMBER] & own;
-    if (!kings)
-        return;
-    int from = __builtin_ctzll(kings);
-
-    uint64_t m = kingtable[from] & empty;
-    while (m)
-    {
-        int to = pop_lsb(&m);
-        ADD_MOVE(list, from, to);
-    }
-
-    // Castling: king not in check, and neither transit nor landing square attacked
-    int them = !color;
-    if (color == 0 && from == E1)
-    {
-        if (squareAttacked(board, E1, them))
-            return;
-        if ((board->castling & (1U << WHITE_KINGSIDE)) &&
-            !(occ & ((1ULL << F1) | (1ULL << G1))) &&
-            !squareAttacked(board, F1, them) &&
-            !squareAttacked(board, G1, them))
-            ADD_FLAG_MOVE(list, 1U, from, G1);
-
-        if ((board->castling & (1U << WHITE_QUEENSIDE)) &&
-            !(occ & ((1ULL << B1) | (1ULL << C1) | (1ULL << D1))) &&
-            !squareAttacked(board, D1, them) &&
-            !squareAttacked(board, C1, them))
-            ADD_FLAG_MOVE(list, 2U, from, C1);
-    }
-    else if (color == 1 && from == E8)
-    {
-        if (squareAttacked(board, E8, them))
-            return;
-        if ((board->castling & (1U << BLACK_KINGSIDE)) &&
-            !(occ & ((1ULL << F8) | (1ULL << G8))) &&
-            !squareAttacked(board, F8, them) &&
-            !squareAttacked(board, G8, them))
-            ADD_FLAG_MOVE(list, 4U, from, G8);
-
-        if ((board->castling & (1U << BLACK_QUEENSIDE)) &&
-            !(occ & ((1ULL << B8) | (1ULL << C8) | (1ULL << D8))) &&
-            !squareAttacked(board, D8, them) &&
-            !squareAttacked(board, C8, them))
-            ADD_FLAG_MOVE(list, 3U, from, C8);
-    }
-}
-
-void captureMoves(Position *board, MoveList *list, bool color)
-{
-    board->color[OCCUPANCY] = board->color[WHITE] | board->color[BLACK];
-
-    uint64_t own = board->color[color];
-    uint64_t enemies = board->color[!color];
-    uint64_t occ = board->color[OCCUPANCY];
-
-    const uint64_t FILE_A = 0x0101010101010101ULL;
-    const uint64_t FILE_H = 0x8080808080808080ULL;
-    const uint64_t RANK_7 = 0x000000000000FF00ULL;
-    const uint64_t RANK_2 = 0x00FF000000000000ULL;
-
-    uint64_t pawns = board->pieces[PAWNNUMBER] & own;
-    int ep = board->epsquare;
-    uint64_t ep_bb = (ep != -1) ? (1ULL << ep) : 0;
-
-    if (color == 0)
-    {
-        uint64_t norm = pawns & ~RANK_7;
-        uint64_t prom = pawns & RANK_7;
-
-        uint64_t cap_l = ((norm & ~FILE_A) >> 9) & enemies;
-        uint64_t cap_r = ((norm & ~FILE_H) >> 7) & enemies;
-        while (cap_l)
-        {
-            int to = pop_lsb(&cap_l);
-            ADD_MOVE(list, to + 9, to);
-        }
-        while (cap_r)
-        {
-            int to = pop_lsb(&cap_r);
-            ADD_MOVE(list, to + 7, to);
-        }
-
-        // queen promotion captures (underpromotions are in quietMoves)
-        uint64_t pcl = ((prom & ~FILE_A) >> 9) & enemies;
-        uint64_t pcr = ((prom & ~FILE_H) >> 7) & enemies;
-        while (pcl)
-        {
-            int to = pop_lsb(&pcl);
-            ADD_FLAG_MOVE(list, 8, to + 9, to);
-        }
-        while (pcr)
-        {
-            int to = pop_lsb(&pcr);
-            ADD_FLAG_MOVE(list, 8, to + 7, to);
-        }
-
-        if (ep_bb)
-        {
-            if (((pawns & ~FILE_A) >> 9) & ep_bb)
-                ADD_MOVE(list, ep + 9, ep);
-            if (((pawns & ~FILE_H) >> 7) & ep_bb)
-                ADD_MOVE(list, ep + 7, ep);
-        }
-    }
-    else
-    {
-        uint64_t norm = pawns & ~RANK_2;
-        uint64_t prom = pawns & RANK_2;
-
-        uint64_t cap_l = ((norm & ~FILE_A) << 7) & enemies;
-        uint64_t cap_r = ((norm & ~FILE_H) << 9) & enemies;
-        while (cap_l)
-        {
-            int to = pop_lsb(&cap_l);
-            ADD_MOVE(list, to - 7, to);
-        }
-        while (cap_r)
-        {
-            int to = pop_lsb(&cap_r);
-            ADD_MOVE(list, to - 9, to);
-        }
-
-        uint64_t pcl = ((prom & ~FILE_A) << 7) & enemies;
-        uint64_t pcr = ((prom & ~FILE_H) << 9) & enemies;
-        while (pcl)
-        {
-            int to = pop_lsb(&pcl);
-            ADD_FLAG_MOVE(list, 8, to - 7, to);
-        }
-        while (pcr)
-        {
-            int to = pop_lsb(&pcr);
-            ADD_FLAG_MOVE(list, 8, to - 9, to);
-        }
-
-        if (ep_bb)
-        {
-            if (((pawns & ~FILE_A) << 7) & ep_bb)
-                ADD_MOVE(list, ep - 7, ep);
-            if (((pawns & ~FILE_H) << 9) & ep_bb)
-                ADD_MOVE(list, ep - 9, ep);
-        }
-    }
-
-    uint64_t knights = board->pieces[HORSENUMBER] & own;
-    while (knights)
-    {
-        int from = pop_lsb(&knights);
-        uint64_t attacks = knighttable[from] & enemies;
-        while (attacks)
-        {
-            int to = pop_lsb(&attacks);
-            ADD_MOVE(list, from, to);
-        }
-    }
-
-    uint64_t bishops =
-        (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]) & own;
-    while (bishops)
-    {
-        int from = pop_lsb(&bishops);
-        uint64_t attacks = getBishopAttacks(from, occ) & enemies;
-        while (attacks)
-        {
-            int to = pop_lsb(&attacks);
-            ADD_MOVE(list, from, to);
-        }
-    }
-
-    uint64_t rooks =
-        (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]) & own;
-    while (rooks)
-    {
-        int from = pop_lsb(&rooks);
-        uint64_t attacks = getRookAttacks(from, occ) & enemies;
-        while (attacks)
-        {
-            int to = pop_lsb(&attacks);
-            ADD_MOVE(list, from, to);
-        }
-    }
-
-    uint64_t kings = board->pieces[KINGNUMBER] & own;
-    if (kings)
-    {
-        int from = __builtin_ctzll(kings);
-        uint64_t attacks = kingtable[from] & enemies;
-        while (attacks)
-        {
-            int to = pop_lsb(&attacks);
-            ADD_MOVE(list, from, to);
-        }
-    }
-}
-
-void qsearchMoves(Position *board, MoveList *list, bool color)
-{
-    captureMoves(board, list, color);
-
-    uint64_t pawns = board->pieces[PAWNNUMBER] & board->color[color];
-    uint64_t empty = ~(board->color[OCCUPANCY]);
-    int prom_flag = 8;
-
-    if (color == 0)
-    { // White
-        uint64_t prom_pawns = pawns & 0x000000000000FF00ULL;
-        uint64_t pushes = (prom_pawns >> 8) & empty;
-        while (pushes)
-        {
-            int to = pop_lsb(&pushes);
-            int from = to + 8;
-            ADD_FLAG_MOVE(list, prom_flag, from, to);
-        }
-    }
-    else
-    { // Black
-        uint64_t prom_pawns = pawns & 0x00FF000000000000ULL;
-        uint64_t pushes = (prom_pawns << 8) & empty;
-        while (pushes)
-        {
-            int to = pop_lsb(&pushes);
-            int from = to - 8;
-            ADD_FLAG_MOVE(list, prom_flag, from, to);
-        }
-    }
-}
-
-bool king_in_check(Position *board, int us)
-{
-    uint64_t king_bb = board->pieces[KINGNUMBER] & board->color[us];
-    if (!king_bb)
-        return false;
-    int king_sq = __builtin_ctzll(king_bb);
-    uint64_t occ = board->color[WHITE] | board->color[BLACK];
-    AttackSet enemyAttacks = buildAttackSet(board, !us);
-    return squareAttacked_fast(king_sq, !us, occ, &enemyAttacks);
 }
 
 static void perft_print_move(uint16_t move, uint64_t move_nodes)
@@ -2000,227 +1550,4 @@ uint64_t perftbulk(Position *board, int depth)
 {
     return (board->turn == 0) ? perftbulkWhite(board, depth)
                               : perftbulkBlack(board, depth);
-}
-
-static inline int lva_pick(uint64_t subset)
-{
-    return __builtin_ctzll(__builtin_bswap64(subset)) ^ 56;
-}
-
-uint64_t get_attackers(Position *board, int sq, uint64_t occ)
-{
-    uint64_t attackers = 0ULL;
-
-    attackers |= white_pawn_attacks[sq] & board->pieces[PAWNNUMBER] &
-                 board->color[WHITE];
-    attackers |= black_pawn_attacks[sq] & board->pieces[PAWNNUMBER] &
-                 board->color[BLACK];
-
-    attackers |= knighttable[sq] & board->pieces[HORSENUMBER];
-
-    attackers |= kingtable[sq] & board->pieces[KINGNUMBER];
-
-    attackers |= getBishopAttacks(sq, occ) &
-                 (board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]);
-
-    attackers |= getRookAttacks(sq, occ) &
-                 (board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER]);
-
-    attackers &= occ;
-
-    return attackers;
-}
-
-int get_lva(Position *board, uint64_t attackers, int side, int *piece_type)
-{
-    uint64_t side_attackers = attackers & board->color[side];
-    if (!side_attackers)
-        return -1;
-
-    uint64_t subset = side_attackers & board->pieces[PAWNNUMBER];
-    if (subset)
-    {
-        *piece_type = PAWNNUMBER;
-        return lva_pick(subset);
-    }
-
-    subset = side_attackers & board->pieces[HORSENUMBER];
-    if (subset)
-    {
-        *piece_type = HORSENUMBER;
-        return lva_pick(subset);
-    }
-
-    subset = side_attackers & board->pieces[BISHOPNUMBER];
-    if (subset)
-    {
-        *piece_type = BISHOPNUMBER;
-        return lva_pick(subset);
-    }
-
-    subset = side_attackers & board->pieces[ROOKNUMBER];
-    if (subset)
-    {
-        *piece_type = ROOKNUMBER;
-        return lva_pick(subset);
-    }
-
-    subset = side_attackers & board->pieces[QUEENNUMBER];
-    if (subset)
-    {
-        *piece_type = QUEENNUMBER;
-        return lva_pick(subset);
-    }
-
-    subset = side_attackers & board->pieces[KINGNUMBER];
-    if (subset)
-    {
-        *piece_type = KINGNUMBER;
-        return lva_pick(subset);
-    }
-
-    return -1;
-}
-
-static const int PIECE_VALUES[7] = {100, 300, 300, 500, 900, 20000, 0};
-
-bool see_ge(Position *board, uint16_t move, int threshold)
-{
-    int from = (move >> 6) & 0x3F;
-    int to = move & 0x3F;
-    int flag = (move >> 12) & 0xF;
-
-    int from_piece = board->mailbox[from];
-    if (from_piece >= 6)
-        return false;
-
-    int target_piece = board->mailbox[to];
-
-    if (from_piece == PAWNNUMBER && to == board->epsquare &&
-        board->epsquare != -1)
-    {
-        target_piece = PAWNNUMBER;
-    }
-
-    if (target_piece >= 6)
-        target_piece = 6;
-
-    int promo_piece = -1;
-    if (flag >= 5 && flag <= 8)
-    {
-        if (flag == 5)
-            promo_piece = BISHOPNUMBER;
-        if (flag == 6)
-            promo_piece = HORSENUMBER;
-        if (flag == 7)
-            promo_piece = ROOKNUMBER;
-        if (flag == 8)
-            promo_piece = QUEENNUMBER;
-    }
-
-    int gain[32];
-    int d = 0;
-
-    gain[d] = PIECE_VALUES[target_piece];
-    if (promo_piece != -1)
-    {
-        gain[d] += PIECE_VALUES[promo_piece] - PIECE_VALUES[PAWNNUMBER];
-    }
-
-    if (gain[d] < threshold)
-        return false;
-
-    uint64_t occ = board->color[WHITE] | board->color[BLACK];
-    uint64_t attackers = get_attackers(board, to, occ);
-
-    occ &= ~(1ULL << from);
-
-    if (from_piece == PAWNNUMBER && to == board->epsquare &&
-        board->epsquare != -1)
-    {
-        int cap_sq = to + (board->turn == 0 ? 8 : -8);
-        occ &= ~(1ULL << cap_sq);
-    }
-
-    const uint64_t diag_pieces =
-        board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER];
-    const uint64_t orth_pieces =
-        board->pieces[ROOKNUMBER] | board->pieces[QUEENNUMBER];
-
-    uint64_t bishops_queens = diag_pieces & occ;
-    uint64_t rooks_queens = orth_pieces & occ;
-
-    if (bishops_queens)
-        attackers |= (getBishopAttacks(to, occ) & bishops_queens);
-    if (rooks_queens)
-        attackers |= (getRookAttacks(to, occ) & rooks_queens);
-    attackers &= occ;
-
-    int side = !board->turn;
-    int attacking_piece = (promo_piece != -1) ? promo_piece : from_piece;
-
-    while (1)
-    {
-        int next_piece = -1;
-        int lva_sq = get_lva(board, attackers, side, &next_piece);
-        if (lva_sq == -1)
-            break;
-
-        if (next_piece == KINGNUMBER)
-        {
-            if (attackers & board->color[!side])
-            {
-                break;
-            }
-        }
-
-        d++;
-        gain[d] = PIECE_VALUES[attacking_piece] - gain[d - 1];
-
-        if (gain[d] < threshold && -gain[d - 1] >= threshold)
-            break;
-
-        occ &= ~(1ULL << lva_sq);
-
-        bishops_queens = diag_pieces & occ;
-        rooks_queens = orth_pieces & occ;
-
-        if (bishops_queens)
-            attackers |= (getBishopAttacks(to, occ) & bishops_queens);
-        if (rooks_queens)
-            attackers |= (getRookAttacks(to, occ) & rooks_queens);
-        attackers &= occ;
-
-        attacking_piece = next_piece;
-        side = !side;
-    }
-
-    while (d > 0)
-    {
-        int negated = -gain[d];
-        gain[d - 1] = (gain[d - 1] < negated) ? gain[d - 1] : negated;
-        d--;
-    }
-
-    return gain[0] >= threshold;
-}
-
-int piece_value_lva(int piece)
-{
-    switch (piece)
-    {
-    case 0:
-        return PIECE_VALUE_PAWN;
-    case 1:
-        return PIECE_VALUE_KNIGHT;
-    case 2:
-        return PIECE_VALUE_BISHOP;
-    case 3:
-        return PIECE_VALUE_ROOK;
-    case 4:
-        return PIECE_VALUE_QUEEN;
-    case 5:
-        return PIECE_VALUE_KING;
-    }
-    return 0;
 }

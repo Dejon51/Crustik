@@ -2,12 +2,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include "lmath.h"
-#include "zobrist.h"
 #include "fen.h"
 
 #define MAX_FEN_LEN 2000
 
-void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, char *arg4, char *arg5)
+void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3)
 {
     memset(board, 0, sizeof(Position));
 
@@ -155,16 +154,4 @@ void fenRead(Position *board, char *fen, char *arg1, char *arg2, char *arg3, cha
     {
         board->epsquare = -1;
     }
-
-    if (arg4 != NULL && strlen(arg4) > 0)
-        board->halfmoves = atoi(arg4);
-    else
-        board->halfmoves = 0;
-
-    if (arg5 != NULL && strlen(arg5) > 0)
-        board->fullmoves = atoi(arg5);
-    else
-        board->fullmoves = 1;
-
-    board->hash = zobrist(board);
 }

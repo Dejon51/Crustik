@@ -36,12 +36,6 @@ void makeMove(Position *board,MoveList *list, int move);
 
 void moveint(Position *board, uint16_t move);
 
-void captureMoves(Position *board, MoveList *list, bool color);
-
-void qsearchMoves(Position *board, MoveList *list, bool color);
-
-bool king_in_check(Position *board, int us);
-
 uint64_t perft(Position *board, int depth, int divide);
 uint64_t perftbulk(Position *board, int depth);
 

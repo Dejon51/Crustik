@@ -31,9 +31,6 @@ typedef struct {
     int8_t epsquare;
     int8_t castling;
     uint8_t mailbox[64];
-    uint8_t halfmoves;   // half-move clock
-    uint8_t fullmoves; 
-    uint64_t hash;
     bool turn;
 } Position;
 
@@ -107,7 +104,7 @@ typedef enum {
 
 
 typedef struct {
-    uint16_t movelist[256];
+    uint16_t movelist[192];
     unsigned int offset;
 } MoveList;
 
