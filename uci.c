@@ -238,6 +238,7 @@ void uciStart(void)
 
             int divide = 0;
             int bulk = 0;
+            int popcnt = 0;
             int valid = 1;
 
             for (int i = 3; tokens[i] != NULL; i++)
@@ -245,6 +246,10 @@ void uciStart(void)
                 if (strcmp(tokens[i], "bulk") == 0)
                 {
                     bulk = 1;
+                }
+                else if (strcmp(tokens[i], "popcnt") == 0)
+                {
+                    popcnt = 1;
                 }
                 else if (strcmp(tokens[i], "divide") == 0)
                 {
@@ -285,7 +290,9 @@ void uciStart(void)
             clock_gettime(CLOCK_MONOTONIC, &start_time);
 #endif
 
-            if (bulk)
+            if (popcnt)
+                total_nodes = perftpopcnt(&board, depth);
+            else if (bulk)
                 total_nodes = perftbulk(&board, depth);
             else
                 total_nodes = perft(&board, depth, divide);
