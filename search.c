@@ -74,6 +74,7 @@ static void td_clear_history(ThreadData *td)
     memset(td->cont_stack, 0, sizeof td->cont_stack);
     memset(td->pawn_corrhist, 0, sizeof td->pawn_corrhist);
     memset(td->nonpawn_corrhist, 0, sizeof td->nonpawn_corrhist);
+    memset(td->cont_corrhist, 0, sizeof td->cont_corrhist);
 
     for (int i = 0; i < MAX_GAME_PLY; i++)
         td->eval_stack[i] = NO_EVAL;
@@ -418,7 +419,7 @@ static int clamp_int_local(int v, int lo, int hi)
     return v;
 }
 
-static int corrected_eval(ThreadData *td, Position *board, int raw_eval)
+static int corrected_eval(ThreadData *td, Position *board, int raw_eval, int ply)
 {
     uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
     int mkey = compute_material_key(board);
@@ -426,29 +427,61 @@ static int corrected_eval(ThreadData *td, Position *board, int raw_eval)
     int correction = td->pawn_corrhist[board->turn][pkey] +
                      td->nonpawn_corrhist[board->turn][mkey];
 
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY &&
+        td->cont_stack[ply - 1].valid)
+    {
+        int pp = td->cont_stack[ply - 1].piece;
+        int pt = td->cont_stack[ply - 1].to;
+
+        correction += td->cont_corrhist[board->turn][pp][pt];
+    }
+
     correction /= CORRHIST_GRAIN;
-    correction = clamp_int_local(correction, -CORRHIST_MAX_APPLY, CORRHIST_MAX_APPLY);
+    correction = clamp_int_local(
+        correction,
+        -CORRHIST_MAX_APPLY,
+        CORRHIST_MAX_APPLY
+    );
 
     return raw_eval + correction;
 }
 
-static void update_corrhist(ThreadData *td, Position *board, int depth, int static_eval, int best_score)
+static void update_corrhist(ThreadData *td, Position *board,
+                            int ply, int depth,
+                            int static_eval, int best_score)
 {
     if (is_mate_score(best_score))
         return;
 
     int diff = best_score - static_eval;
-    int bonus = clamp_int_local(diff * depth, -CORRHIST_LIMIT, CORRHIST_LIMIT);
+    int bonus = clamp_int_local(
+        diff * depth,
+        -CORRHIST_LIMIT,
+        CORRHIST_LIMIT
+    );
 
-    uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
-    int mkey = compute_material_key(board);
     int side = board->turn;
 
+    uint64_t pkey = compute_pawn_key(board) & CORRHIST_MASK;
     int *pc = &td->pawn_corrhist[side][pkey];
+
     *pc += bonus - *pc * abs(bonus) / CORRHIST_LIMIT;
 
+    int mkey = compute_material_key(board);
     int *npc = &td->nonpawn_corrhist[side][mkey];
+
     *npc += bonus - *npc * abs(bonus) / CORRHIST_LIMIT;
+
+    if (ply > 0 && ply - 1 < MAX_SEARCH_PLY &&
+        td->cont_stack[ply - 1].valid)
+    {
+        int pp = td->cont_stack[ply - 1].piece;
+        int pt = td->cont_stack[ply - 1].to;
+
+        int *cc = &td->cont_corrhist[side][pp][pt];
+
+        *cc += bonus - *cc * abs(bonus) / CORRHIST_LIMIT;
+    }
 }
 
 int quiesce(ThreadData *td, Position *board, int alpha, int beta, int ply)
@@ -695,7 +728,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
         else
             static_eval = eval(td, board, ply);
 
-        ceval = corrected_eval(td, board, static_eval);
+        ceval = corrected_eval(td, board, static_eval, ply);
 
         if (ply < MAX_GAME_PLY)
         {
@@ -1185,7 +1218,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
     }
 
     if (!stop->stop && stack->excluded_move == 0 && !in_check)
-        update_corrhist(td, board, depth, static_eval, best_score);
+        update_corrhist(td, board, ply, depth, static_eval, best_score);
 
     if (!stop->stop && stack->excluded_move == 0)
     {
