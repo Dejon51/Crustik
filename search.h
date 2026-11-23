@@ -65,6 +65,7 @@ typedef struct
 typedef struct
 {
     uint16_t excluded_move;
+    int reduction;  
 } SearchStack;
 
 struct ThreadData
@@ -82,7 +83,7 @@ struct ThreadData
     uint16_t counter_moves[2][6][64];
     int pawn_corrhist[2][CORRHIST_SIZE];
     int nonpawn_corrhist[2][CORRHIST_SIZE];
-
+    
     ContRecord cont_stack[MAX_SEARCH_PLY];
     uint64_t search_path_hash[MAX_SEARCH_PLY];
 

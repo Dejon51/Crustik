@@ -705,6 +705,10 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
 
             td->eval_stack[ply] = ceval;
         }
+        if (!pv_node && !excluded && ply >= 1 && stack->reduction >= 2 && td->eval_stack[ply - 1] != NO_EVAL && (ceval + td->eval_stack[ply - 1]) < 0)
+        {
+            depth++;
+        }
 
         if (!root_node && !pv_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
         {
@@ -982,13 +986,14 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
 
         PVLine child_pv;
         int score;
+        SearchStack child_stack = {0};
 
         child_pv.length = 0;
 
         if (i == 0 || depth < PVS_MIN_DEPTH)
         {
             score = -search(td, &copy, depth - 1 + extension, ply + 1,
-                            -beta, -alpha, &child_pv, &no_excl)
+                            -beta, -alpha, &child_pv, &child_stack)
                          .score;
         }
         else
@@ -1024,21 +1029,25 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
 
             if (reduction > 0)
             {
+                child_stack.reduction = reduction + extension;
+
                 score = -search(td, &copy, depth - 1 - reduction, ply + 1,
-                                -alpha - 1, -alpha, NULL, &no_excl)
+                                -alpha - 1, -alpha, NULL, &child_stack)
                              .score;
+
+                child_stack.reduction = 0;
 
                 if (!stop->stop && score > alpha)
                 {
                     score = -search(td, &copy, depth - 1 + extension, ply + 1,
-                                    -alpha - 1, -alpha, NULL, &no_excl)
+                                    -alpha - 1, -alpha, NULL, &child_stack)
                                  .score;
                 }
             }
             else
             {
                 score = -search(td, &copy, depth - 1 + extension, ply + 1,
-                                -alpha - 1, -alpha, NULL, &no_excl)
+                                -alpha - 1, -alpha, NULL, &child_stack)
                              .score;
             }
 
@@ -1046,7 +1055,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
             {
                 child_pv.length = 0;
                 score = -search(td, &copy, depth - 1 + extension, ply + 1,
-                                -beta, -alpha, &child_pv, &no_excl)
+                                -beta, -alpha, &child_pv, &child_stack)
                              .score;
             }
         }

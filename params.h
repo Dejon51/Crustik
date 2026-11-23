@@ -111,4 +111,9 @@ extern double TM_STABLE_STEP;
 extern double TM_STABLE_MIN;
 extern double TM_STABLE_MAX;
 
+/* Hindsight extension */
+extern int HINDSIGHT_MIN_DEPTH;
+extern int HINDSIGHT_BETA_MARGIN;
+extern int HINDSIGHT_ALPHA_MARGIN;
+
 #endif

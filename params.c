@@ -109,3 +109,8 @@ double TM_STABLE_BASE = 1.2;
 double TM_STABLE_STEP = 0.05;
 double TM_STABLE_MIN = 0.8;
 double TM_STABLE_MAX = 1.2;
+
+/* ---------- Hindsight extension ---------- */
+int HINDSIGHT_MIN_DEPTH = 6;  
+int HINDSIGHT_BETA_MARGIN = 40; 
+int HINDSIGHT_ALPHA_MARGIN = 60;
