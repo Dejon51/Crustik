@@ -126,9 +126,6 @@ void tt_store(uint64_t key, int score, uint16_t move, int depth, int flag, int i
 {
     if (!tt || !tt_num_entries) return;
 
-    if (depth > 63) depth = 63;
-    if (depth < 0)  depth = 0;
-
     TTEntry *e = &tt[tt_index(key)];
 
     TTEntry cur = *e;
