@@ -7,7 +7,7 @@
 int main() {
 	init_between_bb();
 	init_castling_mask();
-	initPext();
+	initSliderAttacks();
 	init_pseudo_attacks();
 
 	uciStart();
