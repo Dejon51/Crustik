@@ -1209,15 +1209,17 @@ static void legalMoveGenBlack(Position *board, MoveList *list);
         uint64_t them_bb  = board->color[them];                                 \
         uint64_t us_bb    = board->color[us];                                   \
                                                                                 \
-        uint64_t checkers =                                                     \
-            (((THEM == 0 ? white_pawn_attacks[king_sq]                          \
-                         : black_pawn_attacks[king_sq]) &                       \
-              board->pieces[PAWNNUMBER]) |                                      \
-             (knighttable[king_sq] & board->pieces[HORSENUMBER])) &             \
-            them_bb;                                                            \
-                                                                                \
         uint64_t bq = board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]; \
         uint64_t rq = board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER]; \
+                                                                                \
+        uint64_t checkers =                                                     \
+            ((((THEM == 0 ? white_pawn_attacks[king_sq]                          \
+                          : black_pawn_attacks[king_sq]) &                      \
+               board->pieces[PAWNNUMBER]) |                                     \
+              (knighttable[king_sq] & board->pieces[HORSENUMBER]) |             \
+              (getBishopAttacks(king_sq, occ) & bq) |                           \
+              (getRookAttacks(king_sq, occ) & rq)) &                            \
+             them_bb);                                                          \
                                                                                 \
         uint64_t sliders = ((BISHOP_PSEUDO[king_sq] & bq) |                     \
                             (ROOK_PSEUDO[king_sq]   & rq)) &                    \
@@ -1232,11 +1234,7 @@ static void legalMoveGenBlack(Position *board, MoveList *list);
             uint64_t ray     = ray_between_table[king_sq * 64 + s];             \
             uint64_t between = ray & occ;                                       \
                                                                                 \
-            if (!between)                                                       \
-            {                                                                   \
-                checkers |= 1ULL << s;                                          \
-            }                                                                   \
-            else if ((between & (between - 1)) == 0 && (between & us_bb))       \
+            if ((between & (between - 1)) == 0 && (between & us_bb))            \
             {                                                                   \
                 int psq = __builtin_ctzll(between);                             \
                 pinned_pieces |= between;                                       \
@@ -1797,15 +1795,17 @@ static inline int countSliderMoves(Position *board, int us, uint64_t check_mask,
         uint64_t them_bb = board->color[them];                                  \
         uint64_t us_bb   = board->color[us];                                    \
                                                                                 \
-        uint64_t checkers =                                                     \
-            (((THEM == 0 ? white_pawn_attacks[king_sq]                          \
-                         : black_pawn_attacks[king_sq]) &                       \
-              board->pieces[PAWNNUMBER]) |                                      \
-             (knighttable[king_sq] & board->pieces[HORSENUMBER])) &             \
-            them_bb;                                                            \
-                                                                                \
         uint64_t bq = board->pieces[BISHOPNUMBER] | board->pieces[QUEENNUMBER]; \
         uint64_t rq = board->pieces[ROOKNUMBER]   | board->pieces[QUEENNUMBER]; \
+                                                                                \
+        uint64_t checkers =                                                     \
+            ((((THEM == 0 ? white_pawn_attacks[king_sq]                          \
+                          : black_pawn_attacks[king_sq]) &                      \
+               board->pieces[PAWNNUMBER]) |                                     \
+              (knighttable[king_sq] & board->pieces[HORSENUMBER]) |             \
+              (getBishopAttacks(king_sq, occ) & bq) |                           \
+              (getRookAttacks(king_sq, occ) & rq)) &                            \
+             them_bb);                                                          \
                                                                                 \
         uint64_t sliders = ((BISHOP_PSEUDO[king_sq] & bq) |                     \
                             (ROOK_PSEUDO[king_sq]   & rq)) & them_bb;           \
@@ -1819,9 +1819,7 @@ static inline int countSliderMoves(Position *board, int us, uint64_t check_mask,
             uint64_t ray     = ray_between_table[king_sq * 64 + s];             \
             uint64_t between = ray & occ;                                       \
                                                                                 \
-            if (!between)                                                       \
-                checkers |= 1ULL << s;                                          \
-            else if ((between & (between - 1)) == 0 && (between & us_bb))       \
+            if ((between & (between - 1)) == 0 && (between & us_bb))            \
             {                                                                   \
                 int psq = __builtin_ctzll(between);                             \
                 pinned_pieces |= between;                                       \
