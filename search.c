@@ -708,9 +708,9 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
 
         if (!root_node && !pv_node && !excluded && depth <= RFP_MAX_DEPTH && !is_mate_score(beta))
         {
-            int margin = RFP_MARGIN * depth;
+            int rfp_margin = (improving ? RFP_IMPROVING_MARGIN : RFP_MARGIN) * depth;
 
-            if (ceval - margin >= beta)
+            if (ceval - rfp_margin >= beta)
             {
                 return (searchOutput){
                     .score = (ceval + beta) / 2,
