@@ -44,6 +44,8 @@ static stopConditions master_stop;
 static volatile int search_running = 0;
 static int master_spawned = 0;
 
+static uint16_t first_legal_move(Position *board);
+
 void search_request_stop(void)
 {
     stop_requested = 1;
@@ -74,6 +76,7 @@ static void td_clear_history(ThreadData *td)
     memset(td->cont_stack, 0, sizeof td->cont_stack);
     memset(td->pawn_corrhist, 0, sizeof td->pawn_corrhist);
     memset(td->nonpawn_corrhist, 0, sizeof td->nonpawn_corrhist);
+    memset(td->node_is_null, 0, sizeof td->node_is_null);
 
     for (int i = 0; i < MAX_GAME_PLY; i++)
         td->eval_stack[i] = NO_EVAL;
@@ -332,35 +335,61 @@ static inline int lmr_reduction(int depth, int move_number)
     return lmr_table[depth][move_number];
 }
 
-static bool is_repetition_or_fifty(ThreadData *td, Position *board, int ply)
+static bool is_repetition(ThreadData *td, Position *board, int ply)
 {
-    if (board->halfmoves >= 100)
-        return true;
-
-    int reversible_plies = board->halfmoves;
-
-    int base = game_history_count > 0 ? game_history_count - 1 : 0;
-    int total_ply = base + ply;
-
-    for (int i = 4; i <= reversible_plies && i <= total_ply; i += 2)
+    int limit = board->halfmoves;
+    if (td->last_null[ply] >= 0)
     {
-        uint64_t past_hash;
+        int since_null = ply - td->last_null[ply];
+        if (since_null < limit)
+            limit = since_null;
+    }
+
+    int root = game_history_count > 0 ? game_history_count - 1 : 0;
+    int total_ply = root + ply;
+    if (limit > total_ply)
+        limit = total_ply;
+
+    int prehistory_hits = 0;
+
+    for (int i = 4; i <= limit; i += 2)
+    {
         int idx = total_ply - i;
 
-        if (idx >= base)
+        if (idx >= root)
         {
-            int local_idx = idx - base;
-            if (local_idx < 0 || local_idx >= MAX_SEARCH_PLY)
-                continue;
-            past_hash = td->search_path_hash[local_idx];
+            int local = idx - root;
+            if (local < MAX_SEARCH_PLY && td->search_path_hash[local] == board->hash)
+                return true;
         }
         else
         {
-            past_hash = game_history[idx];
+            if (game_history[idx] == board->hash && ++prehistory_hits >= 2)
+                return true;
         }
+    }
+    return false;
+}
 
-        if (past_hash == board->hash)
-            return true;
+static bool is_insufficient_material(const Position *b)
+{
+    if (b->pieces[0] | b->pieces[3] | b->pieces[4])
+        return false;
+
+    uint64_t bishops = b->pieces[1];
+    uint64_t knights = b->pieces[2];
+    int minors = __builtin_popcountll(bishops | knights);
+
+    // KvK, KBvK, KNvK
+    if (minors <= 1)
+        return true;
+
+    if (knights == 0 && minors == 2 &&
+        __builtin_popcountll(bishops & b->color[0]) == 1 &&
+        __builtin_popcountll(bishops & b->color[1]) == 1)
+    {
+        int on_mask = __builtin_popcountll(bishops & 0xAA55AA55AA55AA55ULL);
+        return on_mask != 1;
     }
 
     return false;
@@ -642,10 +671,24 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
         return (searchOutput){.score = eval(td, board, ply), .move = 0};
 
     if (ply < MAX_SEARCH_PLY)
+    {
         td->search_path_hash[ply] = board->hash;
+        td->last_null[ply] = td->node_is_null[ply] ? ply
+                           : (ply > 0 ? td->last_null[ply - 1] : -1);
+    }
 
-    if (ply > 0 && is_repetition_or_fifty(td, board, ply))
-        return (searchOutput){.score = 0, .move = 0};
+    if (ply > 0)
+    {
+        if (board->halfmoves >= 100)
+        {
+            if (king_in_check(board, board->turn) && first_legal_move(board) == 0)
+                return (searchOutput){.score = -MATE_SCORE + ply, .move = 0};
+            return (searchOutput){.score = 0, .move = 0};
+        }
+
+        if (is_repetition(td, board, ply) || is_insufficient_material(board))
+            return (searchOutput){.score = 0, .move = 0};
+    }
 
     TTEntry tt_entry;
     TTEntry *entry = tt_probe_into(board->hash, &tt_entry) ? &tt_entry : NULL;
@@ -717,7 +760,7 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
                     .move = 0};
             }
         }
-        
+
         bool has_non_pawn_material = (board->color[board->turn] & ~(board->pieces[0] | board->pieces[5])) != 0;
         if (!excluded && depth >= NMP_MIN_DEPTH && !root_node && !pv_node &&
             ceval >= beta && has_non_pawn_material)
@@ -734,10 +777,12 @@ searchOutput search(ThreadData *td, Position *board, int depth, int ply,
             if (ply < MAX_SEARCH_PLY)
                 td->cont_stack[ply].valid = false;
 
+            td->node_is_null[ply + 1] = 1;
             int score = -search(td, &copy, depth - R - 1,
                                 ply + 1, -beta, -beta + 1,
                                 NULL, &no_excl)
                              .score;
+            td->node_is_null[ply + 1] = 0;
 
             if (stop->stop)
                 return (searchOutput){0};
@@ -1235,6 +1280,7 @@ static void run_search_thread(ThreadData *td)
     SearchStack no_excl = {0};
 
     memset(td->cont_stack, 0, sizeof td->cont_stack);
+    memset(td->node_is_null, 0, sizeof td->node_is_null);
 
     nnue_refresh(td, board, 0);
 
@@ -1453,7 +1499,11 @@ searchOutput search_bench(Position *board, int depth, stopConditions *stop)
     td->stop.seldepth = 0;
     td->stop.print_info = 0;
 
+    game_history[0] = board->hash;
+    game_history_count = 1;
+
     memset(td->cont_stack, 0, sizeof td->cont_stack);
+    memset(td->node_is_null, 0, sizeof td->node_is_null);
 
     nnue_refresh(td, board, 0);
 

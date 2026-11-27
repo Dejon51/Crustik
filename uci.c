@@ -12,14 +12,30 @@
 #include <stdlib.h>
 #include "text.h"
 
-#define MAX_GAME_PLY 2048
-
 extern uint64_t game_history[MAX_GAME_PLY];
 extern int game_history_count;
 
 #define SOFT_NODES_HARD_MULTIPLIER 200
 
 static bool use_soft_nodes = false;
+
+static void history_reset(const Position *board)
+{
+    game_history[0] = board->hash;
+    game_history_count = 1;
+}
+
+static void history_push(const Position *board)
+{
+    if (game_history_count >= MAX_GAME_PLY)
+    {
+        int keep = MAX_GAME_PLY / 2;
+        memmove(game_history, game_history + (game_history_count - keep),
+                (size_t)keep * sizeof(uint64_t));
+        game_history_count = keep;
+    }
+    game_history[game_history_count++] = board->hash;
+}
 
 static int str_eq_ci(const char *a, const char *b)
 {
@@ -682,7 +698,7 @@ void uciStart()
 
     fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq",
             "-", "0", "1");
-    game_history_count = 0;
+    history_reset(&board); 
 
     char line[20000];
 
@@ -798,7 +814,7 @@ void uciStart()
             reset_history();
             fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w",
                     "KQkq", "-", "0", "1");
-            game_history_count = 0;
+            history_reset(&board); 
         }
         else if (strcmp(tokens[0], "position") == 0)
         {
@@ -812,7 +828,7 @@ void uciStart()
             {
                 fenRead(&board, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w",
                         "KQkq", "-", "0", "1");
-                game_history_count = 0;
+                history_reset(&board); 
 
                 int i = 2;
                 if (tokens[i] && strcmp(tokens[i], "moves") == 0)
@@ -821,8 +837,7 @@ void uciStart()
                 {
                     uint16_t move = parsemove(&board, tokens[i]);
                     moveint(&board, move);
-                    if (game_history_count < MAX_GAME_PLY)
-                        game_history[game_history_count++] = board.hash;
+                    history_push(&board); 
                     i++;
                 }
             }
@@ -836,7 +851,7 @@ void uciStart()
                 {
 
                     fenRead(&board, tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7]);
-                    game_history_count = 0;
+                    history_reset(&board); 
 
                     int i = 8;
                     if (tokens[i] && strcmp(tokens[i], "moves") == 0)
@@ -845,8 +860,7 @@ void uciStart()
                     {
                         uint16_t move = parsemove(&board, tokens[i]);
                         moveint(&board, move);
-                        if (game_history_count < MAX_GAME_PLY)
-                            game_history[game_history_count++] = board.hash;
+                        history_push(&board); 
                         i++;
                     }
                 }

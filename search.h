@@ -85,6 +85,8 @@ struct ThreadData
 
     ContRecord cont_stack[MAX_SEARCH_PLY];
     uint64_t search_path_hash[MAX_SEARCH_PLY];
+    int      last_null[MAX_SEARCH_PLY];
+    uint8_t  node_is_null[MAX_SEARCH_PLY];
 
     NnueAccumulator nnue_stack[NNUE_MAX_PLY];
 
